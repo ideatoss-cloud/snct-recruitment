@@ -1262,7 +1262,7 @@ function _savePromotionDoc(){
 function _loadPromotionDoc(round){ try{ const raw=localStorage.getItem(_promoDocKey(round)); return raw?JSON.parse(raw):null; }catch(e){ return null; } }
 // ✅ v1.2.0: ADMIN_CODE 평문 제거 — _사용자 시트 role='admin'로 검증. 호환 위해 빈 상수 유지 (서서히 코드에서 제거)
 const ADMIN_CODE = ''; // deprecated
-// ✅ v1.2.32 (2026.07.24) — 어학 환산 확대(기능): 사무직 신입 어학/기타역량(20점)이 TOEIC(RC/LC) 점수만 인정하여 TOEIC Speaking·OPIc 보유자가 "어학 없음=2점"으로 떨어지던 문제. 단일 출처 LANG_TIERS + langScale()로 TOEIC↔TOEIC Speaking(2022 개정 200점 체계)↔OPIc 3종 대응표 도입(18/14/10/6/2점). 복수 성적은 최고 1개만 인정(합산 금지), 미대응 시험(TEPS·IELTS 등)은 임의 환산 금지하고 reason에 "환산기준없음" 명시 → 운영자 수동 보정 유도. ⚠️환산 기준선은 작업자 확정 대기
+// ✅ v1.2.32 (2026.07.24) — 어학 환산 확대(기능): 사무직 신입 어학/기타역량(20점)이 TOEIC(RC/LC) 점수만 인정하여 TOEIC Speaking·OPIc 보유자가 "어학 없음=2점"으로 떨어지던 문제. 단일 출처 LANG_TIERS + langScale()로 TOEIC↔TOEIC Speaking(2022 개정 200점 체계)↔OPIc 3종 대응표 도입(18/14/10/6/2점). 복수 성적은 최고 1개만 인정(합산 금지), 미대응 시험(TEPS·IELTS 등)은 임의 환산 금지하고 reason에 "환산기준없음" 명시 → 운영자 수동 보정 유도. 환산 기준선 작업자 확정(2026.07.24)
 // ✅ v1.2.25 (2026.06.04) — 합의채점 부분실패 허용(기능): callOpenAIConsensus가 n회 중 일부 callOpenAI throw 시 전체 throw하던 것을, 실패 회차는 건너뛰고 성공분으로 진행. 단 SD/신뢰신호 유효성 위해 최소 2회 성공 필수(1회 이하면 기존대로 throw→호출부 재시도). 정상 3회는 기존과 동일, _fit_n에 실제 성공횟수 반영
 // ✅ v1.2.24 (2026.06.04) — 검진PDF 파싱 파라미터 정리(버그): _parseHealthCheckPdf의 max_tokens→max_completion_tokens 교체. OpenAI 공식문서상 max_tokens는 deprecated(max_completion_tokens의 alias, gpt-4o는 현재 동작하나 비권장) → 본체 callOpenAI(gpt-4o=max_completion_tokens 계열)와 일관성 확보. 모델은 PDF file-input 검증된 gpt-4o 유지(단종 시 vision/file 지원 신모델로 교체 필요)
 // ✅ v1.2.23 (2026.06.04) — 표기 오류 수정(버그): AI 채용 결과 보고서 푸터의 채점 엔진 표기를 하드코딩 'GPT-4o' → 실제 선택 모델 ${MODEL} 동적표시(실제 채점은 gpt-5.4-mini 등). 검진PDF 파싱 표기는 v1.2.24에서 별도 정리
