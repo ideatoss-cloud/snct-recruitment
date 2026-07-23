@@ -1262,6 +1262,7 @@ function _savePromotionDoc(){
 function _loadPromotionDoc(round){ try{ const raw=localStorage.getItem(_promoDocKey(round)); return raw?JSON.parse(raw):null; }catch(e){ return null; } }
 // ✅ v1.2.0: ADMIN_CODE 평문 제거 — _사용자 시트 role='admin'로 검증. 호환 위해 빈 상수 유지 (서서히 코드에서 제거)
 const ADMIN_CODE = ''; // deprecated
+// ✅ v1.2.32 (2026.07.24) — 어학 환산 확대(기능): 사무직 신입 어학/기타역량(20점)이 TOEIC(RC/LC) 점수만 인정하여 TOEIC Speaking·OPIc 보유자가 "어학 없음=2점"으로 떨어지던 문제. 단일 출처 LANG_TIERS + langScale()로 TOEIC↔TOEIC Speaking(2022 개정 200점 체계)↔OPIc 3종 대응표 도입(18/14/10/6/2점). 복수 성적은 최고 1개만 인정(합산 금지), 미대응 시험(TEPS·IELTS 등)은 임의 환산 금지하고 reason에 "환산기준없음" 명시 → 운영자 수동 보정 유도. ⚠️환산 기준선은 작업자 확정 대기
 // ✅ v1.2.25 (2026.06.04) — 합의채점 부분실패 허용(기능): callOpenAIConsensus가 n회 중 일부 callOpenAI throw 시 전체 throw하던 것을, 실패 회차는 건너뛰고 성공분으로 진행. 단 SD/신뢰신호 유효성 위해 최소 2회 성공 필수(1회 이하면 기존대로 throw→호출부 재시도). 정상 3회는 기존과 동일, _fit_n에 실제 성공횟수 반영
 // ✅ v1.2.24 (2026.06.04) — 검진PDF 파싱 파라미터 정리(버그): _parseHealthCheckPdf의 max_tokens→max_completion_tokens 교체. OpenAI 공식문서상 max_tokens는 deprecated(max_completion_tokens의 alias, gpt-4o는 현재 동작하나 비권장) → 본체 callOpenAI(gpt-4o=max_completion_tokens 계열)와 일관성 확보. 모델은 PDF file-input 검증된 gpt-4o 유지(단종 시 vision/file 지원 신모델로 교체 필요)
 // ✅ v1.2.23 (2026.06.04) — 표기 오류 수정(버그): AI 채용 결과 보고서 푸터의 채점 엔진 표기를 하드코딩 'GPT-4o' → 실제 선택 모델 ${MODEL} 동적표시(실제 채점은 gpt-5.4-mini 등). 검진PDF 파싱 표기는 v1.2.24에서 별도 정리
@@ -1290,8 +1291,8 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.2.31';
-const APP_VERSION_DATE = '2026.06.05';
+const APP_VERSION = 'v1.2.32';
+const APP_VERSION_DATE = '2026.07.24';
 let currentRound = ''; // 현재 선택된 회차
 
 const JOBS = {
@@ -4302,6 +4303,22 @@ E  = 고졸
 // 기술직(현장직) 이공계 보정 노트
 const EDU_FIELD_NOTE = '⚠️기술직 이공계 보정: KAIST·POSTECH·UNIST·GIST·DGIST는 S+로 적용하고, 지방 거점국립의 공학계열은 한 칸 상향(B→B+) 적용.';
 
+// ══════════════════════════════════════════
+// 어학 환산 티어 — 사무직 신입 "어학/기타역량(20점)" 항목의 단일 출처
+// TOEIC(RC/LC) 기준선에 TOEIC Speaking(2022 개정 200점 체계)·OPIc을 대응시킴.
+// 배점 수정 시 이 표 한 곳만 고치면 프롬프트에 일괄 반영됨.
+// ══════════════════════════════════════════
+const LANG_TIERS = [
+  { s:18, toeic:'900 이상',      ts:'160 이상(AL·AM·AH)',  opic:'IH·AL' },
+  { s:14, toeic:'800~899',      ts:'140~150(IH)',        opic:'IM3'   },
+  { s:10, toeic:'700~799',      ts:'130(IM3)',           opic:'IM2'   },
+  { s:6,  toeic:'600~699',      ts:'110~120(IM1·IM2)',   opic:'IM1'   },
+  { s:2,  toeic:'600 미만',      ts:'100 이하(IL 이하)',    opic:'IL 이하' }
+];
+function langScale(){
+  return LANG_TIERS.map(t=>`${t.s}점=[TOEIC ${t.toeic} / TOEIC Speaking ${t.ts} / OPIc ${t.opic}]`).join(', ');
+}
+
 function makePrompt(empType, job, pdfText) {
   pdfText = pdfText || '';
   const gpaNote = '이력서 학점은 4.5만점 기재 기준으로만 채점(예:3.86/4.5→3.86). 4.5만점 외 기재 시 미기재로 처리.';
@@ -4363,7 +4380,10 @@ function makePrompt(empType, job, pdfText) {
      · 3점: 추상적 표현만, 검증가능 근거 없음
 2. 학력/전공 (30점): 아래 [학력 티어 정의] 기준 채점. ${eduScale(30)}. ${majNote} ⚠️전공무관시 -3점
 3. 학점 가산 (최대+5점 별도): ${gpaNote}
-4. 어학/기타역량 (20점): 토익900↑=18, 800↑=14, 700↑=10, 600↑=6, 없음=2. 제2외국어/IT자격증+2점. ⚠️어학증빙 없으면 2점
+4. 어학/기타역량 (20점): ${langScale()}. 제2외국어(JLPT·HSK 등)/IT자격증 보유시 +2점(항목 합계 20점 초과 불가).
+   ⚠️여러 어학성적 기재 시 가장 높은 1개만 인정(합산 금지)
+   ⚠️이력서에 어학 점수·등급 기재가 없으면 2점
+   ⚠️위 3종(TOEIC·TOEIC Speaking·OPIc) 외 시험(TEPS·IELTS·TOEFL 등)은 임의 환산 금지. 2점 처리하되 reason에 반드시 "환산기준없음: <시험명> <점수>"로 명시할 것
 5. 직무관련자격증 (15점): 관련목록[${relLic}]만. 2개↑=13, 1개=8, 0개=0`;
   }
   return `이력서를 분석하고 JSON만 출력. 직종: ${empType} ${job}
