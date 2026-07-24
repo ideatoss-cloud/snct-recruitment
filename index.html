@@ -1262,6 +1262,7 @@ function _savePromotionDoc(){
 function _loadPromotionDoc(round){ try{ const raw=localStorage.getItem(_promoDocKey(round)); return raw?JSON.parse(raw):null; }catch(e){ return null; } }
 // ✅ v1.2.0: ADMIN_CODE 평문 제거 — _사용자 시트 role='admin'로 검증. 호환 위해 빈 상수 유지 (서서히 코드에서 제거)
 const ADMIN_CODE = ''; // deprecated
+// ✅ v1.2.33 (2026.07.24) — 분기 예시 직종 오염 수정(버그): 4개 직종 블록 공통으로 붙는 "일관성" 지침의 reason 예시에 현장직 신입 분기값(18점)이 하드코딩되어 있어, 다른 직종(사무직 신입은 21점) 채점 시 AI가 분기표에 없는 점수를 산정근거에 쓸 수 있었음. 예시에서 점수를 제거하고 "N단계 분기"로 일반화 + "표에 실제로 적힌 값만 사용" 가드 추가. 채점 배점·분기값 자체는 변경 없음
 // ✅ v1.2.32 (2026.07.24) — 어학 환산 확대(기능): 사무직 신입 어학/기타역량(20점)이 TOEIC(RC/LC) 점수만 인정하여 TOEIC Speaking·OPIc 보유자가 "어학 없음=2점"으로 떨어지던 문제. 단일 출처 LANG_TIERS + langScale()로 TOEIC↔TOEIC Speaking(2022 개정 200점 체계)↔OPIc 3종 대응표 도입(18/14/10/6/2점). 복수 성적은 최고 1개만 인정(합산 금지), 미대응 시험(TEPS·IELTS 등)은 임의 환산 금지하고 reason에 "환산기준없음" 명시 → 운영자 수동 보정 유도. 환산 기준선 작업자 확정(2026.07.24)
 // ✅ v1.2.25 (2026.06.04) — 합의채점 부분실패 허용(기능): callOpenAIConsensus가 n회 중 일부 callOpenAI throw 시 전체 throw하던 것을, 실패 회차는 건너뛰고 성공분으로 진행. 단 SD/신뢰신호 유효성 위해 최소 2회 성공 필수(1회 이하면 기존대로 throw→호출부 재시도). 정상 3회는 기존과 동일, _fit_n에 실제 성공횟수 반영
 // ✅ v1.2.24 (2026.06.04) — 검진PDF 파싱 파라미터 정리(버그): _parseHealthCheckPdf의 max_tokens→max_completion_tokens 교체. OpenAI 공식문서상 max_tokens는 deprecated(max_completion_tokens의 alias, gpt-4o는 현재 동작하나 비권장) → 본체 callOpenAI(gpt-4o=max_completion_tokens 계열)와 일관성 확보. 모델은 PDF file-input 검증된 gpt-4o 유지(단종 시 vision/file 지원 신모델로 교체 필요)
@@ -1291,7 +1292,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.2.32';
+const APP_VERSION = 'v1.2.33';
 const APP_VERSION_DATE = '2026.07.24';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -4399,7 +4400,8 @@ ${reqLic?`⚠️필수자격증: ${reqLic} — 최종취득 여부만 licenses�
 - strengths 각 항목 = score_breakdown의 점수 비율이 80% 이상인 항목의 근거여야 함
 - concerns 각 항목 = score_breakdown의 점수 비율이 50% 미만인 항목의 사유여야 함
 - fit_comment = score_breakdown 점수와 모순되지 않아야 함. 점수 낮은 항목을 fit_comment에서 칭찬하거나 점수 높은 항목을 약점으로 표현 금지
-- score_breakdown.reason = 위 분기점 중 정확히 어느 분기에 해당하는지 명시 (예: "검증가능 근거 2개+직무관련 1개 → 18점 분기")
+- score_breakdown.reason = 위 분기점 중 정확히 어느 분기에 해당하는지 명시 (예: "검증가능 근거 2개+직무관련 1개 → 2단계 분기 적용")
+  ⚠️분기 점수는 위 점수 기준표에 실제로 적힌 값만 사용할 것. 표에 없는 값을 만들어내지 말 것
 
 출력JSON:
 {"name":"이름","age":"만나이(숫자만, 예:30)","birth":"생년월(YYYY.MM. 형식, 예:1996.05.)","contact":"연락처","email":"이메일주소(없으면 빈문자열)","education":"최종학력(대학명포함)","gpa":"학점(숫자만, 예:3.8. 없으면 null)","gpa_scale":"만점기준(4.5만 인정. 없으면 null)","career_years":"총경력","last_company":"최근직장","licenses":"최종취득 자격증 목록만(필기합격·응시중·취득예정은 제외, 최종합격·취득만 인정)","career_history":[{"company":"회사명","position":"직책","period":"재직기간","duration":"재직연수","tasks":"담당업무","relevance":"직무관련성(높음/보통/낮음/없음)"}],"score_breakdown":{"항목명":{"score":점수,"max":최대점수,"reason":"산정근거"}},"fit_score":score_breakdown의 모든 항목 score 합계(가산점 별도 추가 금지),"fit_comment":"항목별근거포함 종합의견 3~4문장","strengths":["강점1","강점2","강점3"],"concerns":["우려1","우려2"],"interview_points":["포인트1","포인트2","포인트3","포인트4"],"loyalty_risk":true또는false,"summary":"한줄요약"}
