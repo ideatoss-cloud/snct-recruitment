@@ -1262,6 +1262,17 @@ function _savePromotionDoc(){
 function _loadPromotionDoc(round){ try{ const raw=localStorage.getItem(_promoDocKey(round)); return raw?JSON.parse(raw):null; }catch(e){ return null; } }
 // ✅ v1.2.0: ADMIN_CODE 평문 제거 — _사용자 시트 role='admin'로 검증. 호환 위해 빈 상수 유지 (서서히 코드에서 제거)
 const ADMIN_CODE = ''; // deprecated
+// ✅ v1.2.34 (2026.07.24) — 채점 정확성 일괄 수정(버그, 재무팀 신입 회차 사전점검분):
+//   [1] licenses 문자열 대응: AI가 배열 대신 "재경관리사, AFPK" 쉼표 문자열을 주면 filterValidLicenses가 1개 원소로 취급 → ①관련자격 2개↑도 1개로 집계돼 -5점 ②문자열에 '필기합격'이 섞이면 목록 전체 삭제(0점). checkRequiredLicense는 이미 split 중이라 비일관이었음. split 추가 + 프롬프트 출력스펙을 배열로 명시
+//   [2] 합의채점 0점 유입: fit_score 누락·문자열("85점") 회차를 `||0`으로 0점 처리해 평균에 섞음([70,72,0]→47). 유효 회차만으로 평균·SD·대표회차 산출, 2회 미만이면 표본부족 throw
+//   [3] 스키마 검증 부재: score_breakdown 없으면 recalcLicenseScore·applyGpaScore가 조기 return으로 통째 스킵 → 자격증·학점 코드보정이 빠진 AI 원점수가 무경고로 순위 진입. consensus 반환 전 검증 후 throw
+//   [4] calcGpaScore가 gpaScale 파라미터를 받고도 미사용 → 4.0/4.3만점 학점을 4.5 기준으로 환산해 부당가산. 4.5 외 만점표기·4.5 초과값은 미기재 처리
+//   [5] 학점가산 fit_score 포함여부 모순(기준표 "별도" vs 출력지시 "가산점 별도 추가 금지") → applyGpaScore가 더한 적 없는 값을 빼서 최대 -5점. 코드 전제(포함)에 맞춰 프롬프트 통일
+//   [6] 관련학과 +3에 항목 상한 없음(만점티어+관련학과=33/30) → 상한 명시 + 표기변형(세무학과·경영학전공) 매칭 명시
+//   [7] "항목별 최고구간은 10% 미만에게만" 지시가 학력·어학·자격증 환산표와 정면충돌(표대로면 만점인데 억제) → 엄격기준은 정성항목에만 적용하도록 범위 한정
+//   [8] 어학 "IH" 중의성(TOEIC Speaking 14점 / OPIc 18점) → 시험명 확인·reason 명시 요구, 불명확 시 낮은 쪽
+//   [9] 일괄분석 1건 실패 시 전체 루프 break → 40건 중 5번째 실패하면 나머지 35건 방치. continue로 전환하되 연속 3건 실패는 전면장애로 보고 중단
+//   [10] PDF 텍스트 추출 실패 건이 사유·재분석버튼 없이 '대기'로만 남아 조용히 누락 → status='error'+analysisError 설정, 종료 시 미분석 명단 토스트
 // ✅ v1.2.33 (2026.07.24) — 분기 예시 직종 오염 수정(버그): 4개 직종 블록 공통으로 붙는 "일관성" 지침의 reason 예시에 현장직 신입 분기값(18점)이 하드코딩되어 있어, 다른 직종(사무직 신입은 21점) 채점 시 AI가 분기표에 없는 점수를 산정근거에 쓸 수 있었음. 예시에서 점수를 제거하고 "N단계 분기"로 일반화 + "표에 실제로 적힌 값만 사용" 가드 추가. 채점 배점·분기값 자체는 변경 없음
 // ✅ v1.2.32 (2026.07.24) — 어학 환산 확대(기능): 사무직 신입 어학/기타역량(20점)이 TOEIC(RC/LC) 점수만 인정하여 TOEIC Speaking·OPIc 보유자가 "어학 없음=2점"으로 떨어지던 문제. 단일 출처 LANG_TIERS + langScale()로 TOEIC↔TOEIC Speaking(2022 개정 200점 체계)↔OPIc 3종 대응표 도입(18/14/10/6/2점). 복수 성적은 최고 1개만 인정(합산 금지), 미대응 시험(TEPS·IELTS 등)은 임의 환산 금지하고 reason에 "환산기준없음" 명시 → 운영자 수동 보정 유도. 환산 기준선 작업자 확정(2026.07.24)
 // ✅ v1.2.25 (2026.06.04) — 합의채점 부분실패 허용(기능): callOpenAIConsensus가 n회 중 일부 callOpenAI throw 시 전체 throw하던 것을, 실패 회차는 건너뛰고 성공분으로 진행. 단 SD/신뢰신호 유효성 위해 최소 2회 성공 필수(1회 이하면 기존대로 throw→호출부 재시도). 정상 3회는 기존과 동일, _fit_n에 실제 성공횟수 반영
@@ -1292,7 +1303,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.2.33';
+const APP_VERSION = 'v1.2.34';
 const APP_VERSION_DATE = '2026.07.24';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -2430,6 +2441,7 @@ async function analyzeAll() {
   const anaBtnRef = document.getElementById('anaBtn');
   if(anaBtnRef) anaBtnRef.disabled = true;
   const pending = applicants.filter(a=>a.status!=='done' && a.status!=='error');
+  let consecutiveFail = 0; // ✅ v1.2.34: 전면 장애 감지용 (연속 실패 3건이면 중단)
   for (let i=0; i<pending.length; i++) {
     const a = pending[i];
     a.empType=empType; a.job=job; a.status='ing'; renderAlist();
@@ -2440,7 +2452,12 @@ async function analyzeAll() {
         const pdfText = await extractPdfText(a.b64);
         // 텍스트 추출 실패 시 환각 방지: 분석 중단
         if (!pdfText || pdfText.includes('(PDF 텍스트 추출') || pdfText.length < 50) {
-          a.status = 'wait';
+          // ✅ v1.2.34: 기존엔 status='wait'에 사유(analysisError) 미설정이라, 일괄 분석 중이면
+          //   다음 지원자 스피너가 이 안내 패널을 즉시 덮어써 목록엔 '대기'로만 남았다.
+          //   왜 빠졌는지 알 수 없고 재분석 버튼도 안 떠서 지원자가 조용히 누락될 수 있었다.
+          //   reanalyzeOne은 이미 'error'로 처리하고 있어 두 경로가 비일관했던 것도 함께 정리.
+          a.status = 'error';
+          a.analysisError = 'PDF 텍스트 추출 실패 — 이미지 스캔본이거나 보안 걸린 파일 (한글/Word에서 PDF로 다시 저장 후 재업로드)';
           a.result = null;
           renderAlist();
           setPanel(`<div class="card"><div class="ct" style="color:var(--red)">⚠️ PDF 텍스트 추출 실패</div>
@@ -2491,7 +2508,19 @@ async function analyzeAll() {
         else { a.status='error'; a.analysisError=e.message; renderAlist(); setPanel(`<div class="card"><div class="ct" style="color:var(--red)">⚠️ 분석 중단</div><div style="font-size:15px;line-height:1.9"><b>${a.name.replace('.pdf','')}</b> 실패<br><br>${e.message}</div><hr class="dv"><button class="btn btn-p" onclick="reanalyzeOne('${a.id}')">🔄 이 지원자만 재분석</button>&nbsp;<button class="btn btn-o" onclick="analyzeAll()">▶ 나머지 계속</button></div>`); break; }
       }
     }
-    if (!success) break;
+    // ✅ v1.2.34: 기존엔 1건만 실패해도 전체 루프를 break — 40건 일괄 분석 중 5번째가 실패하면
+    //   나머지 35건이 사람이 "▶ 나머지 계속"을 누를 때까지 대기 상태로 방치됐다(무인 진행 불가).
+    //   실패 건은 이미 status='error'+재분석 버튼으로 남으므로 다음 건으로 넘어간다.
+    //   단 인증오류·GAS 장애 같은 전면 장애는 계속 돌릴 이유가 없으므로 연속 3건 실패 시 중단.
+    if (!success) {
+      consecutiveFail++;
+      if (consecutiveFail >= 3) {
+        toast(`연속 ${consecutiveFail}건 실패 — 전체 장애로 판단하고 중단합니다. 오류 내용을 확인해 주세요`, 'err');
+        break;
+      }
+      continue;
+    }
+    consecutiveFail = 0;
   }
   const ab=document.getElementById('anaBtn'),sb=document.getElementById('saveBtn');
   if(ab) ab.disabled=false; if(sb) sb.disabled=false;
@@ -2511,6 +2540,14 @@ async function analyzeAll() {
       const sb2 = document.getElementById('saveBtn');
       if (sb2) { sb2.style.animation='pulse 1.2s ease 4'; sb2.textContent='☁️ 구글 시트에 저장 ← 클릭!'; }
     }
+  }
+  // ✅ v1.2.34: 미분석 지원자 명단을 종료 시 한 번에 명시. 기존엔 "(N명 건너뜀)" 숫자만 떠서
+  //   누가 왜 빠졌는지 알 수 없었다. 상위 N명 컷 방식에서는 누락 = 조용한 탈락이라 치명적.
+  const failedList = applicants.filter(a => a.status === 'error' || a.status === 'wait');
+  if (failedList.length) {
+    const names = failedList.map(a => (a.result?.name || a.name.replace('.pdf',''))).join(', ');
+    toast(`⚠️ 미분석 ${failedList.length}명 — 목록에서 🔄 재분석 필요: ${names}`, 'err');
+    console.warn('[v1.2.34] 미분석 지원자:', failedList.map(a => ({ 파일: a.name, 사유: a.analysisError || '(사유 없음)' })));
   }
 }
 // ── 메모 캐시 ──
@@ -4172,12 +4209,19 @@ async function callOpenAIConsensus(prompt, n = 3) {
   }
   // ✅ v1.2.25: 부분실패 허용 — 단 SD/신뢰신호 유효성 위해 최소 2회 성공 필수. 1회 이하면 기존처럼 throw(호출부가 rate/overload 재시도)
   if (results.length < 2) throw (lastErr || new Error(`합의채점 표본부족 (${results.length}/${n}회 성공)`));
-  const scores = results.map(r => Number(r && r.fit_score) || 0);
+  // ✅ v1.2.34: fit_score가 없거나 숫자가 아닌(예: "85점") 회차를 0점으로 평균에 섞던 문제 차단.
+  //   [70,72,0] → 평균 47점으로 뭉개져 상위 N 컷에서 조용히 탈락할 수 있었다.
+  //   유효 회차만으로 평균·SD·대표회차를 산출하고, 2회 미만이면 표본부족 throw(호출부 재시도).
+  const valid = results
+    .map(r => ({ r, s: Number(r && r.fit_score) }))
+    .filter(x => Number.isFinite(x.s) && x.s >= 0 && x.s <= 100);
+  if (valid.length < 2) throw (lastErr || new Error(`합의채점 유효표본 부족 (${valid.length}/${results.length}회 — fit_score 누락 또는 형식오류)`));
+  const scores = valid.map(x => x.s);
   const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
   // 평균에 가장 가까운 회차를 대표(medoid)로 — 점수와 정성근거의 일관성 유지
   let repIdx = 0, minDiff = Infinity;
   scores.forEach((s, i) => { const d = Math.abs(s - avg); if (d < minDiff) { minDiff = d; repIdx = i; } });
-  const rep = results[repIdx] || {};
+  const rep = valid[repIdx].r;
   const sd = Math.sqrt(scores.reduce((a, b) => a + (b - avg) ** 2, 0) / scores.length);
   rep._fit_scores = scores;                  // 회차별 원점수 (예: [46,46,47])
   rep._fit_avg = Math.round(avg * 10) / 10;  // 평균 (46.3)
@@ -4185,6 +4229,12 @@ async function callOpenAIConsensus(prompt, n = 3) {
   rep._fit_raw = Number(rep.fit_score) || 0; // 대표회차 원점수
   rep._fit_n = scores.length;                // 호출 횟수
   rep.fit_score = Math.round(avg);           // 평균(반올림)을 메인 점수로
+  // ✅ v1.2.34: 결과 스키마 최소 검증. score_breakdown이 없으면 후처리(recalcLicenseScore·
+  //   applyGpaScore)가 조기 return으로 통째로 스킵되어, 자격증·학점 코드보정이 빠진
+  //   AI 원점수가 경고 없이 순위에 들어갔다. 여기서 throw해야 호출부가 error 처리 → 재분석 유도.
+  if (!rep.score_breakdown || typeof rep.score_breakdown !== 'object' || !Object.keys(rep.score_breakdown).length) {
+    throw new Error('채점 결과에 score_breakdown이 없습니다 — 재분석이 필요합니다');
+  }
   console.log(`[v1.2.20] 합의채점 ${scores.length}회: [${scores.join(', ')}] → 평균 ${rep.fit_score} (SD ${rep._fit_sd})`);
   return rep;
 }
@@ -4209,6 +4259,17 @@ function calcGpaScore(gpa, gpaScale, isFieldFreshman) {
   if (!gpa || gpa === null) return { converted: null, score: 0, reason: '학점 미기재' };
   const raw = parseFloat(gpa);
   if (isNaN(raw)) return { converted: null, score: 0, reason: '학점 파싱 불가' };
+
+  // ✅ v1.2.34: gpaScale을 파라미터로 받고도 본문에서 쓰지 않아, AI가 프롬프트 지시를 어기고
+  //   4.0·4.3만점 학점을 그대로 넣으면 4.5 기준으로 환산되어 부당 가산되던 문제
+  //   (예: 3.8/4.0 → +3점. 지원서 안내상 미기재 처리가 맞음).
+  const scaleNum = (gpaScale === null || gpaScale === undefined || gpaScale === '') ? null : parseFloat(gpaScale);
+  if (scaleNum !== null && !isNaN(scaleNum) && Math.abs(scaleNum - 4.5) > 0.01) {
+    return { converted: null, score: 0, reason: `만점기준 ${scaleNum} — 4.5만점 외 기재로 미기재 처리 (원본 확인 필요)` };
+  }
+  if (raw > 4.5) {
+    return { converted: null, score: 0, reason: `학점 ${raw} — 4.5만점 초과값으로 환산 불가, 미기재 처리 (원본 확인 필요)` };
+  }
 
   // 4.5만점 기준으로만 채점 (지원서 4.5기준 기재 안내)
   const converted = raw;
@@ -4322,12 +4383,16 @@ function langScale(){
 
 function makePrompt(empType, job, pdfText) {
   pdfText = pdfText || '';
-  const gpaNote = '이력서 학점은 4.5만점 기재 기준으로만 채점(예:3.86/4.5→3.86). 4.5만점 외 기재 시 미기재로 처리.';
+  const gpaNote = '이력서 학점은 4.5만점 기재 기준으로만 채점(예:3.86/4.5→3.86). 4.5만점 외 기재 시 미기재로 처리. score_breakdown에 "학점가산" 항목으로 넣고 fit_score 합계에도 포함할 것.';
   const isField = ['크레인기사','전기정비기사','기계정비기사'].includes(job);
   const relLic = (RELATED_LICENSES[job]||[]).join(', ')||'없음';
   const reqLic = REQUIRED_LICENSES[job] || null;
   const relMaj = (RELATED_MAJORS[job]||[]).join(', ')||null; // 관련 학과 (크레인기사=null)
-  const majNote = relMaj ? `관련학과[${relMaj} 등 포함 전공]=+3점 가산` : '학과 무관';
+  // ✅ v1.2.34: ①+3 가산에 항목 상한이 없어 만점 티어+관련학과가 배점을 초과할 수 있었음
+  //   ②"등 포함 전공"이 암시적이라 "세무학과"·"경영학전공" 같은 표기 변형 매칭이 불확실했음
+  const majNote = relMaj
+    ? `관련학과=+3점 가산(학과명에 [${relMaj}] 중 하나가 포함되면 인정. 예: 세무학과·경영학전공·회계정보학과. 단 해당 항목 배점 상한 초과 불가)`
+    : '학과 무관';
   let criteria = '';
   if (isField && empType==='경력') {
     criteria=`【현장직 경력 점수 기준 (100점)】
@@ -4335,7 +4400,7 @@ function makePrompt(empType, job, pdfText) {
 2. 직무관련자격증 (30점): 관련목록[${relLic}]만 인정. 3개↑=27, 2개=20, 1개=12, 0개=0. ⚠️만점은 3개이상+고난도자격증 보유시만
 3. 물류/항만업계경험 (20점): 5년↑=17, 3~5=13, 1~3=9, 1년미만=4, 없음=0. ⚠️단순 물류창고는 3점 감산
 4. 학력 (10점): 아래 [학력 티어 정의] 기준 채점. ${eduScale(10)}. ${majNote} ${EDU_FIELD_NOTE}
-5. 학점 가산 (최대+5점 별도): ${gpaNote}`;
+5. 학점 가산 (최대+5점, 위 항목 배점과 겹치지 않는 별도 가산항목): ${gpaNote}`;
   } else if (isField && empType==='신입') {
     criteria=`【현장직 신입 점수 기준 (100점)】
 1. 직무관련자격증 (30점): 관련목록[${relLic}]만 인정. 3개↑=27, 2개=20, 1개=11, 0개=0. ⚠️만점은 3개이상 보유시만
@@ -4366,7 +4431,7 @@ function makePrompt(empType, job, pdfText) {
      · 3점: 추상적·근거 없음
 3. 물류/항만업계경험 (20점): 5년↑=17, 3~5=13, 1~3=9, 1년미만=4, 없음=0
 4. 학력 (15점): 아래 [학력 티어 정의] 기준 채점. ${eduScale(15)}. ${majNote}
-5. 학점 가산 (최대+5점 별도): ${gpaNote}`;
+5. 학점 가산 (최대+5점, 위 항목 배점과 겹치지 않는 별도 가산항목): ${gpaNote}`;
   } else {
     criteria=`【사무직 신입 점수 기준 (100점)】
 1. 성장가능성/잠재역량 (35점): 자소서/인턴/동아리/수상 기반.
@@ -4380,9 +4445,10 @@ function makePrompt(empType, job, pdfText) {
      · 8점: 동아리·봉사 정도만, 차별성·직무관련성 없음
      · 3점: 추상적 표현만, 검증가능 근거 없음
 2. 학력/전공 (30점): 아래 [학력 티어 정의] 기준 채점. ${eduScale(30)}. ${majNote} ⚠️전공무관시 -3점
-3. 학점 가산 (최대+5점 별도): ${gpaNote}
+3. 학점 가산 (최대+5점, 위 항목 배점과 겹치지 않는 별도 가산항목): ${gpaNote}
 4. 어학/기타역량 (20점): ${langScale()}. 제2외국어(JLPT·HSK 등)/IT자격증 보유시 +2점(항목 합계 20점 초과 불가).
    ⚠️여러 어학성적 기재 시 가장 높은 1개만 인정(합산 금지)
+   ⚠️등급 표기는 시험별로 뜻이 다르다("IH"는 TOEIC Speaking에선 14점, OPIc에선 18점). 반드시 이력서에 적힌 시험명을 확인해 해당 열로 채점하고, reason에 "<시험명> <점수·등급> → N점" 형식으로 남길 것. 시험명이 불명확하면 낮은 쪽으로 채점
    ⚠️이력서에 어학 점수·등급 기재가 없으면 2점
    ⚠️위 3종(TOEIC·TOEIC Speaking·OPIc) 외 시험(TEPS·IELTS·TOEFL 등)은 임의 환산 금지. 2점 처리하되 reason에 반드시 "환산기준없음: <시험명> <점수>"로 명시할 것
 5. 직무관련자격증 (15점): 관련목록[${relLic}]만. 2개↑=13, 1개=8, 0개=0`;
@@ -4394,7 +4460,8 @@ ${criteria}
 ${EDU_LEGEND}
 
 ${reqLic?`⚠️필수자격증: ${reqLic} — 최종취득 여부만 licenses에 포함. 필기합격·응시중은 미보유로 처리할 것
-`:''}⚠️매우 엄격하게 채점: 70점 이상은 각 항목에서 탁월한 조건을 모두 갖춘 경우만 가능. 항목별 최고구간(만점)은 10% 미만의 최상위 지원자에게만 부여. 보통 지원자=50점대, 미흡=30점대이하. 자격증은 최종취득만 인정(필기합격·응시중=0점). 관련없는경력·자격증=0점. 근거 불충분 항목은 반드시 낮게 채점.
+`:''}⚠️매우 엄격하게 채점: 70점 이상은 각 항목에서 탁월한 조건을 모두 갖춘 경우만 가능. 보통 지원자=50점대, 미흡=30점대이하. 자격증은 최종취득만 인정(필기합격·응시중=0점). 관련없는경력·자격증=0점. 근거 불충분 항목은 반드시 낮게 채점.
+⚠️단, 위 "엄격하게" 지침은 근거를 해석해야 하는 정성 항목(성장가능성·직무전문성 등)에만 적용한다. 학력·어학·자격증·학점처럼 위에 환산표나 개수 기준이 정해진 항목은 표에 적힌 값을 그대로 기계적으로 부여할 것 — 엄격 기준을 이유로 표보다 낮게 주지 말 것.
 
 ⚠️일관성 (필수):
 - strengths 각 항목 = score_breakdown의 점수 비율이 80% 이상인 항목의 근거여야 함
@@ -4404,7 +4471,7 @@ ${reqLic?`⚠️필수자격증: ${reqLic} — 최종취득 여부만 licenses�
   ⚠️분기 점수는 위 점수 기준표에 실제로 적힌 값만 사용할 것. 표에 없는 값을 만들어내지 말 것
 
 출력JSON:
-{"name":"이름","age":"만나이(숫자만, 예:30)","birth":"생년월(YYYY.MM. 형식, 예:1996.05.)","contact":"연락처","email":"이메일주소(없으면 빈문자열)","education":"최종학력(대학명포함)","gpa":"학점(숫자만, 예:3.8. 없으면 null)","gpa_scale":"만점기준(4.5만 인정. 없으면 null)","career_years":"총경력","last_company":"최근직장","licenses":"최종취득 자격증 목록만(필기합격·응시중·취득예정은 제외, 최종합격·취득만 인정)","career_history":[{"company":"회사명","position":"직책","period":"재직기간","duration":"재직연수","tasks":"담당업무","relevance":"직무관련성(높음/보통/낮음/없음)"}],"score_breakdown":{"항목명":{"score":점수,"max":최대점수,"reason":"산정근거"}},"fit_score":score_breakdown의 모든 항목 score 합계(가산점 별도 추가 금지),"fit_comment":"항목별근거포함 종합의견 3~4문장","strengths":["강점1","강점2","강점3"],"concerns":["우려1","우려2"],"interview_points":["포인트1","포인트2","포인트3","포인트4"],"loyalty_risk":true또는false,"summary":"한줄요약"}
+{"name":"이름","age":"만나이(숫자만, 예:30)","birth":"생년월(YYYY.MM. 형식, 예:1996.05.)","contact":"연락처","email":"이메일주소(없으면 빈문자열)","education":"최종학력(대학명포함)","gpa":"학점(숫자만, 예:3.8. 없으면 null)","gpa_scale":"만점기준(4.5만 인정. 없으면 null)","career_years":"총경력","last_company":"최근직장","licenses":["최종취득 자격증명만 한 개씩 배열 원소로. 필기합격·응시중·취득예정은 제외하고 최종합격·취득만. 쉼표로 이어붙인 한 개의 문자열로 반환 금지"],"career_history":[{"company":"회사명","position":"직책","period":"재직기간","duration":"재직연수","tasks":"담당업무","relevance":"직무관련성(높음/보통/낮음/없음)"}],"score_breakdown":{"항목명":{"score":점수,"max":최대점수,"reason":"산정근거"}},"fit_score":score_breakdown의 모든 항목 score를 그대로 더한 단순합계(학점가산 등 위 기준표의 가산 항목도 score_breakdown에 항목으로 넣고 이 합계에 포함할 것. score_breakdown에 없는 임의 가점을 따로 더하는 것만 금지),"fit_comment":"항목별근거포함 종합의견 3~4문장","strengths":["강점1","강점2","강점3"],"concerns":["우려1","우려2"],"interview_points":["포인트1","포인트2","포인트3","포인트4"],"loyalty_risk":true또는false,"summary":"한줄요약"}
 
 ⚠️중요: 이력서 원문에 실제로 기재된 내용만 사용. 없는 정보는 절대 추측·창작 금지. 불명확한 항목은 "-"로 표기.
 
@@ -7253,9 +7320,16 @@ async function exportExcel() {
 // ── 필기합격·응시중 자격증 필터링 ──
 function filterValidLicenses(licenses) {
   if (!licenses) return [];
-  const list = Array.isArray(licenses) ? licenses : [licenses];
+  // ✅ v1.2.34: AI가 배열 대신 "재경관리사, AFPK" 쉼표 문자열로 반환하는 경우 대응.
+  //   기존엔 문자열 전체가 1개 원소가 되어 ① 관련자격 2개↑여도 1개로 집계(점수 하향)
+  //   ② 문자열 어딘가에 '필기합격'이 있으면 목록 전체가 삭제되는 문제가 있었다.
+  //   checkRequiredLicense(아래)는 이미 쉼표 split을 하고 있어 두 함수가 비일관했다.
+  const list = Array.isArray(licenses)
+    ? licenses
+    : String(licenses).split(/[,，、;·\n]+/);
   const invalid = /필기합격|필기$|응시중|취득예정|준비중|공부중|시험중|취득중|합격예정/;
-  return list.filter(function(l) { return l && !invalid.test(l.trim()); });
+  return list.map(function(l){ return String(l || '').trim(); })
+             .filter(function(l) { return l && !invalid.test(l); });
 }
 
 function recalcLicenseScore(result, relLicList) {
