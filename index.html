@@ -5282,6 +5282,21 @@ async function doConfirmInterviewees() {
     const res=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({action:'confirmInterviewees',userEmail: currentUserEmail,round,confirmed})});
     const data=await res.json();
     if(data.success){toast('면접 확정 완료 ✅','ok');loadAdminResults();showConfirmedBanner(confirmed,data.confirmedTime||'');}
+    // ✅ v1.2.35: GAS confirmInterviewees는 확정 플래그를 '{회차}_집계' 시트에 기록하는데,
+    //   이 시트는 투표 제출(submitVotes→updateSummary) 때만 생성된다. 투표를 완전히 생략하면
+    //   '집계 시트 없음'으로 실패하므로, 원인과 해결 절차를 그 자리에서 알려준다.
+    else if(String(data.message||'').includes('집계 시트')){
+      toast('확정 실패: 투표 기록이 없어 집계 시트가 없습니다','err');
+      alert('면접 확정을 저장할 수 없습니다.\n\n'
+        + '[원인] 확정 정보는 회차 집계 시트에 기록되는데, 이 시트는 투표가 1건이라도\n'
+        + '제출되어야 만들어집니다. 투표를 완전히 생략하면 저장할 곳이 없습니다.\n\n'
+        + '[해결] 관리자가 직접 한 번 투표를 제출하면 됩니다.\n'
+        + '  1. [지원서 검토] 탭 → [✅ 면접대상 선정] 서브탭\n'
+        + '  2. 면접 보실 상위 N명을 "면접대상"으로 선택 (나머지는 그대로 두세요)\n'
+        + '  3. [투표 제출] 클릭\n'
+        + '  4. 이 탭으로 돌아와 다시 [면접 대상자 확정]\n\n'
+        + '※ 관리자 1명의 투표로 충분하며, 면접관에게 투표를 요청할 필요는 없습니다.');
+    }
     else toast('실패: '+data.message,'err');
   }catch(e){toast('실패: '+e.message,'err');}
 }
