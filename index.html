@@ -464,9 +464,6 @@ hr.dv{border:none;border-top:1px solid var(--bd);margin:13px 0;}
     <button class="api-btn" id="apiBtn" onclick="openApi()" style="display:none">
       <div class="dot" id="apidot"></div><span id="apistat">API 설정</span>
     </button>
-    <!-- ✅ v1.2.4: 테스트 페이지 진입 (관리자만, 같은 페이지 새 탭으로 열림) -->
-    <a id="testPageBtn" href="./test.html" target="_blank" rel="noopener" title="자동 검증 페이지 (별도 탭)"
-       style="display:none;text-decoration:none;padding:7px 12px;background:rgba(245,158,11,0.10);border:1px solid rgba(245,158,11,0.40);color:#f59e0b;border-radius:6px;font-size:12px;font-weight:600;margin-left:6px">🧪 검증</a>
   </div>
 </header>
 
@@ -1427,7 +1424,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.2.51';
+const APP_VERSION = 'v1.2.52';
 const APP_VERSION_DATE = '2026.07.27';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -1688,7 +1685,6 @@ function restoreSession() {
   if (t6el) t6el.style.display = isAdmin ? 'flex' : 'none';
   document.getElementById('apiBtn').style.display = isAdmin ? 'flex' : 'none';
   // ✅ v1.2.4: 테스트 페이지 진입 버튼 (관리자만)
-  const _testBtn = document.getElementById('testPageBtn');
   if (_testBtn) _testBtn.style.display = isAdmin ? 'inline-block' : 'none';
   document.getElementById('notifWrap').style.display = 'block';
   const uploadCard = document.getElementById('uploadCard');
@@ -1930,7 +1926,6 @@ function finishLogin() {
   if (t6el2) t6el2.style.display = isAdmin ? 'flex' : 'none';
   document.getElementById('apiBtn').style.display = isAdmin ? 'flex' : 'none';
   // ✅ v1.2.4: 테스트 페이지 진입 버튼 (관리자만)
-  const _testBtn = document.getElementById('testPageBtn');
   if (_testBtn) _testBtn.style.display = isAdmin ? 'inline-block' : 'none';
   document.getElementById('notifWrap').style.display = 'block';
   const uploadCard = document.getElementById('uploadCard');
