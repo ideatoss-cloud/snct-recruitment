@@ -1263,6 +1263,18 @@ function _savePromotionDoc(){
 function _loadPromotionDoc(round){ try{ const raw=localStorage.getItem(_promoDocKey(round)); return raw?JSON.parse(raw):null; }catch(e){ return null; } }
 // ✅ v1.2.0: ADMIN_CODE 평문 제거 — _사용자 시트 role='admin'로 검증. 호환 위해 빈 상수 유지 (서서히 코드에서 제거)
 const ADMIN_CODE = ''; // deprecated
+// ✅ v1.2.44 (2026.07.27) — 성별·학력 판정 보완(작업자 지적 2건):
+//   [1] 구양식(2015년) 지원서에는 병역란이 아예 없어 체크박스 판정이 불가하다.
+//       신제승("공군 복무 시절"·"전역 후")·장도윤("군 복무 중")은 본문에 서술이 있는데도
+//       성별이 비었다. v1.2.40의 "체크 표시된 항목만 근거로 삼을 것" 제약이 본문 서술
+//       규칙까지 눌러버린 것으로 보인다. → MALE_SERVICE 정규식으로 코드에서 확정.
+//       근거는 '병역'으로 표기(여군·군무원 가능성이 있어 100% 확정은 아님).
+//       임지훈은 본문에도 군 복무 서술이 없어 텍스트로는 판정 불가 — 사진 또는 수동 확인 필요.
+//   [2] 최저학력 판정이 문자열 전체를 한 덩어리로 봐서 '학부 졸업 + 대학원 재학'이
+//       탈락 처리됐다(이예원 MBA 재학). 재학 학교의 하위 학력을 고졸·전문대에서만 찾은 탓.
+//       → 학교 단위로 조각내 '재학중인 학교'만 제외하고 나머지로 판정.
+//       대학원·MBA 재학은 학사 학위가 입학 요건이므로 대졸 보유로 인정.
+//       '고교 졸업 + 대학 재학'(정하영)은 그대로 고졸로 판정되어 탈락 유지.
 // ✅ v1.2.43 (2026.07.27) — 여대·여고 기반 성별 확정(작업자 지적):
 //   여자대학교·여자고등학교 학부/고교는 여성만 입학하므로 사진 없이도 성별이 확정된다.
 //   사진 판독은 '추정'이지만 이건 '사실'이라 사진 결과보다 우선 적용한다.
@@ -1375,7 +1387,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.2.43';
+const APP_VERSION = 'v1.2.44';
 const APP_VERSION_DATE = '2026.07.27';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -3199,8 +3211,10 @@ async function loadFromSheet() {
       else if(!bonusScores[a.id]) bonusScores[a.id]={};
       if(a.result?.name) a.result.name=a.result.name.replace(/\s+/g,'');
       if(a.result && a.status !== 'done') a.status = 'done';
-      // ✅ v1.2.43: 여대·여고 성별 확정은 AI가 아니라 학교명 문자열로 판정하므로
-      //   이미 분석된 회차를 불러올 때도 재분석 없이(=API 비용 0) 즉시 적용된다.
+      // ✅ v1.2.43~44: 여대·여고 및 본문 군 복무 서술 기반 성별 확정은 AI가 아니라
+      //   문자열로 판정하므로, 이미 분석된 회차를 불러올 때도 재분석 없이(=API 비용 0) 적용된다.
+      //   ⚠️pdfText는 저장 대상이 아니라 불러온 회차엔 없다 → 정성필드(강점·우려·총평)만으로 판정.
+      applyServiceGender(a.result, '');
       applySchoolGender(a.result);
     });
     // LS 저장
@@ -4518,6 +4532,27 @@ function applySchoolGender(result) {
   }
 }
 
+// ✅ v1.2.44: 본문의 군 복무 서술로 성별 확정 (코드 판정 — AI 판단에 맡기지 않는다)
+//   구양식(2015년) 지원서에는 병역란 자체가 없어 체크박스로는 판정이 불가하다.
+//   실사례: 신제승("공군 복무 시절", "전역 후"), 장도윤("군 복무 중", "전역 후") — 본문에
+//   서술이 있는데도 성별이 비었다. v1.2.40에서 넣은 "체크 표시된 항목만 근거로 삼을 것"
+//   제약이 본문 서술 규칙(④)까지 눌러버린 것으로 보인다.
+//   ⚠️여군·군무원 가능성이 있어 100% 확정은 아니므로 근거를 '병역'으로 표기해 확인 가능하게 둔다.
+const MALE_SERVICE = /(공군|육군|해군|해병대|의무경찰|의경|사회복무요원|산업기능요원)\s*(복무|생활|전역|만기)|군\s*복무|군\s*생활|전역\s*(후|하|했|하고)|만기\s*제대|병장\s*(만기|으로|예편)|현역\s*(입대|복무)/;
+function applyServiceGender(result, extraText) {
+  if (!result || String(result.gender || '').trim()) return;   // 이미 판정됐으면 건드리지 않음
+  const t = [extraText || '',
+             (result.strengths || []).join(' '),
+             (result.concerns || []).join(' '),
+             result.fit_comment || '', result.summary || ''].join(' ');
+  if (!t.trim()) return;
+  if (MALE_SERVICE.test(t)) {
+    result.gender = '남';
+    result.gender_basis = '병역';
+    result.gender_conf = '';
+  }
+}
+
 // 사진 판별을 시도해 result.gender를 갱신한다. 사진이 없거나 실패하면 기존(병역 기반) 값을 그대로 둔다.
 async function applyPhotoGender(a) {
   if (!a || !a.result) return;
@@ -4535,7 +4570,9 @@ async function applyPhotoGender(a) {
       console.warn('[v1.2.40] 사진 성별 판별 실패 — 기존 값 유지:', e.message);
     }
   }
-  // 여대·여고는 사진보다 확실한 근거이므로 맨 마지막에 덮어쓴다
+  // ✅ v1.2.44: 아직 비어 있으면 본문 군 복무 서술로 보완 (구양식엔 병역란이 없다)
+  applyServiceGender(a.result, a.pdfText || '');
+  // 여대·여고는 사진·병역보다 확실한 근거이므로 맨 마지막에 덮어쓴다
   applySchoolGender(a.result);
 }
 
@@ -4819,22 +4856,43 @@ function checkEduDisqualify(eduStr,job){
   const minEdu=minEduSettings[job]||'고졸';
   const minIdx=EDU_RANKS.indexOf(minEdu);
 
-  // 졸업예정은 졸업으로 인정 / 재학·휴학·수료만 있으면 해당 학력 미취득으로 본다
-  const enrolledOnly = /재학|휴학|수료/.test(s) && !/졸업\s*예정/.test(s);
+  // ✅ v1.2.44: 판정 기준은 "실제로 취득한 학력"이다.
+  //   [1] 졸업·학위·졸업예정 표기가 하나라도 있으면 취득 학력이 있는 것으로 보고 정상 판정
+  //   [2] 졸업 흔적 없이 '재학'만 있으면 미취득 —
+  //       단 대학원·MBA는 학사 학위가 입학 요건이므로 '대학원 재학'은 대졸 보유로 인정한다
+  //       (v1.2.41에서 하위 학력을 고졸·전문대에서만 찾아, '학부 졸업 + MBA 재학'인
+  //        이예원이 탈락 처리되던 버그)
+  // 학교 단위로 쪼개 '재학중인 학교'만 골라 제외한다.
+  //   문자열 전체를 한 덩어리로 보면 '고교 졸업 + 대학 재학'에서 대학 등급을 잘못 인정하게 된다.
+  const segs = s.split(/[,/·;·\n]|\s{2,}/).map(x => x.trim()).filter(Boolean);
+  const gradSchoolRe = /대학원|MBA|경영전문|석사|박사/;
+  const rankOf = t =>
+      gradSchoolRe.test(t) ? 3
+    : ((/4년제|대학교|대졸/.test(t) || /[가-힣]{2,}대(?![학문])/.test(t)) && !/전문대/.test(t)) ? 2
+    : /전문대|2년제|3년제/.test(t) ? 1
+    : /고등학교|고졸|검정고시/.test(t) ? 0 : -1;
 
-  let rank=-1;
-  if(/대학원|석사|박사/.test(s)) rank=3;
-  // '대학교' 외에 '○○대' 축약 표기도 인식 (전문대는 아래에서 별도 처리)
-  else if((/4년제|대학교|대졸/.test(s) || /[가-힣]{2,}대(?![학문])/.test(s)) && !/전문대/.test(s)) rank=2;
-  else if(/전문대|2년제|3년제/.test(s)) rank=1;
-  else if(/고등학교|고졸|검정고시/.test(s)) rank=0;
-
-  if(enrolledOnly && rank>0){
-    // 재학중인 학교는 미인정 → 문자열에 남은 '확정된' 하위 학력으로 다시 판정
-    const lower = /고등학교|고졸|검정고시/.test(s) ? 0 : (/전문대|2년제|3년제/.test(s) ? 1 : -1);
-    if(lower === -1) return {fail:true, reason:`재학중(졸업예정 아님) — 취득 학력 확인 불가, 기준 ${EDU_LABELS[minEdu]} 미충족`};
-    rank = lower;
+  let rank = -1, gradEnrolled = false;
+  for (const seg of segs) {
+    const r = rankOf(seg);
+    if (r < 0) continue;
+    const isEnrolled = /재학|휴학|수료/.test(seg) && !/졸업\s*예정/.test(seg);
+    if (isEnrolled) {
+      // 대학원·MBA 재학은 학사 학위가 입학 요건 → 대졸 보유로 인정 (이예원 케이스)
+      if (gradSchoolRe.test(seg)) gradEnrolled = true;
+      continue;                       // 재학중인 학교 자체는 취득 학력으로 인정하지 않음
+    }
+    if (r > rank) rank = r;
   }
+  if (gradEnrolled && rank < 2) rank = 2;
+
+  // 조각 분리가 안 되는 표기(구분자 없음)를 위한 보정 — 졸업 흔적이 전혀 없고 재학만 있으면 미취득
+  if (rank === -1 && /재학|휴학|수료/.test(s) && !/졸업|학위|학사/.test(s)) {
+    const whole = rankOf(s);
+    if (gradSchoolRe.test(s)) rank = 2;
+    else if (whole > 0) return {fail:true, reason:`재학중(졸업예정 아님) — 취득 학력 확인 불가, 기준 ${EDU_LABELS[minEdu]} 미충족`};
+  }
+  if (rank === -1) rank = rankOf(s);   // 그 외에는 전체 문자열로 판정
 
   if(rank===-1) return {fail:false,reason:'판별불가(통과)'};
   if(rank<minIdx) return {fail:true,reason:`최저학력 미달 (${EDU_LABELS[EDU_RANKS[rank]]} < 기준 ${EDU_LABELS[minEdu]})`};
