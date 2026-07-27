@@ -1262,6 +1262,11 @@ function _savePromotionDoc(){
 function _loadPromotionDoc(round){ try{ const raw=localStorage.getItem(_promoDocKey(round)); return raw?JSON.parse(raw):null; }catch(e){ return null; } }
 // ✅ v1.2.0: ADMIN_CODE 평문 제거 — _사용자 시트 role='admin'로 검증. 호환 위해 빈 상수 유지 (서서히 코드에서 제거)
 const ADMIN_CODE = ''; // deprecated
+// ✅ v1.2.39 (2026.07.27) — 성별 판단 근거 확대(버그): v1.2.38의 지시가 병역'란'(표)에만 한정돼 있어,
+//   병역란이 비고 자기소개서 본문에만 군 복무가 서술된 경우(예: 김승환 '군 복무 중 인사행정병') 성별이 빈값으로 나왔다.
+//   여기에 안전장치 문구("불명확하면 억지로 판단하지 말 것")가 겹쳐 AI가 과도하게 소극적으로 동작.
+//   → 판단 근거를 ①명시 ②병역란 ③본문의 군복무·전역·보직 서술 ④면제사유 '미해당' 4단계로 명시하고,
+//     근거가 있으면 반드시 채우도록 지시 수정. 채점 반영 금지 원칙은 그대로 유지.
 // ✅ v1.2.38 (2026.07.27) — 회차 전환 잔재 제거(치명) + 성별 표기 추가:
 //   [1] '새 회차 시작'(clearApplicants)이 지원자 목록만 비우고 회차 종속 상태를 그대로 둬서,
 //       새 회차에 이전 회차 잔재가 그대로 노출됐다. doLogout()·회차전환(loadFromSheet)에는 있던
@@ -1332,7 +1337,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.2.38';
+const APP_VERSION = 'v1.2.39';
 const APP_VERSION_DATE = '2026.07.27';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -4545,14 +4550,14 @@ ${reqLic?`⚠️필수자격증: ${reqLic} — 최종취득 여부만 licenses�
   ⚠️분기 점수는 위 점수 기준표에 실제로 적힌 값만 사용할 것. 표에 없는 값을 만들어내지 말 것
 
 출력JSON:
-{"name":"이름","age":"만나이(숫자만, 예:30)","birth":"생년월(YYYY.MM. 형식, 예:1996.05.)","gender":"성별 — 이력서에 성별이 명시돼 있으면 '남' 또는 '여'. 명시가 없으면 병역사항으로 판단(군필·복무기간·군별·계급 기재=남, 면제사유가 '미해당'=여). 어느 쪽도 근거가 없으면 빈 문자열. 이름만 보고 추측하지 말 것","gender_basis":"성별 판단 근거(기재 / 병역 / 없음 중 하나)","contact":"연락처","email":"이메일주소(없으면 빈문자열)","education":"최종학력(대학명포함)","gpa":"학점(숫자만, 예:3.8. 없으면 null)","gpa_scale":"만점기준(4.5만 인정. 없으면 null)","career_years":"총경력","last_company":"최근직장","licenses":["최종취득 자격증명만 한 개씩 배열 원소로. 필기합격·응시중·취득예정은 제외하고 최종합격·취득만. 쉼표로 이어붙인 한 개의 문자열로 반환 금지"],"career_history":[{"company":"회사명","position":"직책","period":"재직기간","duration":"재직연수","tasks":"담당업무","relevance":"직무관련성(높음/보통/낮음/없음)"}],"score_breakdown":{"항목명":{"score":점수,"max":최대점수,"reason":"산정근거"}},"fit_score":score_breakdown의 모든 항목 score를 그대로 더한 단순합계(학점가산 등 위 기준표의 가산 항목도 score_breakdown에 항목으로 넣고 이 합계에 포함할 것. score_breakdown에 없는 임의 가점을 따로 더하는 것만 금지),"fit_comment":"항목별근거포함 종합의견 3~4문장","strengths":["강점1","강점2","강점3"],"concerns":["우려1","우려2"],"interview_points":["포인트1","포인트2","포인트3","포인트4"],"loyalty_risk":true또는false,"summary":"한줄요약"}
+{"name":"이름","age":"만나이(숫자만, 예:30)","birth":"생년월(YYYY.MM. 형식, 예:1996.05.)","gender":"성별 '남' 또는 '여'. 아래 순서로 판단하되 ①~④ 중 하나라도 해당하면 반드시 값을 채울 것. ①이력서에 성별이 명시 → 그대로 ②병역란에 군별·계급·복무기간·군필 표기 → 남 ③자기소개서·경력 등 본문에 군 복무/병역 이행 서술(예: '군 복무 중', '전역 후', '병장 만기제대', 인사행정병 등 보직 언급) → 남 ④병역란 면제사유가 '미해당' → 여. ⑤위 어디에도 근거가 없을 때만 빈 문자열. 이름만 보고 추측하는 것은 금지","gender_basis":"성별 판단 근거 — 위 ①이면 '기재', ②③이면 '병역', ④면 '병역', 근거 없으면 '없음'","contact":"연락처","email":"이메일주소(없으면 빈문자열)","education":"최종학력(대학명포함)","gpa":"학점(숫자만, 예:3.8. 없으면 null)","gpa_scale":"만점기준(4.5만 인정. 없으면 null)","career_years":"총경력","last_company":"최근직장","licenses":["최종취득 자격증명만 한 개씩 배열 원소로. 필기합격·응시중·취득예정은 제외하고 최종합격·취득만. 쉼표로 이어붙인 한 개의 문자열로 반환 금지"],"career_history":[{"company":"회사명","position":"직책","period":"재직기간","duration":"재직연수","tasks":"담당업무","relevance":"직무관련성(높음/보통/낮음/없음)"}],"score_breakdown":{"항목명":{"score":점수,"max":최대점수,"reason":"산정근거"}},"fit_score":score_breakdown의 모든 항목 score를 그대로 더한 단순합계(학점가산 등 위 기준표의 가산 항목도 score_breakdown에 항목으로 넣고 이 합계에 포함할 것. score_breakdown에 없는 임의 가점을 따로 더하는 것만 금지),"fit_comment":"항목별근거포함 종합의견 3~4문장","strengths":["강점1","강점2","강점3"],"concerns":["우려1","우려2"],"interview_points":["포인트1","포인트2","포인트3","포인트4"],"loyalty_risk":true또는false,"summary":"한줄요약"}
 
 ⚠️중요: 이력서 원문에 실제로 기재된 내용만 사용. 없는 정보는 절대 추측·창작 금지. 불명확한 항목은 "-"로 표기.
 
 ⚠️성별 취급 (필수): gender는 담당자 참고용 식별정보일 뿐이다. 점수 산정에 절대 반영하지 말 것.
 - score_breakdown의 어떤 항목도 성별을 근거로 가감하지 말 것
 - fit_comment·strengths·concerns·interview_points·summary에 성별을 언급하거나 성별을 전제한 표현("남성적인", "여성으로서" 등)을 쓰지 말 것
-- 성별이 불명확하면 빈 문자열로 두고, 억지로 판단하지 말 것
+- 다만 위 출력스펙의 ①~④ 근거가 있으면 정상적으로 기재할 것. 담당자 참고용 정보이므로 근거가 있는데도 비워두지 말 것. 근거가 전혀 없을 때만 빈 문자열
 
 [이력서]
 ${pdfText}`;
