@@ -1263,6 +1263,14 @@ function _savePromotionDoc(){
 function _loadPromotionDoc(round){ try{ const raw=localStorage.getItem(_promoDocKey(round)); return raw?JSON.parse(raw):null; }catch(e){ return null; } }
 // ✅ v1.2.0: ADMIN_CODE 평문 제거 — _사용자 시트 role='admin'로 검증. 호환 위해 빈 상수 유지 (서서히 코드에서 제거)
 const ADMIN_CODE = ''; // deprecated
+// ✅ v1.2.43 (2026.07.27) — 여대·여고 기반 성별 확정(작업자 지적):
+//   여자대학교·여자고등학교 학부/고교는 여성만 입학하므로 사진 없이도 성별이 확정된다.
+//   사진 판독은 '추정'이지만 이건 '사실'이라 사진 결과보다 우선 적용한다.
+//   실사례: 김소원 — 경인여자대학교 경영학인데 성별이 비어 있었다.
+//   AI 판단이 아니라 코드(FEMALE_SCHOOL 정규식)로 확정 → 회차마다 흔들리지 않는다.
+//   ⚠️여대 '대학원'은 남성 입학 가능하므로 제외. '여수·여의도'처럼 지명에 여가 들어간 학교 오탐 방지.
+//   [버그] applyPhotoGender가 b64 없으면 즉시 return 해 학교 기반 판정까지 누락되던 것 수정
+//         (원본 PDF 미보유 상태에서도 여대 규칙은 적용되어야 한다)
 // ✅ v1.2.42 (2026.07.27) — 전체 재분석 버튼 추가(기능 공백):
 //   채점 기준을 고쳐도 이미 분석된 지원자를 다시 돌릴 방법이 없었다. analyzeAll은 status==='done'을
 //   건너뛰고, 🔄 재분석 버튼은 analysisError가 있을 때만 노출된다. 결국 '새 회차 시작 → PDF 재업로드'
@@ -1367,7 +1375,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.2.42';
+const APP_VERSION = 'v1.2.43';
 const APP_VERSION_DATE = '2026.07.27';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -1560,7 +1568,8 @@ function fmtGender(g, basis, conf) {
   const s = v.startsWith('남') ? '남' : (v.startsWith('여') ? '여' : v);
   const b = String(basis || '');
   let tag = '';
-  if (b === '사진') tag = String(conf || '') === '낮음' ? '사진·불확실' : '사진';
+  if (b === '학교') tag = '여대·여고';
+  else if (b === '사진') tag = String(conf || '') === '낮음' ? '사진·불확실' : '사진';
   else if (b === '병역') tag = '병역추정';
   if (!tag) return s;   // '기재' = 지원서에 직접 적힌 경우
   const col = (tag === '사진') ? '.6' : '.85';
@@ -4488,19 +4497,43 @@ async function detectGenderFromPhoto(b64) {
   return { gender: g.startsWith('남') ? '남' : (g.startsWith('여') ? '여' : ''), confidence: o.confidence || '' };
 }
 
+// ✅ v1.2.43: 여자대학교·여자고등학교 출신은 성별이 사실상 확정된다(학부·고교는 여성만 입학).
+//   사진 판독은 '추정'이지만 이건 '사실'이므로 사진 결과보다 우선 적용한다.
+//   실사례: 김소원 — 경인여자대학교 경영학. 사진이 없어도 여성으로 확정된다.
+//   ⚠️여대 '대학원'은 남성 입학이 가능하므로 판단에서 제외한다.
+//   AI 판단이 아니라 코드에서 문자열로 확정하므로 회차마다 흔들리지 않는다.
+const FEMALE_SCHOOL = /여자대학교|여자고등학교|여자상업고등학교|여자정보고등학교|[가-힣]{2,}여대(?!학)|[가-힣]{2,}여고(?!등)/;
+function applySchoolGender(result) {
+  if (!result) return;
+  const edu = String(result.education || '');
+  if (!edu) return;
+  if (/대학원|석사|박사/.test(edu)) return;   // 여대 대학원은 남성 가능 → 제외
+  if (FEMALE_SCHOOL.test(edu)) {
+    result.gender = '여';
+    result.gender_basis = '학교';
+    result.gender_conf = '';
+  }
+}
+
 // 사진 판별을 시도해 result.gender를 갱신한다. 사진이 없거나 실패하면 기존(병역 기반) 값을 그대로 둔다.
 async function applyPhotoGender(a) {
-  if (!a || !a.result || !a.b64) return;
-  try {
-    const p = await detectGenderFromPhoto(a.b64);
-    if (p && p.gender) {
-      a.result.gender = p.gender;
-      a.result.gender_basis = '사진';
-      a.result.gender_conf = p.confidence || '';
+  if (!a || !a.result) return;
+  // ✅ v1.2.43: b64가 없어도(원본 미보유) 학교 기반 판정은 반드시 수행해야 하므로
+  //   사진 호출만 조건부로 건너뛴다. 예전엔 여기서 통째로 return 해 여대 규칙까지 누락됐다.
+  if (a.b64) {
+    try {
+      const p = await detectGenderFromPhoto(a.b64);
+      if (p && p.gender) {
+        a.result.gender = p.gender;
+        a.result.gender_basis = '사진';
+        a.result.gender_conf = p.confidence || '';
+      }
+    } catch (e) {
+      console.warn('[v1.2.40] 사진 성별 판별 실패 — 기존 값 유지:', e.message);
     }
-  } catch (e) {
-    console.warn('[v1.2.40] 사진 성별 판별 실패 — 병역 기반 값 유지:', e.message);
   }
+  // 여대·여고는 사진보다 확실한 근거이므로 맨 마지막에 덮어쓴다
+  applySchoolGender(a.result);
 }
 
 // ✅ v1.2.21 — AI 채점 신뢰신호(단일소스): 다중호출 표준편차(_fit_sd)를 안정성 등급으로 변환
@@ -4735,7 +4768,7 @@ ${reqLic?`⚠️필수자격증: ${reqLic} — 최종취득 여부만 licenses�
   ⚠️분기 점수는 위 점수 기준표에 실제로 적힌 값만 사용할 것. 표에 없는 값을 만들어내지 말 것
 
 출력JSON:
-{"name":"이름","age":"만나이(숫자만, 예:30)","birth":"생년월(YYYY.MM. 형식, 예:1996.05.)","gender":"성별 '남' 또는 '여'. ⚠️지원서 양식에는 '군필/면제/미해당' 같은 선택지가 모두 인쇄되어 있다. 글자가 보인다는 이유로 판단하지 말고, 체크 표시(☑ ■ ✓ ●)가 된 항목 또는 실제로 값이 채워진 칸만 근거로 삼을 것. 판단 순서: ①이력서에 성별이 명시 → 그대로 ②병역란의 군별·계급·복무기간 칸에 실제 내용이 채워져 있음(예: 육군/병장/2016.03~2018.01) → 남 ③'군필'에 체크 표시가 되어 있음 → 남 ④자기소개서·경력 본문에 군 복무 이행이 서술됨(예: '군 복무 중', '전역 후', '병장 만기제대', 보직 언급) → 남 ⑤'미해당' 또는 '면제'에 체크 표시 → 여(면제는 남성일 수도 있으므로 '미해당'일 때만 여로 판단) ⑥위 근거가 없거나, 스캔·OCR 등으로 체크 표시를 구분할 수 없으면 반드시 빈 문자열. 이름·한자·영문표기로 추측하는 것은 절대 금지","gender_basis":"성별 판단 근거 — ①이면 '기재', ②③④⑤면 '병역', 근거 없거나 체크 구분 불가면 '없음'","contact":"연락처","email":"이메일주소(없으면 빈문자열)","education":"최종학력(대학명포함)","gpa":"학점(숫자만, 예:3.8. 없으면 null)","gpa_scale":"만점기준(4.5만 인정. 없으면 null)","career_years":"총경력","last_company":"최근직장","licenses":["최종취득 자격증명만 한 개씩 배열 원소로. 필기합격·응시중·취득예정은 제외하고 최종합격·취득만. 쉼표로 이어붙인 한 개의 문자열로 반환 금지"],"career_history":[{"company":"회사명","position":"직책","period":"재직기간","duration":"재직연수","tasks":"담당업무","relevance":"직무관련성(높음/보통/낮음/없음)"}],"score_breakdown":{"항목명":{"score":점수,"max":최대점수,"reason":"산정근거"}},"fit_score":score_breakdown의 모든 항목 score를 그대로 더한 단순합계(학점가산 등 위 기준표의 가산 항목도 score_breakdown에 항목으로 넣고 이 합계에 포함할 것. score_breakdown에 없는 임의 가점을 따로 더하는 것만 금지),"fit_comment":"항목별근거포함 종합의견 3~4문장","strengths":["강점1","강점2","강점3"],"concerns":["우려1","우려2"],"interview_points":["포인트1","포인트2","포인트3","포인트4"],"loyalty_risk":true또는false,"summary":"한줄요약"}
+{"name":"이름","age":"만나이(숫자만, 예:30)","birth":"생년월(YYYY.MM. 형식, 예:1996.05.)","gender":"성별 '남' 또는 '여'. ⚠️지원서 양식에는 '군필/면제/미해당' 같은 선택지가 모두 인쇄되어 있다. 글자가 보인다는 이유로 판단하지 말고, 체크 표시(☑ ■ ✓ ●)가 된 항목 또는 실제로 값이 채워진 칸만 근거로 삼을 것. 판단 순서: ①이력서에 성별이 명시 → 그대로 ①-2 출신 학교가 여자대학교·여자고등학교(여대·여고·여상 포함, 학부/고교 기준. 여대 '대학원'은 남성도 가능하므로 제외) → 여 ②병역란의 군별·계급·복무기간 칸에 실제 내용이 채워져 있음(예: 육군/병장/2016.03~2018.01) → 남 ③'군필'에 체크 표시가 되어 있음 → 남 ④자기소개서·경력 본문에 군 복무 이행이 서술됨(예: '군 복무 중', '전역 후', '병장 만기제대', 보직 언급) → 남 ⑤'미해당' 또는 '면제'에 체크 표시 → 여(면제는 남성일 수도 있으므로 '미해당'일 때만 여로 판단) ⑥위 근거가 없거나, 스캔·OCR 등으로 체크 표시를 구분할 수 없으면 반드시 빈 문자열. 이름·한자·영문표기로 추측하는 것은 절대 금지","gender_basis":"성별 판단 근거 — ①이면 '기재', ②③④⑤면 '병역', 근거 없거나 체크 구분 불가면 '없음'","contact":"연락처","email":"이메일주소(없으면 빈문자열)","education":"최종학력(대학명포함)","gpa":"학점(숫자만, 예:3.8. 없으면 null)","gpa_scale":"만점기준(4.5만 인정. 없으면 null)","career_years":"총경력","last_company":"최근직장","licenses":["최종취득 자격증명만 한 개씩 배열 원소로. 필기합격·응시중·취득예정은 제외하고 최종합격·취득만. 쉼표로 이어붙인 한 개의 문자열로 반환 금지"],"career_history":[{"company":"회사명","position":"직책","period":"재직기간","duration":"재직연수","tasks":"담당업무","relevance":"직무관련성(높음/보통/낮음/없음)"}],"score_breakdown":{"항목명":{"score":점수,"max":최대점수,"reason":"산정근거"}},"fit_score":score_breakdown의 모든 항목 score를 그대로 더한 단순합계(학점가산 등 위 기준표의 가산 항목도 score_breakdown에 항목으로 넣고 이 합계에 포함할 것. score_breakdown에 없는 임의 가점을 따로 더하는 것만 금지),"fit_comment":"항목별근거포함 종합의견 3~4문장","strengths":["강점1","강점2","강점3"],"concerns":["우려1","우려2"],"interview_points":["포인트1","포인트2","포인트3","포인트4"],"loyalty_risk":true또는false,"summary":"한줄요약"}
 
 ⚠️중요: 이력서 원문에 실제로 기재된 내용만 사용. 없는 정보는 절대 추측·창작 금지. 불명확한 항목은 "-"로 표기.
 
