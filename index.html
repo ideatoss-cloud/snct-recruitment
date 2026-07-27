@@ -1262,6 +1262,15 @@ function _savePromotionDoc(){
 function _loadPromotionDoc(round){ try{ const raw=localStorage.getItem(_promoDocKey(round)); return raw?JSON.parse(raw):null; }catch(e){ return null; } }
 // ✅ v1.2.0: ADMIN_CODE 평문 제거 — _사용자 시트 role='admin'로 검증. 호환 위해 빈 상수 유지 (서서히 코드에서 제거)
 const ADMIN_CODE = ''; // deprecated
+// ✅ v1.2.41 (2026.07.27) — 최저학력 필터 정밀화(버그 3건, 작업자 기준 확정):
+//   [1] 재학중을 졸업으로 인정: '인하대학교 … 재학'이 /대학교/에 걸려 대졸 통과했다(정하영 케이스).
+//       재학중은 해당 학력 미취득으로 보고 미인정. 단 '졸업예정'은 인정(작업자 확정 — 이번 회차에도
+//       민지우·한다영이 졸업예정증명서 제출). 재학 학교를 제외한 뒤 확정 학력으로 재판정한다.
+//   [2] 축약 표기 미인식: '서울대'·'연세대 경영학과'는 '대학교' 글자가 없어 판별불가→무조건 통과였다.
+//       [가-힣]{2,}대 패턴 추가(전문대는 기존대로 별도 처리). 검정고시=고졸 상당도 인식 추가.
+//   [3] 학력 미기재를 자동탈락(fit_score=0) 처리: 미기재는 '미달'이 아니라 '정보 없음'이다.
+//       AI 파싱 실패로 억울하게 탈락할 수 있고 0점은 되돌리기 어렵다 → 통과시키되 _edu_warn으로
+//       '학력 확인 필요' 배너를 띄워 사람이 원본을 보게 한다.
 // ✅ v1.2.40 (2026.07.27) — 사진 기반 성별 판별 + 병역 오판 수정 + 메일 발신 명의 정리:
 //   [1] 사진 기반 성별 판별(작업자 요청, 내부 시스템 한정). 본 채점 호출은 pdf.js 텍스트만 보내
 //       AI가 사진을 못 보므로, PDF 원본을 file input으로 넘기는 별도 호출을 1회 추가
@@ -1350,7 +1359,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.2.40';
+const APP_VERSION = 'v1.2.41';
 const APP_VERSION_DATE = '2026.07.27';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -2576,6 +2585,8 @@ async function analyzeAll() {
         // 이름 공백 제거 (이 상 구 → 이상구)
         if (a.result?.name) a.result.name = a.result.name.replace(/\s+/g, '');
         const eduCheck = checkEduDisqualify(a.result.education||'', job);
+        // ✅ v1.2.41: 미기재는 자동탈락 대신 경고로 남겨 사람이 확인하게 한다
+        a.result._edu_warn = eduCheck.warn ? eduCheck.reason : '';
         if (eduCheck.fail) { a.result._disqualified=true; a.result._disqualify_reason=eduCheck.reason; a.result.fit_score=0; }
         else {
           a.result = recalcLicenseScore(a.result, RELATED_LICENSES[a.job]||[]);
@@ -2816,6 +2827,8 @@ async function reanalyzeOne(id) {
       a.result  = await callOpenAIConsensus(makePrompt(empType, job, pdfText), 3);
       if (a.result && a.result.name) a.result.name = a.result.name.replace(/\s+/g, '');
       const eduCheck = checkEduDisqualify(a.result.education||'', job);
+      // ✅ v1.2.41: 일괄분석과 동일하게 미기재 경고 전달
+      a.result._edu_warn = eduCheck.warn ? eduCheck.reason : '';
       if (eduCheck.fail) { a.result._disqualified=true; a.result._disqualify_reason=eduCheck.reason; a.result.fit_score=0; }
       else {
         a.result = recalcLicenseScore(a.result, RELATED_LICENSES[a.job]||[]);
@@ -4697,15 +4710,36 @@ function openEduModal() {
 function closeEduModal(){document.getElementById('eduModal').classList.remove('on');}
 function saveEduSettings(){Object.values(JOBS).flat().forEach(j=>{const el=document.getElementById('edu_'+j);if(el)minEduSettings[j]=el.value;});try{localStorage.setItem('snct_min_edu',JSON.stringify(minEduSettings));}catch(e){}closeEduModal();toast('최저학력 저장 완료','ok');}
 function resetEduSettings(){minEduSettings=Object.assign({},DEFAULT_MIN_EDU);try{localStorage.removeItem('snct_min_edu');}catch(e){}openEduModal();toast('기본값 초기화','ok');}
+// ✅ v1.2.41 — 최저학력 필터 정밀화 (구멍 3개 수정)
+//   [1] 재학중을 졸업으로 인정하던 문제: '인하대학교 … 재학'이 /대학교/에 걸려 대졸로 통과했다.
+//       재학중은 아직 그 학력을 취득한 것이 아니므로 인정하지 않는다(작업자 확정 2026.07.27).
+//       단 '졸업예정'은 대졸 신입 채용에서 통상 인정하므로 졸업으로 본다.
+//   [2] 축약 표기 미인식: '서울대'·'연세대 경영학과'처럼 '대학교' 글자가 없으면 판별불가→무조건 통과였다.
+//   [3] 학력 미기재를 자동탈락(0점) 처리하던 문제: 미기재는 '미달'이 아니라 '정보 없음'이다.
+//       AI 파싱 실패로 억울하게 탈락할 수 있고 0점은 되돌리기 어려우므로, 통과시키되 확인 사유를 남긴다.
 function checkEduDisqualify(eduStr,job){
-  if(!eduStr||eduStr==='-'||eduStr.length<2) return {fail:true,reason:'학력 미기재'};
+  const s = String(eduStr||'').trim();
+  if(!s || s==='-' || s.length<2) return {fail:false, reason:'⚠️ 학력 미기재 — 원본 확인 필요', warn:true};
   const minEdu=minEduSettings[job]||'고졸';
   const minIdx=EDU_RANKS.indexOf(minEdu);
+
+  // 졸업예정은 졸업으로 인정 / 재학·휴학·수료만 있으면 해당 학력 미취득으로 본다
+  const enrolledOnly = /재학|휴학|수료/.test(s) && !/졸업\s*예정/.test(s);
+
   let rank=-1;
-  if(/대학원|석사|박사/.test(eduStr)) rank=3;
-  else if(/4년제|대학교|대졸/.test(eduStr)&&!/전문대/.test(eduStr)) rank=2;
-  else if(/전문대|2년제|3년제/.test(eduStr)) rank=1;
-  else if(/고등학교|고졸/.test(eduStr)) rank=0;
+  if(/대학원|석사|박사/.test(s)) rank=3;
+  // '대학교' 외에 '○○대' 축약 표기도 인식 (전문대는 아래에서 별도 처리)
+  else if((/4년제|대학교|대졸/.test(s) || /[가-힣]{2,}대(?![학문])/.test(s)) && !/전문대/.test(s)) rank=2;
+  else if(/전문대|2년제|3년제/.test(s)) rank=1;
+  else if(/고등학교|고졸|검정고시/.test(s)) rank=0;
+
+  if(enrolledOnly && rank>0){
+    // 재학중인 학교는 미인정 → 문자열에 남은 '확정된' 하위 학력으로 다시 판정
+    const lower = /고등학교|고졸|검정고시/.test(s) ? 0 : (/전문대|2년제|3년제/.test(s) ? 1 : -1);
+    if(lower === -1) return {fail:true, reason:`재학중(졸업예정 아님) — 취득 학력 확인 불가, 기준 ${EDU_LABELS[minEdu]} 미충족`};
+    rank = lower;
+  }
+
   if(rank===-1) return {fail:false,reason:'판별불가(통과)'};
   if(rank<minIdx) return {fail:true,reason:`최저학력 미달 (${EDU_LABELS[EDU_RANKS[rank]]} < 기준 ${EDU_LABELS[minEdu]})`};
   return {fail:false,reason:'충족'};
@@ -4886,6 +4920,8 @@ ${intro}` : '',
 
     // 학력 탈락 체크
     const eduCheck = checkEduDisqualify(result.education || '', jobF);
+    // ✅ v1.2.41: 수동 등록 경로에도 미기재 경고 전달
+    result._edu_warn = eduCheck.warn ? eduCheck.reason : '';
     if (eduCheck.fail) {
       result._disqualified = true;
       result._disqualify_reason = eduCheck.reason;
@@ -5119,6 +5155,7 @@ function showResult(id) {
     </div>
     <div id="pastHistoryCard_${id}" style="display:none;margin-bottom:12px"></div>
     ${r._disqualified?`<div style="background:rgba(255,82,82,0.1);border:2px solid var(--red);border-radius:10px;padding:15px;margin-bottom:12px;display:flex;align-items:center;gap:12px"><div style="font-size:26px">🚫</div><div><div style="font-size:14px;font-weight:700;color:var(--red)">자동 탈락</div><div style="font-size:14px;color:var(--tx2);margin-top:3px">${r._disqualify_reason||''}</div></div></div>`:''}
+    ${(!r._disqualified && r._edu_warn)?`<div style="background:rgba(244,168,0,0.1);border:1px solid var(--gold);border-radius:10px;padding:12px 15px;margin-bottom:12px;display:flex;align-items:center;gap:10px"><div style="font-size:20px">⚠️</div><div style="font-size:14px;color:var(--tx2)"><b style="color:var(--gold)">학력 확인 필요</b> — ${_escapeHtml(r._edu_warn)}<br><span style="font-size:13px">최저학력 판정을 할 수 없어 통과 처리했습니다. 원본 PDF를 확인해 주세요.</span></div></div>`:''}
     <div class="score-card">
       <div class="score-big ${sc}">${total}</div>
       <div class="score-right">
