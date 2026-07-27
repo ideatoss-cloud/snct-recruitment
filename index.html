@@ -518,6 +518,7 @@ hr.dv{border:none;border-top:1px solid var(--bd);margin:13px 0;}
             <button class="btn btn-o" style="font-size:14px;white-space:nowrap;flex-shrink:0" onclick="openGasModal()">⚙️ GAS 설정</button>
           </div>
           <button class="btn btn-p" id="anaBtn" style="width:100%;margin-bottom:8px" onclick="analyzeAll()" disabled>🔍 전체 분석 시작</button>
+          <button class="btn btn-o" id="reanaBtn" style="width:100%;margin-bottom:8px;font-size:14px" onclick="reanalyzeAll()">♻️ 전체 재분석 (채점 기준 변경 시)</button>
           <button class="btn btn-o" id="manualAddBtn" style="width:100%;margin-bottom:8px;font-size:14px" onclick="addManualApplicant()">✏️ PDF 없이 수동 등록 (비정형 양식 대응)</button>
           <button class="btn btn-r" id="clearBtn" style="width:100%;margin-bottom:8px;font-size:14px" onclick="clearApplicants()">🗑️ 새 회차 시작 (목록 초기화)</button>
           <button class="btn btn-g" id="saveBtn" style="width:100%;font-size:14px;margin-bottom:6px" onclick="saveToSheet()" disabled>☁️ 구글 시트에 저장</button>
@@ -1262,6 +1263,13 @@ function _savePromotionDoc(){
 function _loadPromotionDoc(round){ try{ const raw=localStorage.getItem(_promoDocKey(round)); return raw?JSON.parse(raw):null; }catch(e){ return null; } }
 // ✅ v1.2.0: ADMIN_CODE 평문 제거 — _사용자 시트 role='admin'로 검증. 호환 위해 빈 상수 유지 (서서히 코드에서 제거)
 const ADMIN_CODE = ''; // deprecated
+// ✅ v1.2.42 (2026.07.27) — 전체 재분석 버튼 추가(기능 공백):
+//   채점 기준을 고쳐도 이미 분석된 지원자를 다시 돌릴 방법이 없었다. analyzeAll은 status==='done'을
+//   건너뛰고, 🔄 재분석 버튼은 analysisError가 있을 때만 노출된다. 결국 '새 회차 시작 → PDF 재업로드'
+//   뿐이었고 이는 실수로 기존 회차를 날릴 위험이 있다. → reanalyzeAll() 추가.
+//   ⚠️원본 PDF(b64)는 메모리에만 존재한다. 새로고침·회차 불러오기 후에는 Drive 링크만 남아
+//     재분석이 불가하므로, 그 경우 재업로드 절차를 팝업으로 안내한다.
+//   수동등록 건과 원본 없는 건은 건너뛰고 명단을 확인창에 표시. 가산점·메모·확정명단은 보존.
 // ✅ v1.2.41 (2026.07.27) — 최저학력 필터 정밀화(버그 3건, 작업자 기준 확정):
 //   [1] 재학중을 졸업으로 인정: '인하대학교 … 재학'이 /대학교/에 걸려 대졸 통과했다(정하영 케이스).
 //       재학중은 해당 학력 미취득으로 보고 미인정. 단 '졸업예정'은 인정(작업자 확정 — 이번 회차에도
@@ -1359,7 +1367,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.2.41';
+const APP_VERSION = 'v1.2.42';
 const APP_VERSION_DATE = '2026.07.27';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -2662,6 +2670,58 @@ async function analyzeAll() {
     console.warn('[v1.2.34] 미분석 지원자:', failedList.map(a => ({ 파일: a.name, 사유: a.analysisError || '(사유 없음)' })));
   }
 }
+
+// ══════════════════════════════════════════
+// ✅ v1.2.42: 전체 재분석
+//   기존엔 이미 분석된 지원자를 다시 돌릴 방법이 없었다.
+//   analyzeAll은 status==='done'을 건너뛰고, 🔄 재분석 버튼은 analysisError가 있을 때만 뜬다.
+//   채점 기준(프롬프트·자격증 목록·최저학력 등)을 고친 뒤 전 인원에 반영하려면
+//   '새 회차 시작 → PDF 재업로드'밖에 없었는데, 이는 실수로 기존 회차를 날릴 위험이 있다.
+//   ⚠️원본 PDF(b64)는 메모리에만 있다. 새로고침·회차 불러오기 후에는 사라지므로(Drive 링크만 남음)
+//     그때는 재업로드가 필요하다 — 그 경우를 명확히 안내한다.
+// ══════════════════════════════════════════
+async function reanalyzeAll() {
+  if (!isAdmin) { toast('관리자 권한이 필요합니다','err'); return; }
+  const targets = applicants.filter(a => a.status === 'done' || a.status === 'error');
+  if (!targets.length) { toast('재분석할 지원자가 없습니다','err'); return; }
+
+  const ready  = targets.filter(a => a.b64 && !a._manual);
+  const manual = targets.filter(a => a._manual);
+  const noPdf  = targets.filter(a => !a.b64 && !a._manual);
+
+  if (!ready.length) {
+    alert('전체 재분석을 할 수 없습니다.\n\n'
+      + '[원인] 원본 PDF가 메모리에 없습니다. 새로고침하거나 회차를 불러오면\n'
+      + '원본은 Drive 링크로만 남고 파일 자체는 사라집니다.\n\n'
+      + '[해결] PDF를 다시 올려서 분석하세요.\n'
+      + '  1. 🗑️ 새 회차 시작 (목록 초기화)\n'
+      + '  2. 신입/경력·직종을 다시 선택 (기본값이 "경력"이니 꼭 확인)\n'
+      + '  3. PDF 전체를 다시 끌어다 놓기\n'
+      + '  4. 🔍 전체 분석 시작\n\n'
+      + '※ 회차명이 같으면 기존 회차를 덮어씁니다. 면접 확정 명단은 유지됩니다.');
+    return;
+  }
+
+  const empType = document.getElementById('empType').value;
+  const job     = document.getElementById('jobSel').value;
+  if (!empType || !job) { toast('직종과 신입/경력을 먼저 선택해주세요','err'); return; }
+
+  let msg = `${ready.length}명을 처음부터 다시 분석합니다.\n\n`
+    + `직종: ${empType} ${job}\n`
+    + `기존 채점 결과(점수·강점·우려·요약)는 새 결과로 대체됩니다.\n`
+    + `가산점·메모·면접 확정 명단은 그대로 유지됩니다.\n`;
+  if (noPdf.length)  msg += `\n※ 원본 PDF가 없는 ${noPdf.length}명은 건너뜁니다: ${noPdf.map(a=>a.result?.name||a.name).join(', ')}`;
+  if (manual.length) msg += `\n※ 수동 등록한 ${manual.length}명은 건너뜁니다(직접 입력값 보존): ${manual.map(a=>a.result?.name||a.name).join(', ')}`;
+  msg += `\n\n계속할까요?`;
+  if (!confirm(msg)) return;
+
+  ready.forEach(a => { a.status = 'wait'; a.result = null; a.analysisError = null; a.pdfText = null; });
+  analysisSaved = false;
+  renderAlist(); updateBadge();
+  toast(`전체 재분석 시작 — ${ready.length}명`, 'ok');
+  await analyzeAll();
+}
+
 // ── 메모 캐시 ──
 const _memoCache = {};
 
