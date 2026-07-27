@@ -1263,6 +1263,14 @@ function _savePromotionDoc(){
 function _loadPromotionDoc(round){ try{ const raw=localStorage.getItem(_promoDocKey(round)); return raw?JSON.parse(raw):null; }catch(e){ return null; } }
 // ✅ v1.2.0: ADMIN_CODE 평문 제거 — _사용자 시트 role='admin'로 검증. 호환 위해 빈 상수 유지 (서서히 코드에서 제거)
 const ADMIN_CODE = ''; // deprecated
+// ✅ v1.2.46 (2026.07.27) — 회차 불러오기 속도 개선(작업자 지적):
+//   불러오기 직후 재지원 이력을 forEach로 지원자 수만큼(31명이면 31개) GAS에 한꺼번에 요청했다.
+//   브라우저 동시연결 한도(호스트당 6개)에 걸리고 GAS 쪽에서도 큐잉되어 불러오기 전체가 느려졌다.
+//   이 조회는 '재지원 뱃지'용이라 급하지 않으므로 동시 3개로 제한해 백그라운드로 돌린다.
+//   · 회차가 바뀌면 중단(불필요한 요청 차단)
+//   · 전원 조회 후 renderAlist를 한 번만 호출(기존엔 이력 있을 때마다 매번 재렌더 + 토스트)
+//   ※ 남은 지연은 GAS(Apps Script) 자체 응답 속도와 31명분 분석 JSON 전송량이다.
+//     같은 회차를 5분 내 다시 열면 localStorage 캐시로 즉시 뜬다(LS_TTL).
 // ✅ v1.2.45 (2026.07.27) — 사무직 신입 배점 재조정(작업자 확정):
 //   성장가능성 35→40 / 어학 20→10 / 직무관련자격증 15→20 (학력 30·학점가산 +5는 유지)
 //   합계 40+30+10+20 = 100점 유지.
@@ -1395,7 +1403,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.2.45';
+const APP_VERSION = 'v1.2.46';
 const APP_VERSION_DATE = '2026.07.27';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -3239,22 +3247,37 @@ async function loadFromSheet() {
       showConfirmedBanner(cfData.confirmed.map(c=>c.name));
     }
 
-    // ✅ 불러오기 후 재지원 이력 백그라운드 일괄 조회
+    // ✅ v1.2.46: 불러오기 후 재지원 이력 조회 — 동시 요청 수 제한
+    //   기존엔 forEach로 지원자 수만큼(31명이면 31개) GAS 요청을 한꺼번에 던졌다.
+    //   브라우저 동시연결 한도(호스트당 6개)에 걸리고 GAS 쪽에서도 큐잉되어
+    //   불러오기 전체가 눈에 띄게 느려졌다. 이 조회는 '재지원 뱃지'용이라 급하지 않으므로
+    //   3개씩 순차로 천천히 돌린다(화면은 이미 렌더된 상태).
     if (GAS_URL && round) {
-      applicants.filter(a => a.result?.name).forEach(a => {
-        const hKey = (a.result.name||'') + '_' + (a.result.contact||'');
-        if (_pastCache[hKey] === undefined) {
-          fetch(GAS_URL+'?action=getPastHistory&userEmail='+encodeURIComponent(currentUserEmail||'')+'&name='+encodeURIComponent(a.result.name||'')
-            +'&contact='+encodeURIComponent(a.result.contact||'')
-            +'&currentRound='+encodeURIComponent(round))
-            .then(r => r.json())
-            .then(d => {
-              if (d.success) {
-                _pastCache[hKey] = d.history || [];
-                if (d.history && d.history.length) { renderAlist(); toast(a.result.name+' — 이전 지원 이력 있음 ⚠️','warn'); }
-              }
-            }).catch(() => {});
+      const queue = applicants.filter(a => a.result?.name && _pastCache[(a.result.name||'')+'_'+(a.result.contact||'')] === undefined);
+      const CONCURRENCY = 3;
+      let qi = 0, found = 0;
+      const runNext = async () => {
+        while (qi < queue.length) {
+          const a = queue[qi++];
+          if (round !== currentRound) return;      // 회차가 바뀌면 중단
+          const hKey = (a.result.name||'') + '_' + (a.result.contact||'');
+          try {
+            const r = await fetch(GAS_URL+'?action=getPastHistory&userEmail='+encodeURIComponent(currentUserEmail||'')
+              +'&name='+encodeURIComponent(a.result.name||'')
+              +'&contact='+encodeURIComponent(a.result.contact||'')
+              +'&currentRound='+encodeURIComponent(round));
+            const d = await r.json();
+            if (d.success) {
+              _pastCache[hKey] = d.history || [];
+              if (d.history && d.history.length) found++;
+            }
+          } catch(e) { /* 뱃지용이라 실패해도 무시 */ }
         }
+      };
+      Promise.all(Array.from({length: Math.min(CONCURRENCY, queue.length)}, runNext)).then(() => {
+        if (round !== currentRound) return;
+        renderAlist();                              // 전원 조회 후 한 번만 다시 그린다
+        if (found) toast(`재지원 이력 있는 지원자 ${found}명 — 목록에서 확인하세요`, 'warn');
       });
     }
   } catch(e) {
