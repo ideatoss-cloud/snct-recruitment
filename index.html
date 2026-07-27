@@ -1262,6 +1262,10 @@ function _savePromotionDoc(){
 function _loadPromotionDoc(round){ try{ const raw=localStorage.getItem(_promoDocKey(round)); return raw?JSON.parse(raw):null; }catch(e){ return null; } }
 // ✅ v1.2.0: ADMIN_CODE 평문 제거 — _사용자 시트 role='admin'로 검증. 호환 위해 빈 상수 유지 (서서히 코드에서 제거)
 const ADMIN_CODE = ''; // deprecated
+// ✅ v1.2.37 (2026.07.27) — 재무회계 인정 자격증에 '전산세무' 추가(작업자 도메인 확정):
+//   구 재무·회계 목록 모두 '전산회계'만 있고 전산세무가 없어, 전산세무 보유자가 미인정(0점) 처리됐다.
+//   매칭은 부분문자열(includes)이라 '전산세무1급'·'전산세무2급' 모두 잡힌다.
+//   ⚠️15점 항목이라 순위 영향 있음 — 이번 회차 지원자 중 전산세무 보유자 다수(이수정·이현아·최예원 등)
 // ✅ v1.2.36 (2026.07.24) — 직종 '재무'·'회계' → '재무회계' 통합(작업자 도메인 확정):
 //   실무상 분리 운영하지 않으므로 드롭다운을 한 항목으로 통합(사무직 18→17개).
 //   RELATED_LICENSES는 구 두 목록의 합집합(공인회계사·세무사·재경관리사·CFA·AFPK·CFP·전산회계·FAT·TAT).
@@ -1315,8 +1319,8 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.2.36';
-const APP_VERSION_DATE = '2026.07.24';
+const APP_VERSION = 'v1.2.37';
+const APP_VERSION_DATE = '2026.07.27';
 let currentRound = ''; // 현재 선택된 회차
 
 const JOBS = {
@@ -1340,7 +1344,8 @@ const RELATED_LICENSES = {
   인사노무:['공인노무사','인사관리사','사회보험관리사'],
   // ✅ v1.2.36: 재무·회계 통합 — 기존 두 목록의 합집합(추가·삭제 없음)
   //   구 재무:['재경관리사','CFA','AFPK','CFP'] / 구 회계:['공인회계사','세무사','전산회계','재경관리사','FAT','TAT']
-  재무회계:['공인회계사','세무사','재경관리사','CFA','AFPK','CFP','전산회계','FAT','TAT'],
+  //   + 전산세무 추가(작업자 확정 2026.07.24) — 구 목록엔 전산회계만 있어 전산세무 보유자가 0점 처리됐음
+  재무회계:['공인회계사','세무사','재경관리사','CFA','AFPK','CFP','전산회계','전산세무','FAT','TAT'],
   경리:['전산회계','FAT','TAT'],
   법무:['변호사','법무사','행정사'],
   총무:[],영업관리:[],정산:['전산회계','FAT'],온독:[],플레너:[],센터:[],
