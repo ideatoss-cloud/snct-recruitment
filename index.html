@@ -1263,6 +1263,20 @@ function _savePromotionDoc(){
 function _loadPromotionDoc(round){ try{ const raw=localStorage.getItem(_promoDocKey(round)); return raw?JSON.parse(raw):null; }catch(e){ return null; } }
 // ✅ v1.2.0: ADMIN_CODE 평문 제거 — _사용자 시트 role='admin'로 검증. 호환 위해 빈 상수 유지 (서서히 코드에서 제거)
 const ADMIN_CODE = ''; // deprecated
+// ✅ v1.2.48 (2026.07.27) — 면접·메일 단계 안전장치(사전 점검에서 발견, 다음 주 대비):
+//   면접 평가와 메일 발송은 아직 한 번도 실사용된 적 없는 경로다. 코드를 훑어 되돌릴 수 없는
+//   사고로 이어질 지점 3개를 막았다.
+//   [1] 서류 불합격 통지 전원 오발송 차단: _extractEmailRecipients는 "면접 확정 명단에 없는 사람"을
+//       불합격 대상으로 잡는데(3909), 확정 명단은 GAS getConfirmed에서 온다. 아직 확정 전이거나
+//       조회에 실패하면 []가 되어 지원자 전원이 대상이 된다. → 명단이 비면 발송 자체를 차단.
+//       추가로 대상이 전원이면 한 번 더 확인(필터가 풀린 상황의 안전망).
+//   [2] 발송 직전 최종 확인창: 기존엔 "이미 발송된 메일"일 때만 확인이 뜨고 첫 발송은 클릭 한 번에
+//       전원에게 나갔다. 템플릿명·인원·수신자 5명 미리보기·첨부 수를 보여주고 확인받는다.
+//   [3] 면접 평가 필수입력 검증: 아무 검사가 없어 별점 0개·판정 미선택도 그대로 저장됐다.
+//       판정이 비면 채용집계에서 '평가 중'으로 분류돼 면접 결과 메일·검진 안내에서 조용히 누락된다.
+//       ⚠️renderIvPanel이 evalScores를 무조건 초기화하고 저장된 평가를 복원하지 않으므로,
+//         지원자를 바꿨다 돌아오면 화면이 빈 상태다. 그대로 재저장하면 기존 평가가 0점으로
+//         덮어써진다 → 빈 값 저장을 막고 사유를 안내. (복원 기능은 별도 과제)
 // ✅ v1.2.47 (2026.07.27) — 분석 시작 전 채점기준 확인 팝업(작업자 요청) + 자격증 표기 정정:
 //   [1] 신입/경력 드롭다운 기본값이 "경력"이라, 신입 회차에서 안 바꾸면 전원이 경력 기준으로
 //       채점된다(경력연수 40점 등). 코드가 막을 수 없는 실수인데 30~40분짜리 작업이라
@@ -1413,7 +1427,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.2.47';
+const APP_VERSION = 'v1.2.48';
 const APP_VERSION_DATE = '2026.07.27';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -3996,6 +4010,26 @@ function openEmailSendModal(templateType, round) {
     return;
   }
 
+  // ✅ v1.2.48: 오발송 차단 (메일은 되돌릴 수 없다)
+  //   [1] 서류 불합격 통지는 "면접 확정 명단에 없는 사람" 전원이 대상이다(_extractEmailRecipients 3909).
+  //       그런데 확정 명단은 GAS getConfirmed 응답에서 오고, 실패하거나 아직 확정 전이면 []가 된다.
+  //       그 상태로 발송하면 지원자 전원에게 불합격 메일이 나간다.
+  if (templateType === 'docResult' && !confirmedNames.length) {
+    alert('서류 결과(불합격) 통지를 보낼 수 없습니다.\n\n'
+      + '[원인] 면접 대상자 확정 명단이 비어 있습니다.\n'
+      + '확정 명단이 없으면 지원자 전원이 불합격 대상으로 잡힙니다.\n\n'
+      + '[확인] ① 면접 대상자를 아직 확정하지 않았거나\n'
+      + '       ② 확정 명단을 불러오지 못한 상태입니다.\n\n'
+      + '[지원서 집계] 탭에서 면접 대상자 확정을 먼저 완료해 주세요.');
+    return;
+  }
+  //   [2] 대상이 전원(또는 전원에 가까움)이면 한 번 더 확인받는다 — 필터가 풀린 상황의 안전망
+  if (recipients.length >= apps.length && apps.length > 1) {
+    if (!confirm(`⚠️ 발송 대상이 지원자 전원(${recipients.length}명)입니다.\n\n`
+      + `필터가 의도대로 걸리지 않았을 수 있습니다.\n`
+      + `정말 전원에게 보내는 것이 맞습니까?`)) return;
+  }
+
   // ✅ v1.0.53: jobLabel 자동 추출 — 회차 ID `날짜_경력_직종` → 경력+직종 추출 (마스터 수정 가능)
   let defaultJobLabel = '';
   const roundInfo = (rounds||[]).find(r => r.id === round);
@@ -4327,6 +4361,18 @@ async function confirmEmailSend() {
   // ✅ v1.0.57: 체크된 첨부 파일명 수집
   const attachmentCheckboxes = document.querySelectorAll('#emailSendModalBody input[id^="emailAttach_"]:checked');
   const attachmentNames = Array.from(attachmentCheckboxes).map(cb => cb.dataset.attachName).filter(Boolean);
+
+  // ✅ v1.2.48: 발송 직전 최종 확인 — 기존엔 "이미 발송된 메일"일 때만 확인창이 떴고
+  //   첫 발송은 버튼 클릭 한 번에 전원에게 즉시 나갔다. 메일은 되돌릴 수 없다.
+  const _preview = recipients.slice(0, 5).map(r => `${r.name}(${r.email})`).join('\n  ');
+  if (!confirm(
+      `【${tpl.label}】\n`
+    + `${recipients.length}명에게 메일을 발송합니다.\n\n`
+    + `  ${_preview}${recipients.length > 5 ? `\n  … 외 ${recipients.length - 5}명` : ''}\n\n`
+    + `${attachmentNames.length ? `첨부 ${attachmentNames.length}개 포함\n` : ''}`
+    + `발송 후에는 취소할 수 없습니다. 진행할까요?`)) {
+    return;
+  }
 
   // ✅ v1.0.62: pending 정보를 closeEmailSendModal 호출 전에 별도 변수로 보관
   const sentRound = pending.round;
@@ -6365,6 +6411,30 @@ async function saveMyIvResult() {
   if (!GAS_URL || !currentRound) { toast('회차를 먼저 불러오세요', 'err'); return; }
   if (!ivData) { toast('면접 준비를 먼저 해주세요', 'err'); return; }
   const r = ivData.applicant.result;
+
+  // ✅ v1.2.48: 필수 입력 검증 — 기존엔 아무 검사 없이 저장돼, 별점을 하나도 안 찍어도
+  //   ivScore=0, verdict='' 이 그대로 저장됐다. 특히 판정이 비면 채용집계에서 '평가 중'으로
+  //   분류되어 면접 결과 메일·검진 안내 대상에서 조용히 빠진다.
+  //   ⚠️화면은 지원자를 바꾸면 evalScores를 초기화하므로(renderIvPanel), 저장된 평가가 화면에
+  //     복원되지 않는다. 빈 상태로 재저장하면 기존 평가를 0점으로 덮어쓸 수 있어 여기서 막는다.
+  {
+    const problems = [];
+    ivData.interviewers.forEach(iv => {
+      const missing = CRITERIA_IV.filter(c => !(evalScores[iv]?.[c.key] > 0)).map(c => c.label);
+      const vd = document.getElementById(`vd_${iv}`)?.value || '';
+      if (missing.length === CRITERIA_IV.length) problems.push(`· ${iv} — 별점을 하나도 선택하지 않았습니다`);
+      else if (missing.length)                   problems.push(`· ${iv} — 미입력 항목: ${missing.join(', ')}`);
+      if (!vd)                                   problems.push(`· ${iv} — 결과 판정을 선택하지 않았습니다`);
+    });
+    if (problems.length) {
+      alert('면접 평가를 저장할 수 없습니다.\n\n' + problems.join('\n')
+        + '\n\n※ 빈 값으로 저장하면 이미 저장한 평가가 0점으로 덮어써질 수 있습니다.'
+        + '\n   화면은 저장된 평가를 다시 불러오지 않으니, 지원자를 바꿨다가 돌아온 경우'
+        + '\n   별점이 비어 보이는 것이 정상입니다. 다시 입력해 주세요.');
+      return;
+    }
+  }
+
   const saveBtn = document.querySelector('[onclick="saveMyIvResult()"]');
   if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = '저장 중...'; }
 
