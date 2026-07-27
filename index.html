@@ -3199,6 +3199,9 @@ async function loadFromSheet() {
       else if(!bonusScores[a.id]) bonusScores[a.id]={};
       if(a.result?.name) a.result.name=a.result.name.replace(/\s+/g,'');
       if(a.result && a.status !== 'done') a.status = 'done';
+      // ✅ v1.2.43: 여대·여고 성별 확정은 AI가 아니라 학교명 문자열로 판정하므로
+      //   이미 분석된 회차를 불러올 때도 재분석 없이(=API 비용 0) 즉시 적용된다.
+      applySchoolGender(a.result);
     });
     // LS 저장
     try { localStorage.setItem(lsKey, JSON.stringify({t:Date.now(), d:applicants})); } catch(e){}
