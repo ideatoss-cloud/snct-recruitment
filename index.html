@@ -1262,6 +1262,19 @@ function _savePromotionDoc(){
 function _loadPromotionDoc(round){ try{ const raw=localStorage.getItem(_promoDocKey(round)); return raw?JSON.parse(raw):null; }catch(e){ return null; } }
 // ✅ v1.2.0: ADMIN_CODE 평문 제거 — _사용자 시트 role='admin'로 검증. 호환 위해 빈 상수 유지 (서서히 코드에서 제거)
 const ADMIN_CODE = ''; // deprecated
+// ✅ v1.2.38 (2026.07.27) — 회차 전환 잔재 제거(치명) + 성별 표기 추가:
+//   [1] '새 회차 시작'(clearApplicants)이 지원자 목록만 비우고 회차 종속 상태를 그대로 둬서,
+//       새 회차에 이전 회차 잔재가 그대로 노출됐다. doLogout()·회차전환(loadFromSheet)에는 있던
+//       초기화가 이 함수에만 빠져 있었음. 2026.07.27 재무회계 회차 실사용 중 발견:
+//       · 전기정비(5월) 확정자 8명이 확정 배너로 표시 → submitVotes()가 투표 제출을 원천 차단
+//       · 면접탭 '확정자 전원 일괄 준비 (8명)'에 이전 회차 인원수
+//       · 5월 회차 면접 불참자(곽도현·장수영)가 불참 목록에 잔존
+//       → confirmedList·absentList·ivData·_activityLogs·_pastCache·qCache·_memoCache 초기화 +
+//         회차 배너 5종 숨김 처리
+//   [2] 면접탭 회차 배너가 "현재 회차: 현재 회차: ..."로 중복 표기 (HTML 라벨 + JS 라벨 이중)
+//   [3] 성별 표기 추가 — 지원서 양식에 '성별' 항목이 없어 AI가 명시 기재 또는 병역사항으로 판단.
+//       병역 기반 추정은 '(추정)' 표기로 확정 정보와 구분. 이름만으로 추측하는 것은 금지.
+//       표시: 지원자목록·개인분석·비교표(성별 열 신설)·면접대상선정·인쇄·엑셀
 // ✅ v1.2.37 (2026.07.27) — 재무회계 인정 자격증에 '전산세무' 추가(작업자 도메인 확정):
 //   구 재무·회계 목록 모두 '전산회계'만 있고 전산세무가 없어, 전산세무 보유자가 미인정(0점) 처리됐다.
 //   매칭은 부분문자열(includes)이라 '전산세무1급'·'전산세무2급' 모두 잡힌다.
@@ -1319,7 +1332,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.2.37';
+const APP_VERSION = 'v1.2.38';
 const APP_VERSION_DATE = '2026.07.27';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -1501,6 +1514,21 @@ let minEduSettings = Object.assign({}, DEFAULT_MIN_EDU);
 try{const _saved=localStorage.getItem('snct_min_edu');if(_saved){const _p=JSON.parse(_saved);Object.assign(minEduSettings,_p);}}catch(e){}
 let rounds = []; // 회차 목록
 let confirmedList = []; // 확정된 면접자 목록
+
+// ── 성별 표시 헬퍼 (v1.2.38) ──
+//   자사 지원서 양식에 '성별' 항목이 없어, AI가 명시 기재 또는 병역사항으로 판단한다.
+//   병역으로 추정한 경우 '(추정)'을 붙여 확정 정보와 구분한다.
+function fmtGender(g, basis) {
+  const v = String(g || '').trim();
+  if (!v) return '-';
+  const s = v.startsWith('남') ? '남' : (v.startsWith('여') ? '여' : v);
+  return String(basis || '') === '병역' ? s + '<span style="font-size:11px;opacity:.65">(추정)</span>' : s;
+}
+function fmtGenderPlain(g) {
+  const v = String(g || '').trim();
+  if (!v) return '-';
+  return v.startsWith('남') ? '남' : (v.startsWith('여') ? '여' : v);
+}
 
 // ── 나이+생년월 표시 헬퍼 ──
 function fmtAge(age, birth) {
@@ -2142,6 +2170,20 @@ function clearApplicants() {
   if (applicants.length && !confirm('현재 목록을 초기화하고 새 회차를 시작할까요?\n저장되지 않은 분석 결과는 사라집니다.')) return;
   applicants = []; bonusScores = {}; ivVotes = {}; voteSubmitted = false; analysisSaved = false;
   currentRound = '';
+  // ✅ v1.2.38: '새 회차 시작'이 지원자 목록만 비우고 회차 종속 상태를 그대로 둬서
+  //   이전 회차 잔재가 새 회차에 그대로 나타나던 문제. doLogout()·회차전환(loadFromSheet)에는
+  //   있던 초기화가 여기에만 빠져 있었다. 실제 증상(2026.07.27 재무회계 회차):
+  //   · 전기정비 확정자 8명이 확정 배너로 표시 + submitVotes()가 투표 제출을 차단
+  //   · 면접탭 '확정자 전원 일괄 준비 (8명)'에 이전 회차 인원수 표시
+  //   · 5월 전기정비 회차의 면접 불참자(곽도현·장수영)가 불참 목록에 잔존
+  confirmedList = []; absentList = []; ivData = null; _activityLogs = [];
+  Object.keys(_pastCache).forEach(k => delete _pastCache[k]);
+  Object.keys(qCache).forEach(k => delete qCache[k]);
+  Object.keys(_memoCache).forEach(k => delete _memoCache[k]);
+  ['confirmedBanner', 'ivRoundBanner', 'docsumRoundBanner', 'ivDateBannerIv', 'ivDateBannerDocsum'].forEach(function(bid){
+    const el = document.getElementById(bid);
+    if (el) el.style.display = 'none';
+  });
   const roundSel = document.getElementById('roundSel');
   if (roundSel) roundSel.value = '';
   renderAlist(); updateBadge();
@@ -2301,7 +2343,8 @@ function goTab(t) {
     if (rndBanner) {
       if (currentRound) {
         const bannerText = document.getElementById('ivRoundBannerText');
-        if (bannerText) bannerText.textContent = '📋 현재 회차: ' + currentRound;
+        // ✅ v1.2.38: HTML(560행)에 이미 '📋 현재 회차:' 라벨이 있어 "현재 회차: 현재 회차: ..."로 중복 표기되던 것 수정
+        if (bannerText) bannerText.textContent = currentRound;
         rndBanner.style.display = 'block';
       } else {
         rndBanner.style.display = 'none';
@@ -2431,7 +2474,7 @@ function renderAlist() {
     <div class="aitem ${a.analysisError?'aitem-err':''}" style="${isViewed?'opacity:0.65;':''}" onclick="showResult('${a.id}')" ondblclick="showPdfModal('${a.id}')" ontouchstart="_touchStart('${a.id}', event)" ontouchend="_touchEnd()" title="더블클릭(PC) / 길게누르기(모바일): 원본 PDF 보기">
       <div style="flex:1;min-width:0">
         <div class="aname">${isViewed?'<span style="color:var(--green);font-weight:700;margin-right:4px;font-size:12px" title="상세 조회 완료">✓</span>':''}${(a.result?.name||a.name.replace('.pdf',''))}</div>
-        <div class="ameta">${a.empType&&a.job?a.empType+' · '+a.job:'직종 미지정'}${(a.result?.age||a.result?.birth)?' · '+fmtAge(a.result?.age,a.result?.birth):''}</div>
+        <div class="ameta">${a.empType&&a.job?a.empType+' · '+a.job:'직종 미지정'}${fmtGenderPlain(a.result?.gender)!=='-'?' · '+fmtGenderPlain(a.result?.gender):''}${(a.result?.age||a.result?.birth)?' · '+fmtAge(a.result?.age,a.result?.birth):''}</div>
         ${(()=>{ const hKey=(a.result?.name||'')+'_'+(a.result?.contact||''); const hist=_pastCache[hKey]; return (hist&&hist.length)?'<div style="margin-top:3px;font-size:12px;color:#e65100;font-weight:600">⚠️ 재지원 '+hist.length+'회 ('+hist[0].round+'외)</div>':''; })()}
         ${(()=>{ if(!a.result) return ''; const v=validatePhone(a.result.contact); return v.valid?'':`<div style="margin-top:3px;font-size:12px;color:var(--gold);font-weight:600" title="${v.reason} — 면접 일정 통보 전 확인 필요">⚠️ 연락처 ${v.reason}</div>`; })()}
       </div>
@@ -2639,7 +2682,7 @@ function printResults() {
           <div>
             <span class="print-rank">${i+1}위</span>
             <span class="print-name">${r.name||a.name}</span>
-            <span class="print-meta">${fmtAge(r.age,r.birth)} · ${a.empType||''} ${a.job||''}</span>
+            <span class="print-meta">${fmtGenderPlain(r.gender)!=='-'?fmtGenderPlain(r.gender)+' · ':''}${fmtAge(r.age,r.birth)} · ${a.empType||''} ${a.job||''}</span>
             ${r._disqualified ? '<span class="print-disq">탈락</span>' : ''}
           </div>
           <div class="print-score" style="color:${scoreColor}">${total}점</div>
@@ -4502,9 +4545,14 @@ ${reqLic?`⚠️필수자격증: ${reqLic} — 최종취득 여부만 licenses�
   ⚠️분기 점수는 위 점수 기준표에 실제로 적힌 값만 사용할 것. 표에 없는 값을 만들어내지 말 것
 
 출력JSON:
-{"name":"이름","age":"만나이(숫자만, 예:30)","birth":"생년월(YYYY.MM. 형식, 예:1996.05.)","contact":"연락처","email":"이메일주소(없으면 빈문자열)","education":"최종학력(대학명포함)","gpa":"학점(숫자만, 예:3.8. 없으면 null)","gpa_scale":"만점기준(4.5만 인정. 없으면 null)","career_years":"총경력","last_company":"최근직장","licenses":["최종취득 자격증명만 한 개씩 배열 원소로. 필기합격·응시중·취득예정은 제외하고 최종합격·취득만. 쉼표로 이어붙인 한 개의 문자열로 반환 금지"],"career_history":[{"company":"회사명","position":"직책","period":"재직기간","duration":"재직연수","tasks":"담당업무","relevance":"직무관련성(높음/보통/낮음/없음)"}],"score_breakdown":{"항목명":{"score":점수,"max":최대점수,"reason":"산정근거"}},"fit_score":score_breakdown의 모든 항목 score를 그대로 더한 단순합계(학점가산 등 위 기준표의 가산 항목도 score_breakdown에 항목으로 넣고 이 합계에 포함할 것. score_breakdown에 없는 임의 가점을 따로 더하는 것만 금지),"fit_comment":"항목별근거포함 종합의견 3~4문장","strengths":["강점1","강점2","강점3"],"concerns":["우려1","우려2"],"interview_points":["포인트1","포인트2","포인트3","포인트4"],"loyalty_risk":true또는false,"summary":"한줄요약"}
+{"name":"이름","age":"만나이(숫자만, 예:30)","birth":"생년월(YYYY.MM. 형식, 예:1996.05.)","gender":"성별 — 이력서에 성별이 명시돼 있으면 '남' 또는 '여'. 명시가 없으면 병역사항으로 판단(군필·복무기간·군별·계급 기재=남, 면제사유가 '미해당'=여). 어느 쪽도 근거가 없으면 빈 문자열. 이름만 보고 추측하지 말 것","gender_basis":"성별 판단 근거(기재 / 병역 / 없음 중 하나)","contact":"연락처","email":"이메일주소(없으면 빈문자열)","education":"최종학력(대학명포함)","gpa":"학점(숫자만, 예:3.8. 없으면 null)","gpa_scale":"만점기준(4.5만 인정. 없으면 null)","career_years":"총경력","last_company":"최근직장","licenses":["최종취득 자격증명만 한 개씩 배열 원소로. 필기합격·응시중·취득예정은 제외하고 최종합격·취득만. 쉼표로 이어붙인 한 개의 문자열로 반환 금지"],"career_history":[{"company":"회사명","position":"직책","period":"재직기간","duration":"재직연수","tasks":"담당업무","relevance":"직무관련성(높음/보통/낮음/없음)"}],"score_breakdown":{"항목명":{"score":점수,"max":최대점수,"reason":"산정근거"}},"fit_score":score_breakdown의 모든 항목 score를 그대로 더한 단순합계(학점가산 등 위 기준표의 가산 항목도 score_breakdown에 항목으로 넣고 이 합계에 포함할 것. score_breakdown에 없는 임의 가점을 따로 더하는 것만 금지),"fit_comment":"항목별근거포함 종합의견 3~4문장","strengths":["강점1","강점2","강점3"],"concerns":["우려1","우려2"],"interview_points":["포인트1","포인트2","포인트3","포인트4"],"loyalty_risk":true또는false,"summary":"한줄요약"}
 
 ⚠️중요: 이력서 원문에 실제로 기재된 내용만 사용. 없는 정보는 절대 추측·창작 금지. 불명확한 항목은 "-"로 표기.
+
+⚠️성별 취급 (필수): gender는 담당자 참고용 식별정보일 뿐이다. 점수 산정에 절대 반영하지 말 것.
+- score_breakdown의 어떤 항목도 성별을 근거로 가감하지 말 것
+- fit_comment·strengths·concerns·interview_points·summary에 성별을 언급하거나 성별을 전제한 표현("남성적인", "여성으로서" 등)을 쓰지 말 것
+- 성별이 불명확하면 빈 문자열로 두고, 억지로 판단하지 말 것
 
 [이력서]
 ${pdfText}`;
@@ -4939,6 +4987,7 @@ function showResult(id) {
       <div class="igrid">
         <div class="ibox"><div class="ilb">이름</div><div class="ivl">${r.name||'-'}</div></div>
         <div class="ibox"><div class="ilb">나이</div><div class="ivl">${fmtAge(r.age, r.birth)}</div></div>
+        <div class="ibox"><div class="ilb">성별</div><div class="ivl">${fmtGender(r.gender, r.gender_basis)}</div></div>
         <div class="ibox"><div class="ilb">연락처</div><div class="ivl">${r.contact||'-'}</div></div>
         <div class="ibox"><div class="ilb">최종학력</div><div class="ivl">${r.education||'-'}</div></div>
         <div class="ibox"><div class="ilb">총 경력</div><div class="ivl">${r.career_years||'-'}</div></div>
@@ -5042,6 +5091,7 @@ function showCompare() {
     return `<tr>
       <td style="color:var(--tx2);font-family:'DM Mono',monospace;font-size:13px">${i+1}</td>
       <td style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><b style="cursor:pointer;color:var(--ac)" onclick="showResult('${a.id}')">${r.name||a.name}</b></td>
+      <td style="white-space:nowrap;font-size:12px">${fmtGenderPlain(r.gender)}</td>
       <td style="white-space:nowrap;font-size:12px">${fmtAge(r.age,r.birth)}</td>
       <td style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px" title="${r.education||''}">${r.education||'-'}</td>
       <td style="white-space:nowrap;font-size:13px">${career}</td>
@@ -5060,6 +5110,7 @@ function showCompare() {
         <colgroup>
           <col style="width:36px">
           <col style="width:80px">
+          <col style="width:40px">
           <col style="width:90px">
           <col style="width:130px">
           <col style="width:70px">
@@ -5071,6 +5122,7 @@ function showCompare() {
         <thead><tr>
           <th style="font-size:12px">순위</th>
           <th style="font-size:12px">이름</th>
+          <th style="font-size:12px">성별</th>
           <th style="font-size:12px">나이/생년</th>
           <th style="font-size:12px">학력</th>
           <th style="font-size:12px">경력</th>
@@ -5114,7 +5166,7 @@ function showIvSelect() {
     return `<div class="ivs-item ${curRank===1?'r1':curRank===2?'r2':''}">
       <div style="font-size:14px;color:var(--tx2);font-family:'DM Mono',monospace;width:22px;flex-shrink:0">${i+1}</div>
       <div style="flex:1;min-width:0">
-        <div style="font-size:15px;font-weight:700">${r.name||a.name} <span style="font-size:13px;color:var(--tx2);font-weight:400">${fmtAge(r.age,r.birth)}</span></div>
+        <div style="font-size:15px;font-weight:700">${r.name||a.name} <span style="font-size:13px;color:var(--tx2);font-weight:400">${fmtGenderPlain(r.gender)!=='-'?fmtGenderPlain(r.gender)+' · ':''}${fmtAge(r.age,r.birth)}</span></div>
         <div style="font-size:13px;color:var(--tx2);margin-top:2px">${a.empType} · ${a.job} · ${formatCareer(r.career_years)}</div>
         <div style="font-size:13px;color:var(--tx2);margin-top:3px;line-height:1.5;font-style:italic">${r.summary||''}</div>
       </div>
@@ -7369,7 +7421,7 @@ async function exportExcel() {
     exportData = applicants.filter(a=>a.status==='done').map(a=>{
       const r=a.result||{};
       return {
-        이름:r.name||'', 나이:fmtAge(r.age,r.birth), 생년월일:r.birth||'',
+        이름:r.name||'', 성별:fmtGenderPlain(r.gender), 나이:fmtAge(r.age,r.birth), 생년월일:r.birth||'',
         연락처:r.contact||'', 이메일:r.email||'', 학력:r.education||'',
         총경력:r.career_years||'', 최근직장:r.last_company||'', 자격증:(r.licenses||[]).join(', '),
         직종:a.job||'', 신입경력:a.empType||'', 적합도점수:r.fit_score||0,
