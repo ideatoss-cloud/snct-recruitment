@@ -1260,6 +1260,21 @@ function _savePromotionDoc(){
 function _loadPromotionDoc(round){ try{ const raw=localStorage.getItem(_promoDocKey(round)); return raw?JSON.parse(raw):null; }catch(e){ return null; } }
 // ✅ v1.2.0: ADMIN_CODE 평문 제거 — _사용자 시트 role='admin'로 검증. 호환 위해 빈 상수 유지 (서서히 코드에서 제거)
 const ADMIN_CODE = ''; // deprecated
+// ✅ v1.2.54 (2026.07.27) — 동일 투표자 중복 집계(치명, 실사용 중 발견):
+//   재무회계 회차에서 김동경 1인이 투표를 2회 제출했는데 두 제출이 모두 살아남아
+//   "김동경(1순위), 김동경(1순위)"로 두 번 세어졌다. 우선면접 3점이 6점, 면접대상 1점이
+//   2점으로 표시돼 투표 결과 순위가 통째로 왜곡됐다.
+//   원인: GAS submitVotes가 재제출 시 기존 행을 지우지 않고 추가만 한다(집계 시트가 누적).
+//   → GAS 수정은 재배포가 필요하고 투표 마감(7/29 오전)이 임박해, 읽는 쪽에서 막는다.
+//     ① dedupeVoteResults(): 투표자 이름 기준 중복 제거 후 rank1/rank2/total 재계산.
+//        같은 사람이 순위를 바꿔 재제출했으면 마지막(최신) 제출을 채택한다.
+//     ② 투표 참여자 목록도 동일 이름 중복 제거
+//     ③ 재제출 시 "기존 투표가 대체된다" 확인창 — 의도치 않은 중복 제출 자체를 줄임
+//     ④ 중복이 실제로 제거되면 관리자에게 경고 배너로 알림(조용히 고치지 않는다)
+//   ⚠️ 시트 원본의 중복 행은 그대로 남는다. 집계·확정에는 영향이 없지만, 회차 종료 후
+//      GAS 배치 작업(기술인계서 §7)에서 submitVotes를 upsert로 바꿔 근본 정리할 것.
+//   함께 수정: 투표 점수 라벨이 "투표+서류 합산"으로 잘못 적혀 있었다. total은 투표 점수
+//   (우선면접 3 · 면접대상 1)만이고 서류점수는 포함되지 않는다 → "투표 점수"로 정정.
 // ✅ v1.2.48 (2026.07.27) — 면접·메일 단계 안전장치(사전 점검에서 발견, 다음 주 대비):
 //   면접 평가와 메일 발송은 아직 한 번도 실사용된 적 없는 경로다. 코드를 훑어 되돌릴 수 없는
 //   사고로 이어질 지점 3개를 막았다.
@@ -1424,7 +1439,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.2.53';
+const APP_VERSION = 'v1.2.54';
 const APP_VERSION_DATE = '2026.07.27';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -5686,6 +5701,13 @@ async function submitVotes() {
   const myVotes=Object.entries(ivVotes).filter(([,v])=>v>0);
   if(!myVotes.length){toast('투표를 먼저 선택해주세요','err');return;}
   if(!currentUser){toast('이름을 입력해주세요','err');return;}
+  // ✅ v1.2.54: 재제출은 허용하되(마음이 바뀔 수 있다) 무심코 두 번 눌러 중복이 쌓이는 걸 막는다.
+  //   집계는 최신 제출만 반영하므로 "누적"이 아니라 "대체"임을 분명히 알린다.
+  if(voteSubmitted && !confirm(
+      '이미 투표를 제출하셨습니다.\n\n'
+      + '다시 제출하면 앞서 제출한 투표는 무시되고,\n'
+      + '지금 선택하신 '+myVotes.length+'명으로 대체됩니다.\n\n'
+      + '계속하시겠습니까?')) return;
   const votes=myVotes.map(([id,rank])=>{
     const a=applicants.find(x=>x.id==id); if(!a)return null;
     const r=a.result||{};
@@ -5705,6 +5727,38 @@ async function submitVotes() {
 async function loadAdminRounds() {
   await loadRounds();
 
+}
+
+// ✅ v1.2.54: 동일 투표자 중복 집계 방지
+// GAS submitVotes는 재제출 시 기존 행을 지우지 않고 추가만 하므로, 한 사람이 두 번
+// 제출하면 집계 시트에서 같은 이름이 두 번 세어져 점수가 배로 뛴다.
+// 여기서 투표자 이름 기준으로 중복을 걷어내고 rank1/rank2/total을 다시 계산한다.
+//   · 1순위 = 우선면접 3점 / 2순위 = 면접대상 1점 (GAS 산식과 동일)
+//   · 같은 사람이 순위를 바꿔 재제출한 경우 뒤에 나온 것(=최신 제출)을 채택
+//   · 중복이 없으면 GAS가 준 값을 그대로 둔다 (불필요한 재계산으로 인한 오차 방지)
+// 반환값: 제거된 중복 표의 개수 (0이면 정상)
+function dedupeVoteResults(results){
+  let removed = 0;
+  (results||[]).forEach(r => {
+    const raw = String(r.voters||'').split(',').map(s=>s.trim()).filter(Boolean);
+    if(raw.length < 2) return;
+    const byVoter = new Map(); // 투표자 이름 → 순위 (나중 항목이 앞의 것을 덮어씀)
+    raw.forEach(tok => {
+      const m = tok.match(/^(.*?)\s*\(\s*(\d+)\s*순위\s*\)\s*$/);
+      const name = (m ? m[1] : tok).trim();
+      if(!name) return;
+      if(byVoter.has(name)) removed++;
+      byVoter.set(name, m ? Number(m[2]) : 0);
+    });
+    if(byVoter.size === raw.length) return; // 이 지원자엔 중복 없음 → 원본 유지
+    let r1 = 0, r2 = 0;
+    byVoter.forEach(rank => { if(rank === 1) r1++; else if(rank === 2) r2++; });
+    r.rank1 = r1;
+    r.rank2 = r2;
+    r.total = r1 * 3 + r2 * 1;
+    r.voters = [...byVoter.entries()].map(([n,rk]) => rk ? `${n}(${rk}순위)` : n).join(', ');
+  });
+  return removed;
 }
 
 async function loadAdminResults() {
@@ -5740,9 +5794,12 @@ async function loadAdminResults() {
     const res=await fetch(GAS_URL+'?action=getResults&userEmail='+encodeURIComponent(currentUserEmail||'')+'&round='+encodeURIComponent(round));
     const data=await res.json();
     if(!data.success){document.getElementById('adminResultBody').innerHTML=`<div style="color:var(--red);font-size:14px;padding:20px">${data.message}</div>`;return;}
-    const voters=data.voters||[];
+    // ✅ v1.2.54: 같은 사람이 두 번 제출하면 참여자 목록에도 이름이 두 번 나온다 → 중복 제거
+    const voters=[...new Set((data.voters||[]).map(v=>String(v).trim()).filter(Boolean))];
     document.getElementById('voterList').innerHTML=voters.length?`<div style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:5px">${voters.map(v=>`<span style="background:rgba(0,180,216,0.1);border:1px solid var(--bd);border-radius:12px;padding:3px 11px;font-size:14px">👤 ${v}</span>`).join('')}</div><div style="font-size:13px;color:var(--tx2)">투표 참여: ${voters.length}명</div>`:'<div style="font-size:14px;color:var(--tx2)">아직 투표한 사람이 없습니다</div>';
     const results=data.results||[];
+    // ✅ v1.2.54: 중복 제출분을 걷어낸 뒤 집계 — 이 결과가 아래 목록과 확정 체크리스트에 모두 쓰인다
+    const _dupRemoved = dedupeVoteResults(results);
     results.sort((a,b) => (b.score||0) - (a.score||0)); // 지원서 점수 내림차순 정렬
     // ✅ v1.2.34: 투표가 1건도 없으면 GAS _집계 시트가 없어 results=[]가 되고, 여기서 return하는 바람에
     //   아래 showConfirmArea까지 도달하지 못해 "면접 대상자 확정" 화면 자체가 렌더링되지 않았다.
@@ -5780,7 +5837,14 @@ async function loadAdminResults() {
       toast(`투표 기록이 없어 서류점수 순으로 표시합니다 (${results.length}명) — 관리자 직권 확정`, 'ok');
     }
     const medals=['🥇','🥈','🥉'];
-    document.getElementById('adminResultBody').innerHTML=results.map((r,i)=>`
+    // ✅ v1.2.54: 중복을 조용히 고치지 않는다 — 관리자가 원인을 알 수 있게 표시
+    const dupBanner = _dupRemoved ? `
+      <div style="background:rgba(244,168,0,0.10);border:1px solid var(--gold);border-radius:9px;padding:11px 14px;margin-bottom:12px;font-size:13.5px;line-height:1.65;color:var(--gold)">
+        <b>⚠️ 중복 투표 ${_dupRemoved}건을 제외하고 집계했습니다.</b><br>
+        <span style="color:var(--tx2)">같은 분이 투표를 두 번 이상 제출한 경우입니다.
+        가장 <b>최근 제출</b>만 반영했으므로 아래 점수가 정상입니다.</span>
+      </div>` : '';
+    document.getElementById('adminResultBody').innerHTML=dupBanner+results.map((r,i)=>`
       <div class="rank-row ${r.confirmed?'':''}${i===0?'r1':i===1?'r2':i===2?'r3':''}" style="${r.confirmed?'border-color:var(--green);background:rgba(0,201,122,0.08)':''}">
         <div class="rank-medal">${r.confirmed?'✅':(medals[i]||i+1)}</div>
         <div style="flex:1;min-width:0">
@@ -5791,7 +5855,7 @@ async function loadAdminResults() {
         </div>
         <div style="text-align:right;flex-shrink:0">
           <div class="rank-score">${r.total}점</div>
-          <div style="font-size:12px;color:var(--tx2);margin-top:2px;font-style:italic">투표+서류 합산</div>
+          <div style="font-size:12px;color:var(--tx2);margin-top:2px;font-style:italic">투표 점수</div>
           <div style="font-size:13px;color:var(--tx2);margin-top:2px">우선면접 ${r.rank1}표 · 면접대상 ${r.rank2}표</div>
           <div style="font-size:13px;color:var(--tx2)">서류점수 ${r.score}점</div>
         </div>
