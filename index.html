@@ -1263,6 +1263,16 @@ function _savePromotionDoc(){
 function _loadPromotionDoc(round){ try{ const raw=localStorage.getItem(_promoDocKey(round)); return raw?JSON.parse(raw):null; }catch(e){ return null; } }
 // ✅ v1.2.0: ADMIN_CODE 평문 제거 — _사용자 시트 role='admin'로 검증. 호환 위해 빈 상수 유지 (서서히 코드에서 제거)
 const ADMIN_CODE = ''; // deprecated
+// ✅ v1.2.47 (2026.07.27) — 분석 시작 전 채점기준 확인 팝업(작업자 요청) + 자격증 표기 정정:
+//   [1] 신입/경력 드롭다운 기본값이 "경력"이라, 신입 회차에서 안 바꾸면 전원이 경력 기준으로
+//       채점된다(경력연수 40점 등). 코드가 막을 수 없는 실수인데 30~40분짜리 작업이라
+//       잘못 돌리면 전부 다시 해야 한다. → 시작 전 신입/경력·직종·최저학력을 보여주고 확인받는다.
+//       '경력' 선택 시에는 "신입 채용이라면 취소하라"는 경고를 함께 띄운다.
+//       reanalyzeAll은 이미 확인을 받으므로 analyzeAll(true)로 중복 팝업을 생략한다.
+//       분석할 대상이 0명이면 팝업 전에 안내하고 종료(전체 재분석을 쓰라고 유도).
+//   [2] 현장직 '경력' 블록의 자격증 표기 오류: 프롬프트는 "1개=12"인데 recalcLicenseScore가
+//       max(30)×0.37=11로 덮어써 실제 부여값과 달랐다. 표기를 11로 맞춤(동작 변화 없음).
+//       현장직 신입·사무직 신입은 원래 일치했다.
 // ✅ v1.2.46 (2026.07.27) — 회차 불러오기 속도 개선(작업자 지적):
 //   불러오기 직후 재지원 이력을 forEach로 지원자 수만큼(31명이면 31개) GAS에 한꺼번에 요청했다.
 //   브라우저 동시연결 한도(호스트당 6개)에 걸리고 GAS 쪽에서도 큐잉되어 불러오기 전체가 느려졌다.
@@ -1403,7 +1413,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.2.46';
+const APP_VERSION = 'v1.2.47';
 const APP_VERSION_DATE = '2026.07.27';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -2585,15 +2595,38 @@ function setPanel(html) {
 // ══════════════════════════════════════════
 // 전체 분석 (관리자만)
 // ══════════════════════════════════════════
-async function analyzeAll() {
+// skipConfirm: reanalyzeAll()이 이미 확인을 받았을 때 중복 팝업 방지
+async function analyzeAll(skipConfirm) {
   if (!isAdmin) return;
   if (!API_KEY) { openApi(); return; }
   const empType = document.getElementById('empType').value;
   const job = document.getElementById('jobSel').value;
   if (!empType || !job) { toast('직종과 신입/경력을 먼저 선택해주세요','err'); return; }
+  const pending = applicants.filter(a=>a.status!=='done' && a.status!=='error');
+  if (!pending.length) { toast('분석할 지원자가 없습니다 — 이미 분석된 인원은 ♻️ 전체 재분석을 쓰세요','err'); return; }
+
+  // ✅ v1.2.47: 채점 기준 확인 팝업 (작업자 요청)
+  //   신입/경력 드롭다운 기본값이 "경력"이라, 신입 회차에서 안 바꾸면 전원이 경력 기준으로
+  //   채점된다(경력연수 40점 등). 코드가 막을 수 없는 실수라 시작 전에 한 번 확인받는다.
+  //   30~40분이 걸리는 작업이고 잘못 돌리면 전부 다시 해야 하므로 클릭 한 번의 값어치가 크다.
+  if (!skipConfirm && !confirm(
+      `${pending.length}명을 아래 기준으로 분석합니다.\n\n`
+    + `────────────────────\n`
+    + `  신입/경력 :  ${empType}\n`
+    + `  직    종 :  ${job}\n`
+    + `  최저학력 :  ${EDU_LABELS[minEduSettings[job]] || minEduSettings[job] || '-'} (미달 시 자동 탈락)\n`
+    + `────────────────────\n\n`
+    + `${empType === '신입'
+        ? '※ 신입 기준이라 경력은 점수에 반영되지 않습니다.'
+        : '※ 경력 기준입니다. 신입 채용이라면 지금 취소하고 "신입"으로 바꾸세요.'}\n`
+    + `예상 소요시간 약 ${Math.max(1, Math.round(pending.length * 1.2))}분 — 완료까지 창을 닫지 마세요.\n\n`
+    + `이 기준이 맞습니까?`)) {
+    toast('분석을 취소했습니다 — 직종·신입/경력을 확인해 주세요', 'ok');
+    return;
+  }
+
   const anaBtnRef = document.getElementById('anaBtn');
   if(anaBtnRef) anaBtnRef.disabled = true;
-  const pending = applicants.filter(a=>a.status!=='done' && a.status!=='error');
   let consecutiveFail = 0; // ✅ v1.2.34: 전면 장애 감지용 (연속 실패 3건이면 중단)
   for (let i=0; i<pending.length; i++) {
     const a = pending[i];
@@ -2756,7 +2789,7 @@ async function reanalyzeAll() {
   analysisSaved = false;
   renderAlist(); updateBadge();
   toast(`전체 재분석 시작 — ${ready.length}명`, 'ok');
-  await analyzeAll();
+  await analyzeAll(true);   // 위에서 이미 확인받았으므로 중복 팝업 생략
 }
 
 // ── 메모 캐시 ──
@@ -4767,7 +4800,7 @@ function makePrompt(empType, job, pdfText) {
   if (isField && empType==='경력') {
     criteria=`【현장직 경력 점수 기준 (100점)】
 1. 경력관련성×연수 (40점): 항만/컨테이너터미널 직접경험=100%, 중공업/조선/제조크레인=70%, 물류/창고중장비=50%, 건설장비=40%, 무관=0%. 유효경력 10년↑=36, 7~10=30, 5~7=24, 3~5=17, 1~3=10, 1년미만=4, 0=0. ⚠️평균재직1년미만 -8점. ⚠️10년↑이어도 직접관련 아니면 만점불가
-2. 직무관련자격증 (30점): 관련목록[${relLic}]만 인정. 3개↑=27, 2개=20, 1개=12, 0개=0. ⚠️만점은 3개이상+고난도자격증 보유시만
+2. 직무관련자격증 (30점): 관련목록[${relLic}]만 인정. 3개↑=27, 2개=20, 1개=11, 0개=0. ⚠️만점은 3개이상+고난도자격증 보유시만
 3. 물류/항만업계경험 (20점): 5년↑=17, 3~5=13, 1~3=9, 1년미만=4, 없음=0. ⚠️단순 물류창고는 3점 감산
 4. 학력 (10점): 아래 [학력 티어 정의] 기준 채점. ${eduScale(10)}. ${majNote} ${EDU_FIELD_NOTE}
 5. 학점 가산 (최대+5점, 위 항목 배점과 겹치지 않는 별도 가산항목): ${gpaNote}`;
