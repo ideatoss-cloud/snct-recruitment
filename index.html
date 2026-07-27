@@ -1424,7 +1424,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.2.52';
+const APP_VERSION = 'v1.2.53';
 const APP_VERSION_DATE = '2026.07.27';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -1684,8 +1684,6 @@ function restoreSession() {
   const t6el = document.getElementById('t6');
   if (t6el) t6el.style.display = isAdmin ? 'flex' : 'none';
   document.getElementById('apiBtn').style.display = isAdmin ? 'flex' : 'none';
-  // ✅ v1.2.4: 테스트 페이지 진입 버튼 (관리자만)
-  if (_testBtn) _testBtn.style.display = isAdmin ? 'inline-block' : 'none';
   document.getElementById('notifWrap').style.display = 'block';
   const uploadCard = document.getElementById('uploadCard');
   if (uploadCard) uploadCard.style.display = isAdmin ? 'block' : 'none';
@@ -1925,8 +1923,6 @@ function finishLogin() {
   var t6el2 = document.getElementById('t6');
   if (t6el2) t6el2.style.display = isAdmin ? 'flex' : 'none';
   document.getElementById('apiBtn').style.display = isAdmin ? 'flex' : 'none';
-  // ✅ v1.2.4: 테스트 페이지 진입 버튼 (관리자만)
-  if (_testBtn) _testBtn.style.display = isAdmin ? 'inline-block' : 'none';
   document.getElementById('notifWrap').style.display = 'block';
   const uploadCard = document.getElementById('uploadCard');
   if (uploadCard) uploadCard.style.display = isAdmin ? 'block' : 'none';
