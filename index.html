@@ -1427,7 +1427,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.2.50';
+const APP_VERSION = 'v1.2.51';
 const APP_VERSION_DATE = '2026.07.27';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -2954,6 +2954,17 @@ async function reanalyzeOne(id) {
   if (a._manual || !a.b64) { showManualInput(a); return; }
   const empType = document.getElementById('empType').value;
   const job     = document.getElementById('jobSel').value;
+  // ✅ v1.2.51: 개인 분석 화면에서 항상 누를 수 있게 되어(기존엔 오류 건에만 노출) 확인을 받는다.
+  //   특히 드롭다운이 원래 분석했던 직종과 다르면 엉뚱한 기준으로 다시 채점되므로 그때는 경고한다.
+  {
+    const nm = a.result?.name || a.name.replace('.pdf','');
+    const changed = (a.empType && a.empType !== empType) || (a.job && a.job !== job);
+    if (!confirm(
+        `[${nm}] 1명만 다시 채점합니다.\n\n`
+      + `  기준 : ${empType} · ${job}\n`
+      + (changed ? `  ⚠️ 기존 분석은 "${a.empType} · ${a.job}" 기준이었습니다.\n     드롭다운을 바꾸지 않았는지 확인하세요.\n` : '')
+      + `\n기존 채점 결과는 새 결과로 대체됩니다.\n다른 지원자는 영향받지 않습니다. 계속할까요?`)) return;
+  }
   a.empType = empType; a.job = job;
   a.status = 'ing'; a.analysisError = null;
   renderAlist();
@@ -5033,6 +5044,15 @@ function checkEduDisqualify(eduStr, job, status, eduAll){
 
   if(rank===-1) return {fail:false,reason:'판별불가(통과)'};
   if(rank<minIdx) return {fail:true,reason:`최저학력 미달 (${EDU_LABELS[EDU_RANKS[rank]]} < 기준 ${EDU_LABELS[minEdu]})`};
+
+  // ✅ v1.2.51: 재분석 없이도 잡히게 — 상태 필드가 없는 기존 데이터에서 졸업/재학을 판별할
+  //   근거가 전혀 없으면 통과시키되 확인 배너를 띄운다. 회차를 불러오기만 해도 적용된다.
+  //   (정하영: AI가 '인하대학교 금융투자학과'만 뽑아 재학중인데 대졸로 통과했던 케이스)
+  //   ⚠️여기서 탈락시키면 실제 졸업자까지 억울하게 걸리므로 '통과 + 경고'가 맞다.
+  if (rank >= 2 && !st && !/졸업|재학|휴학|수료|학위|학사|중퇴/.test(s)) {
+    return {fail:false, warn:true,
+      reason:`⚠️ 졸업 여부 표기 없음 ("${s.slice(0,40)}") — 재학중이면 최저학력 미달일 수 있어 원본 확인 필요`};
+  }
   return {fail:false,reason:'충족'};
 }
 
@@ -5425,6 +5445,13 @@ function showResult(id) {
            style="${(a.b64||a.driveUrl)?'':'opacity:0.45;cursor:default'}">
         📄 원본 PDF${(a.b64||a.driveUrl)?'':'(없음)'}
       </div>
+      ${isAdmin ? `
+      <div class="stab ${a.b64?'':'stab-disabled'}"
+           onclick="${a.b64?`reanalyzeOne('${id}')`:`alert('이 지원자는 원본 PDF가 메모리에 없어 재분석할 수 없습니다.\\n\\n새로고침하거나 회차를 불러오면 원본은 Drive 링크로만 남습니다.\\nPDF를 다시 올려 분석해 주세요.')`}"
+           title="${a.b64?'이 지원자만 다시 채점합니다 (다른 지원자는 그대로)':'원본 PDF가 메모리에 없어 재분석 불가'}"
+           style="${a.b64?'':'opacity:0.45;cursor:default'}">
+        ♻️ 이 사람만 재분석
+      </div>` : ''}
     </div>
     <div class="card" style="margin-bottom:12px">
       <div class="ct">👤 기본 정보</div>
