@@ -1427,7 +1427,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.2.48';
+const APP_VERSION = 'v1.2.49';
 const APP_VERSION_DATE = '2026.07.27';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -4978,33 +4978,43 @@ function checkEduDisqualify(eduStr,job){
   //   문자열 전체를 한 덩어리로 보면 '고교 졸업 + 대학 재학'에서 대학 등급을 잘못 인정하게 된다.
   const segs = s.split(/[,/·;·\n]|\s{2,}/).map(x => x.trim()).filter(Boolean);
   const gradSchoolRe = /대학원|MBA|경영전문|석사|박사/;
-  const rankOf = t =>
-      gradSchoolRe.test(t) ? 3
-    : ((/4년제|대학교|대졸/.test(t) || /[가-힣]{2,}대(?![학문])/.test(t)) && !/전문대/.test(t)) ? 2
-    : /전문대|2년제|3년제/.test(t) ? 1
-    : /고등학교|고졸|검정고시/.test(t) ? 0 : -1;
+  // ✅ v1.2.49: '○○대사대부속고등학교'처럼 고교명에 '대'가 들어가면 축약 패턴([가-힣]{2,}대)이
+  //   대학으로 오인해 고졸 지원자가 대졸 필터를 통과했다(서울대사대부고·대전대신고 등).
+  //   → 고교 표기가 있으면 축약 패턴을 쓰지 않고 명시적 대학 표기(대학교·대졸·4년제)만 인정.
+  const rankOf = t => {
+    if (gradSchoolRe.test(t)) return 3;
+    const hasHigh = /고등학교|고교|고졸|검정고시/.test(t);
+    const isUni = (/4년제|대학교|대졸/.test(t) || (!hasHigh && /[가-힣]{2,}대(?![학문])/.test(t)))
+                  && !/전문대/.test(t);
+    if (isUni) return 2;
+    if (/전문대|2년제|3년제/.test(t)) return 1;
+    if (hasHigh) return 0;
+    return -1;
+  };
 
-  let rank = -1, gradEnrolled = false;
+  // ✅ v1.2.49: 재학중인 학교는 그 학력을 취득한 게 아니지만 **그 아래 학력은 취득한 것**이다.
+  //   (대학 재학 = 고교 졸업 / 대학원 재학 = 학사 보유)
+  //   v1.2.44는 이를 반영하지 않아 최저학력이 '고졸'인 직종(크레인기사·경리·포맨·CFS 등)에서
+  //   대학 재학생이 자동 탈락(fit_score=0)했다. 재무회계(대졸) 회차엔 영향 없었으나
+  //   다음 현장직 회차에서 바로 터질 문제였다.
+  const impliedOf = r => r >= 3 ? 2 : 0;   // 대학원 재학→대졸 / 대학·전문대 재학→고졸
+
+  let rank = -1, implied = -1;
   for (const seg of segs) {
     const r = rankOf(seg);
     if (r < 0) continue;
     const isEnrolled = /재학|휴학|수료/.test(seg) && !/졸업\s*예정/.test(seg);
-    if (isEnrolled) {
-      // 대학원·MBA 재학은 학사 학위가 입학 요건 → 대졸 보유로 인정 (이예원 케이스)
-      if (gradSchoolRe.test(seg)) gradEnrolled = true;
-      continue;                       // 재학중인 학교 자체는 취득 학력으로 인정하지 않음
-    }
+    if (isEnrolled) { implied = Math.max(implied, impliedOf(r)); continue; }
     if (r > rank) rank = r;
   }
-  if (gradEnrolled && rank < 2) rank = 2;
 
-  // 조각 분리가 안 되는 표기(구분자 없음)를 위한 보정 — 졸업 흔적이 전혀 없고 재학만 있으면 미취득
-  if (rank === -1 && /재학|휴학|수료/.test(s) && !/졸업|학위|학사/.test(s)) {
+  // 구분자 없는 표기 보정 — 졸업 흔적 없이 재학만 있는 경우
+  if (rank === -1 && implied === -1 && /재학|휴학|수료/.test(s) && !/졸업|학위|학사/.test(s)) {
     const whole = rankOf(s);
-    if (gradSchoolRe.test(s)) rank = 2;
-    else if (whole > 0) return {fail:true, reason:`재학중(졸업예정 아님) — 취득 학력 확인 불가, 기준 ${EDU_LABELS[minEdu]} 미충족`};
+    if (whole > 0) implied = impliedOf(whole);
   }
-  if (rank === -1) rank = rankOf(s);   // 그 외에는 전체 문자열로 판정
+  if (rank === -1 && implied === -1) rank = rankOf(s);   // 그 외에는 전체 문자열로 판정
+  if (implied > rank) rank = implied;
 
   if(rank===-1) return {fail:false,reason:'판별불가(통과)'};
   if(rank<minIdx) return {fail:true,reason:`최저학력 미달 (${EDU_LABELS[EDU_RANKS[rank]]} < 기준 ${EDU_LABELS[minEdu]})`};
