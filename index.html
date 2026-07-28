@@ -1195,6 +1195,7 @@ kim@gmail.com"
       <div style="font-size:13px;font-weight:700;color:var(--tx2);margin-bottom:8px">자동 접근자</div>
       <div id="roundAutoAccess" style="font-size:14px;line-height:2"></div>
     </div>
+    <div id="roundAccessWarn" style="display:none;background:rgba(255,90,90,0.10);border:1px solid var(--red);border-radius:8px;padding:11px 13px;margin-bottom:12px;font-size:13px;line-height:1.75;color:var(--red)"></div>
     <div class="fg">
       <label>수동 추가 <span style="font-weight:400;color:var(--tx2)">(등록된 사용자 중 선택)</span></label>
       <div id="roundUserChecklist" style="max-height:200px;overflow-y:auto;background:rgba(255,255,255,0.03);border:1px solid var(--bd);border-radius:8px;padding:8px 10px;"><div style="color:var(--tx2);font-size:13px;padding:4px 0">불러오는 중...</div></div>
@@ -1260,6 +1261,19 @@ function _savePromotionDoc(){
 function _loadPromotionDoc(round){ try{ const raw=localStorage.getItem(_promoDocKey(round)); return raw?JSON.parse(raw):null; }catch(e){ return null; } }
 // ✅ v1.2.0: ADMIN_CODE 평문 제거 — _사용자 시트 role='admin'로 검증. 호환 위해 빈 상수 유지 (서서히 코드에서 제거)
 const ADMIN_CODE = ''; // deprecated
+// ✅ v1.2.55 (2026.07.27) — 회차 접근 권한 2건 (대표이사 "권한 없음" 문의로 점검):
+//   [1] 직종 통합의 부작용 — 팀장 자동 접근이 조용히 끊긴다.
+//       팀장 매칭은 직종명 완전일치(m.job === roundJob)인데, v1.2.36에서 '재무'·'회계'를
+//       '재무회계'로 통합했다. 채점 쪽에는 구직종 별칭을 넣었지만 팀장 매칭에는 넣지 않아,
+//       구직종으로 등록된 팀장은 새 회차에서 찾아지지 않는다. 실패해도 아무 표시가 없다.
+//       → 직군팀장 설정에서 '현재 쓰지 않는 직종에 등록된 팀장'을 경고로 표시.
+//       ⚠️ 실제 접근 허용은 GAS가 판정하므로 화면 수정만으로 복구되지 않는다.
+//          현재 직종(재무회계)으로 다시 등록해야 실제 접근이 살아난다.
+//   [2] 회차 권한 저장이 '전체 교체'인데 기존 권한을 못 읽어도 그냥 저장된다(치명).
+//       체크 상태를 캐시된 rounds의 accessEmails로 그리는데, 캐시가 낡거나 그 필드가
+//       없으면 전부 미체크로 뜬다. 그 상태로 저장하면 기존 권한자가 전부 삭제된다.
+//       → 열 때 회차를 강제로 새로 받아오고, 기존 권한을 못 읽었으면 빨간 경고 표시.
+//         저장 시 빠지는 사람이 있으면 명단을 보여주고 확인을 받는다.
 // ✅ v1.2.54 (2026.07.27) — 동일 투표자 중복 집계(치명, 실사용 중 발견):
 //   재무회계 회차에서 김동경 1인이 투표를 2회 제출했는데 두 제출이 모두 살아남아
 //   "김동경(1순위), 김동경(1순위)"로 두 번 세어졌다. 우선면접 3점이 6점, 면접대상 1점이
@@ -1439,7 +1453,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.2.54';
+const APP_VERSION = 'v1.2.55';
 const APP_VERSION_DATE = '2026.07.27';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -1734,6 +1748,11 @@ function updateJobSel() {
 // ══════════════════════════════════════════
 var _jobMgrList = [];
 var _roundAccessTarget = '';
+// ✅ v1.2.55: 회차 권한 저장은 '체크된 사람만 남기는' 전체 교체다. 열었을 때 기존 권한을
+//   못 읽으면 전부 미체크로 뜨고, 그대로 저장하면 기존 권한이 통째로 지워진다.
+//   아래 두 값으로 "기존 권한을 아는지"와 "무엇이 지워지는지"를 추적해 저장 전에 경고한다.
+var _roundAccessKnown = false; // rd.accessEmails를 실제로 읽었는가
+var _roundAccessPrev = [];     // 열었을 때의 기존 권한 목록
 
 function getAllJobs() {
   var jobs = [];
@@ -1768,10 +1787,31 @@ function closeJobMgr() { document.getElementById('jobMgrModal').classList.remove
 function renderJobMgrList() {
   var el = document.getElementById('jobMgrList');
   if (!el) return;
+  // ✅ v1.2.55: 직종 통합(재무·회계 → 재무회계, v1.2.36)으로 더 이상 쓰지 않는 직종에
+  //   팀장이 남아 있으면 자동 접근이 조용히 끊긴다. 팀장 매칭은 직종명 완전일치라
+  //   '재무'로 등록된 팀장은 '재무회계' 회차에서 찾아지지 않는다.
+  //   채점 쪽에는 구직종 별칭을 넣었지만 팀장 매칭에는 넣지 않아 놓친 부분이다.
+  //   경고를 띄워 관리자가 현재 직종으로 다시 등록하게 한다.
+  var live = getAllJobs();
+  var stale = _jobMgrList.filter(function(m){
+    return m.email && String(m.email).trim() && m.job && live.indexOf(m.job) === -1;
+  });
   var html = '';
+  if (stale.length) {
+    html += '<div style="background:rgba(244,168,0,0.10);border:1px solid var(--gold);border-radius:8px;padding:11px 13px;margin-bottom:12px;font-size:13px;line-height:1.75;color:var(--gold)">'
+      + '<b>⚠️ 지금 쓰지 않는 직종에 팀장이 등록돼 있습니다</b><br>'
+      + '<span style="color:var(--tx2)">'
+      + stale.map(function(m){ return '<b>' + m.job + '</b> (' + m.email + ')'; }).join(', ')
+      + '<br>이 직종으로는 회차가 만들어지지 않으므로 <b>자동 접근이 되지 않습니다.</b> '
+      + '아래 현재 직종 목록에서 같은 이메일을 다시 등록해 주세요. '
+      + '(예: 재무·회계 → <b>재무회계</b>)</span></div>';
+  }
   _jobMgrList.forEach(function(m, i) {
+    var isStale = m.email && String(m.email).trim() && m.job && live.indexOf(m.job) === -1;
     html += '<div style="display:grid;grid-template-columns:120px 1fr 1fr;gap:6px;align-items:center;padding:6px 0;border-bottom:1px solid var(--bd)">';
-    html += '<div style="font-size:14px;font-weight:600;color:var(--ac)">' + (m.job||'직군') + '</div>';
+    html += '<div style="font-size:14px;font-weight:600;color:' + (isStale?'var(--gold)':'var(--ac)') + '"'
+         + (isStale?' title="현재 쓰지 않는 직종 — 자동 접근 안 됨"':'') + '>'
+         + (isStale?'⚠️ ':'') + (m.job||'직군') + '</div>';
     html += '<input type="text" value="' + (m.email||'') + '" placeholder="팀장 이메일"';
     html += ' style="font-size:13px;padding:5px 8px;background:rgba(255,255,255,0.04);border:1px solid var(--bd);border-radius:6px;color:var(--tx)"';
     html += ' oninput="updateJobMgr(' + i + ',&quot;email&quot;,this.value)">';
@@ -1806,13 +1846,30 @@ async function openRoundAccess(roundId, roundJob) {
   var nameEl = document.getElementById('roundAccessRoundName');
   if (nameEl) nameEl.textContent = '📋 ' + roundId + ' (' + roundJob + ')';
 
+  // ✅ v1.2.55: 캐시된 회차(메모리 5분 / localStorage)로 체크 상태를 그리면
+  //   오래된 권한 정보로 저장해 남의 권한을 지울 수 있다 → 열 때 항상 새로 받아온다.
+  _roundAccessKnown = false; _roundAccessPrev = [];
+  if (GAS_URL) { try { await loadRounds(true, true); } catch(e) {} }
+
   // ✅ _userList 없으면 GAS에서 먼저 로드 후 즉시 렌더링
   var cl = document.getElementById('roundUserChecklist');
   if (cl) {
     cl.innerHTML = '<div style="color:var(--tx2);font-size:13px;padding:4px 0">목록 불러오는 중...</div>';
     var renderChecklist = function() {
       var rd = (typeof rounds !== 'undefined' ? rounds : []).find(function(r){ return r.id === roundId; });
-      var savedEmails = (rd && rd.accessEmails) ? rd.accessEmails.map(function(e){ return e.toLowerCase(); }) : [];
+      _roundAccessKnown = !!(rd && Array.isArray(rd.accessEmails));
+      var savedEmails = _roundAccessKnown ? rd.accessEmails.map(function(e){ return String(e).toLowerCase(); }) : [];
+      _roundAccessPrev = savedEmails.slice();
+      // 기존 권한을 못 읽었으면 그대로 저장하는 순간 전멸이다 — 반드시 눈에 띄게 알린다
+      var warnEl = document.getElementById('roundAccessWarn');
+      if (warnEl) {
+        warnEl.style.display = _roundAccessKnown ? 'none' : 'block';
+        warnEl.innerHTML = _roundAccessKnown ? '' :
+          '<b>⚠️ 현재 저장된 수동 권한을 읽어오지 못했습니다.</b><br>'
+          + '<span style="color:var(--tx2)">아래 체크박스는 <b>실제 권한 상태가 아닙니다.</b> '
+          + '이대로 저장하면 <b>체크한 사람만 남고 나머지는 삭제됩니다.</b> '
+          + '기존 권한자를 모두 체크했는지 확인한 뒤 저장하세요.</span>';
+      }
       var users = (typeof _userList !== 'undefined' ? _userList : []).filter(function(u){ return u.email; });
       if (users.length === 0) {
         cl.innerHTML = '<div style="color:var(--tx2);font-size:13px;padding:4px 0">등록된 사용자가 없습니다.<br>설정에서 사용자를 먼저 추가하세요.</div>';
@@ -1881,6 +1938,17 @@ async function saveRoundAccess() {
   if (!GAS_URL) { toast('GAS URL을 먼저 설정해주세요','err'); return; }
   var checked = document.querySelectorAll('#roundUserChecklist input[type=checkbox]:checked');
   var emails = Array.from(checked).map(function(cb){ return cb.value.trim().toLowerCase(); }).filter(Boolean);
+  // ✅ v1.2.55: 저장은 전체 교체다 — 사람이 빠지는 저장은 반드시 확인을 받는다.
+  if (!_roundAccessKnown) {
+    if (!confirm('현재 저장된 수동 권한을 읽어오지 못한 상태입니다.\n\n'
+      + '저장하면 지금 체크한 ' + emails.length + '명만 남고\n'
+      + '기존에 권한이 있던 사람은 모두 삭제됩니다.\n\n'
+      + '계속하시겠습니까?')) return;
+  } else {
+    var removed = _roundAccessPrev.filter(function(e){ return emails.indexOf(e) === -1; });
+    if (removed.length && !confirm('아래 ' + removed.length + '명의 회차 접근 권한이 삭제됩니다.\n\n'
+      + removed.join('\n') + '\n\n계속하시겠습니까?')) return;
+  }
   try {
     var res = await fetch(GAS_URL, {method:'POST', headers:{'Content-Type':'text/plain'},
       body: JSON.stringify({action:'updateRoundAccess', userEmail: currentUserEmail, round:_roundAccessTarget, emails:emails})});
