@@ -1608,7 +1608,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.2.66';
+const APP_VERSION = 'v1.2.67';
 const APP_VERSION_DATE = '2026.07.29';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -3759,7 +3759,7 @@ const EMAIL_TEMPLATES = {
           + `지원해 주신 데 대해 먼저 감사드립니다.<br><br>`
           + `제출해 주신 지원서를 면밀히 검토한 결과,<br>`
           + `<b style="color:#1e40af">${nm}님께서 ${job ? job+' 부문 ' : ''}서류 전형에 합격</b>하셨음을 알려드립니다.<br>`
-          + `진심으로 축하드립니다.<br><br>`
+          + `축하드립니다.<br><br>`
           + `이제 면접을 통해 ${nm}님을 직접 뵙고자 합니다.<br>`
           + `편안한 마음으로 오셔서 그동안 준비해 오신 것들을<br>`
           + `충분히 보여주시기 바랍니다.`,
@@ -3865,7 +3865,16 @@ const EMAIL_TEMPLATES = {
         //   대신 담당자명을 남겨 누가 보낸 메일인지는 분명히 한다 → '관리팀 이희경 차장'.
         //   (v1.2.50에서 '일정 조율 문의가 온다'는 이유로 휴대전화를 넣었으나 철회)
         personal: true,
-        mainMessage: `${_greeting(false)}<br><br>${nm}님,<br><br>당사 ${job ? job+' ' : ''}채용 절차 관련하여<br><b style="color:#0369a1">면접 전형에 합격</b>하셨습니다.<br>축하드립니다.<br><br>이에 <b>채용검진 절차</b>를 추가적으로 진행하고자 안내 메일 드립니다.`,
+        // ✅ v1.2.67 (작업자 지시): 서류합격 메일과 같은 말을 반복하지 않는다.
+        //   지원자는 서류→면접→최종 순으로 세 통을 받는다. 단계마다 감사할 대상이 다르다.
+        //   서류 = 지원해 준 것 / 면접 = 시간 내어 와준 것 / 최종 = 긴 과정을 함께해 준 것.
+        //   표현도 겹치지 않게 골랐다('면밀히'→'종합적으로', '진심으로 축하'는 최종합격에만).
+        mainMessage: `${_greeting(false)}<br><br>${nm}님,<br><br>`
+          + `지난 면접에 시간 내어 참석해 주셔서 감사합니다.<br><br>`
+          + `면접에서 나눠 주신 이야기를 종합적으로 검토한 결과,<br>`
+          + `<b style="color:#0369a1">${nm}님께서 면접 전형에 합격</b>하셨음을 알려드립니다.<br>`
+          + `다시 한번 축하드립니다.<br><br>`
+          + `이제 입사 전 절차로 <b>채용검진</b>을 안내드립니다.`,
         detail: `
           <div style="text-align:center;margin:24px 0">
             <a href="${_escapeHtml(detailsUrl)}" target="_blank" style="display:inline-block;padding:16px 36px;background:#0369a1;color:#fff;text-decoration:none;border-radius:8px;font-size:16px;font-weight:700;box-shadow:0 4px 12px rgba(3,105,161,0.30)">📋 채용검진 상세 안내 확인하기</a>
@@ -3873,7 +3882,9 @@ const EMAIL_TEMPLATES = {
           <div style="text-align:center;font-size:12px;color:#94a3b8;margin-bottom:6px">
             ↑ 위 버튼을 클릭하시면 검진병원·예약 방법·검진종류 등<br>모든 안내 사항을 확인하실 수 있습니다.
           </div>`,
-        closing: ''
+        // ✅ v1.2.67: 마무리 인사 (서류합격 메일과 다른 표현으로)
+        closing: `<div style="line-height:1.9">검진 일정 조율이 필요하시면 편히 연락 주십시오.<br>`
+          + `곧 함께 일하게 되기를 기다리겠습니다.</div>`
       });
     }
   },
@@ -3914,7 +3925,14 @@ const EMAIL_TEMPLATES = {
         // ✅ v1.2.64: 휴대전화 노출을 personal에서 분리했으므로 여기서 명시한다.
         //   최종 합격자는 입사 전까지 실제 연락 창구가 필요해 기존대로 남긴다(작업자 지시는 면접 합격 건).
         showMobile: true,
-        mainMessage: `${_greeting(true)}<br><br>${nm}님,<br><br>${_escapeHtml(SENDER_INFO.companyShort)} ${job ? job+' ' : ''}업무 <b style="color:#15803d">최종 합격</b>을 진심으로 축하드립니다. 🎉`,
+        // ✅ v1.2.67 (작업자 지시): 앞선 두 통(서류·면접 합격)과 표현이 겹치지 않게.
+        //   여기서는 '긴 과정을 함께해 준 것'에 감사하고, '진심으로 축하'는 이 마지막 단계에 쓴다.
+        mainMessage: `${_greeting(true)}<br><br>${nm}님,<br><br>`
+          + `${_escapeHtml(SENDER_INFO.companyShort)} ${job ? job+' ' : ''}업무 `
+          + `<b style="color:#15803d">최종 합격</b>을 진심으로 축하드립니다. 🎉<br><br>`
+          + `서류와 면접까지 긴 과정을 함께해 주셔서 감사합니다.<br>`
+          + `그 과정에서 보여주신 준비된 모습을 믿고 함께하게 되었습니다.<br><br>`
+          + `입사와 관련한 안내를 아래와 같이 드립니다.`,
         detail: `
           <div style="text-align:center;margin:24px 0">
             <a href="${_escapeHtml(detailsUrl)}" target="_blank" style="display:inline-block;padding:16px 36px;background:#15803d;color:#fff;text-decoration:none;border-radius:8px;font-size:16px;font-weight:700;box-shadow:0 4px 12px rgba(21,128,61,0.30)">📋 입사 상세 안내 확인하기</a>
@@ -3925,7 +3943,9 @@ const EMAIL_TEMPLATES = {
           <div style="margin-top:18px;padding:10px 14px;background:#fef3c7;border-left:3px solid #f59e0b;border-radius:3px;font-size:12px;color:#78350f;line-height:1.7">
             💡 본 메일에 <b>채용구비서류 양식</b>(엑셀)과 <b>안전교육 안내</b>(PDF)가 첨부되어 있습니다. 첨부파일도 함께 확인 부탁드립니다.
           </div>`,
-        closing: ''
+        // ✅ v1.2.67: 마무리 인사 (앞선 두 통과 다른 표현으로)
+        closing: `<div style="line-height:1.9">준비하시며 궁금한 점이 있으시면 언제든 연락 주십시오.<br>`
+          + `첫 출근일에 뵙겠습니다.</div>`
       });
     }
   }
@@ -4678,8 +4698,19 @@ function _refreshEmailPreview() {
   } else {
     html = tpl.bodyBuilder(pending.round, vars, sample.app);
   }
+  // ✅ v1.2.67: 미리보기에서 '상세 안내' 링크를 누르면 "상세정보를 찾을 수 없습니다"가 뜬다.
+  //   상세 정보는 **발송하는 순간에** 시트(_이메일상세정보)에 저장되고, 미리보기는 발송이 아니라서
+  //   토큰이 저장되지 않기 때문이다. 고장이 아니라 정상 동작인데 오해하기 쉬워 띠를 붙인다.
+  //   (2026.07.29 작업자가 실제로 오해함)
+  const _hasDetailLink = /action=viewDetails/.test(html);
+  const _previewNote = _hasDetailLink
+    ? `<div style="font-family:'Malgun Gothic',sans-serif;background:#fef3c7;color:#92400e;font-size:12px;padding:8px 12px;line-height:1.6;border-bottom:1px solid #fde68a">
+         ⓘ 미리보기입니다. <b>[상세 안내 확인하기]</b> 버튼은 여기서 눌러도 열리지 않습니다 —
+         상세 정보는 <b>실제로 발송할 때</b> 저장됩니다. 발송된 메일에서는 정상적으로 열립니다.
+       </div>`
+    : '';
   const frame = document.getElementById('emailPreviewFrame');
-  if (frame) frame.srcdoc = html;
+  if (frame) frame.srcdoc = _previewNote + html;
   // ✅ v1.0.55: 미리보기 라벨에 선택된 수신자명 표시
   const label = document.getElementById('emailPreviewLabel');
   if (label) label.innerHTML = `미리보기 — <b>${_escapeHtml(sample.app.name||'-')}</b> 님 기준`;
