@@ -1608,7 +1608,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.2.65';
+const APP_VERSION = 'v1.2.66';
 const APP_VERSION_DATE = '2026.07.29';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -3723,7 +3723,7 @@ const EMAIL_TEMPLATES = {
     // ✅ v1.2.65 (작업자 지시): 서류 합격 통보를 겸하는 메일인데 그 말이 없었다.
     //   제목·본문에 '서류 전형 합격'을 명시하고, 집합 시각(arrivalTime)을 따로 받는다.
     needsVars: ['jobLabel', 'interviewDate', 'arrivalTime', 'interviewLocation'],
-    subjectBuilder: (round, vars, app) => `[${SENDER_INFO.companyShort}] 서류 전형 합격 및 면접 일정 안내`,
+    subjectBuilder: (round, vars, app) => `[${SENDER_INFO.companyShort}] 서류 전형 합격을 축하드립니다 — 면접 일정 안내`,
     bodyBuilder: (round, vars, app) => {
       const nm = _escapeHtml(app.name);
       const job = _escapeHtml(vars.jobLabel || '');
@@ -3744,15 +3744,25 @@ const EMAIL_TEMPLATES = {
       }
       const arv = _escapeHtml(vars.arrivalTime || '');
       return _buildEmailBody({
-        title: '서류 전형 합격 및 면접 일정 안내',
+        title: '서류 전형 합격을 축하드립니다',
         headerColor: '#1e40af',
         // ✅ v1.2.50: 면접 대상자는 일정 문의가 오므로 휴대전화를 남긴다(작업자 지시)
         showMobile: true,
         // ✅ v1.2.65: 서류 합격 사실을 먼저 알린다. 이 메일이 곧 서류 합격 통보다
         //   (별도 서류합격 메일이 없고 docResult는 불합격자 전용이다).
+        // ✅ v1.2.66 (작업자 지시): 문안이 사실 전달만 하고 건조했다.
+        //   타사 서류합격 안내(오리온·와디즈·현대카드)를 참고해
+        //   ① 지원해 준 데 대한 감사 → ② 축하 → ③ 만나고 싶다는 뜻 순으로 고쳤다.
+        //   ⚠️ 과하게 들뜬 표현은 쓰지 않는다 — 터미널 회사 관리팀 명의 메일이다.
         mainMessage: `${_greeting(false)}<br><br>${nm}님,<br><br>`
-          + `당사 ${job ? job+' ' : ''}채용 <b style="color:#1e40af">서류 전형에 합격</b>하셨습니다. 축하드립니다.<br><br>`
-          + `이에 <b>면접 일정</b>을 아래와 같이 안내드립니다.`,
+          + `바쁘신 중에도 당사에 관심을 갖고<br>`
+          + `지원해 주신 데 대해 먼저 감사드립니다.<br><br>`
+          + `제출해 주신 지원서를 면밀히 검토한 결과,<br>`
+          + `<b style="color:#1e40af">${nm}님께서 ${job ? job+' 부문 ' : ''}서류 전형에 합격</b>하셨음을 알려드립니다.<br>`
+          + `진심으로 축하드립니다.<br><br>`
+          + `이제 면접을 통해 ${nm}님을 직접 뵙고자 합니다.<br>`
+          + `편안한 마음으로 오셔서 그동안 준비해 오신 것들을<br>`
+          + `충분히 보여주시기 바랍니다.`,
         // ✅ v1.2.65: 집합 시각을 본문에 명시한다(작업자 지시).
         //   면접 시작 전에 인적성 검사 등 사전 절차가 있어 실제로는 더 일찍 와야 한다.
         //   상세 페이지에만 두면 안 보고 면접 시각에 맞춰 오는 사람이 생긴다.
@@ -3770,7 +3780,9 @@ const EMAIL_TEMPLATES = {
           <div style="text-align:center;font-size:12px;color:#94a3b8;margin-bottom:6px">
             ↑ 위 버튼을 클릭하시면 일시·장소·지도·면접비 등<br>모든 안내 사항을 확인하실 수 있습니다.
           </div>`,
-        closing: ''
+        // ✅ v1.2.66: 사실 전달로 끝내지 않고 마무리 인사를 남긴다
+        closing: `<div style="line-height:1.9">부득이하게 일정 조정이 필요하시면 편히 연락 주십시오.<br>`
+          + `면접장에서 반갑게 뵙겠습니다.</div>`
       });
     }
   },
