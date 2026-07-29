@@ -1261,6 +1261,19 @@ function _savePromotionDoc(){
 function _loadPromotionDoc(round){ try{ const raw=localStorage.getItem(_promoDocKey(round)); return raw?JSON.parse(raw):null; }catch(e){ return null; } }
 // ✅ v1.2.0: ADMIN_CODE 평문 제거 — _사용자 시트 role='admin'로 검증. 호환 위해 빈 상수 유지 (서서히 코드에서 제거)
 const ADMIN_CODE = ''; // deprecated
+// ✅ v1.2.58 (2026.07.29) — 면접 대상자 선발은 '투표 점수'가 기준이다 (작업자 지시):
+//   ⚠️ 용어 — 여기서 '투표 점수'는 면접 *대상자를 뽑기 위한* 투표 합계(우선면접 3점·면접대상 1점)다.
+//      면접을 *실시한 뒤* 매기는 '면접 평가 점수'(ivScore, calcWeightedTotal)와 다른 값이다.
+//   ① 면접 대상자 선발 화면(loadAdminResults)의 순위 기준을 서류점수 → 투표 점수로 바꿨다.
+//      동점이면 서류점수로 가른다. 투표를 못 받은 사람은 total 0이라 맨 아래로 밀리고
+//      그 안에서 서류점수순이 된다(명단에서 사라지지는 않는다 — 예비·인재풀 검토용).
+//      서류점수순으로 보고 싶으면 [📄 서류점수순] 버튼으로 전환한다(선택은 localStorage 유지).
+//      큰 숫자로 뜨는 점수도 기준에 맞춰 바뀌므로 무엇으로 매긴 순위인지 화면에서 바로 보인다.
+//   ② 면접 집계 표·PDF 출력·엑셀에 투표 점수가 아예 없었다. '투표점수'·'득표(우선·대상)' 열 추가.
+//      GAS exportData에는 투표 결과가 없어 getResults를 이름으로 머지한다.
+//      ⚠️ 머지 값은 반드시 dedupeVoteResults를 거친다(2회 제출 시 점수 배증, v1.2.54 참조).
+//   ③ printDocResult가 헤더를 하드코딩하고 있어 열을 추가할 때마다 인쇄물과 어긋났다.
+//      화면 thead에서 헤더를 읽도록 바꿔 같은 실수가 반복되지 않게 했다.
 // ✅ v1.2.57 (2026.07.29) — 지역인재 ↔ 재직기간 추적 (작업자 요청):
 //   회사가 인천 향토기업이라, 인천 소재 대학 출신이 실제로 오래 다니는지 추적한다.
 //   유의미한 차이가 확인되면 그때 서류·면접 가산점 반영 여부를 판단한다(작업자 결정).
@@ -1472,7 +1485,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.2.57';
+const APP_VERSION = 'v1.2.58';
 const APP_VERSION_DATE = '2026.07.29';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -5903,6 +5916,49 @@ function dedupeVoteResults(results){
   return removed;
 }
 
+// ✅ v1.2.58: 회차의 투표 결과를 { 이름: {total, rank1, rank2} } 맵으로 가져온다.
+//   면접 집계 표·인쇄·엑셀이 투표 점수를 함께 보여주기 위한 공통 조회 경로다.
+//   ⚠️ 반드시 dedupeVoteResults를 거친 값을 쓴다. GAS submitVotes가 재제출 시 행을
+//      지우지 않고 추가만 하므로, 걷어내지 않으면 2회 제출자의 점수가 배로 뛴다(v1.2.54).
+//   실패하면 빈 맵을 돌려준다 — 호출 측은 투표 열을 '-'로 두고 나머지는 정상 표시할 것.
+async function fetchVoteMap(round){
+  const map = {};
+  if(!GAS_URL || !round) return map;
+  try{
+    const res = await fetch(GAS_URL+'?action=getResults&userEmail='+encodeURIComponent(currentUserEmail||'')+'&round='+encodeURIComponent(round));
+    const data = await res.json();
+    if(!data.success) return map;
+    const results = data.results || [];
+    dedupeVoteResults(results);
+    results.forEach(r => {
+      const nm = String(r.name||'').trim();
+      if(nm) map[nm] = { total: r.total||0, rank1: r.rank1||0, rank2: r.rank2||0 };
+    });
+  }catch(e){}
+  return map;
+}
+
+// ✅ v1.2.58: 면접 대상자 선발 순위 기준 — 기본은 '투표 점수'
+//   ⚠️ 용어 주의: 여기서 말하는 '투표 점수'는 면접 *대상자를 뽑기 위한* 투표 합계다
+//   (우선면접 3점 · 면접대상 1점). 면접을 *실시한 뒤* 매기는 '면접 평가 점수'(ivScore,
+//   calcWeightedTotal이 쓰는 값)와는 전혀 다른 값이니 혼동하지 말 것.
+//   기본(false) = 투표 점수 내림차순, 동점이면 서류점수.
+//     → 투표를 못 받은 사람은 total 0이라 자연히 맨 아래로 밀리고 그 안에서 서류점수순이 된다.
+//   토글 ON(true) = 서류점수 내림차순 (v1.2.57까지의 동작).
+let voteRankByDoc = (function(){ try{ return localStorage.getItem('snct_voteRankByDoc') === '1'; }catch(e){ return false; } })();
+
+function setVoteRankMode(byDoc){
+  voteRankByDoc = !!byDoc;
+  try{ localStorage.setItem('snct_voteRankByDoc', voteRankByDoc ? '1' : '0'); }catch(e){}
+  loadAdminResults();
+}
+
+function sortVoteResults(results){
+  results.sort((a,b) => voteRankByDoc
+    ? (((b.score||0)-(a.score||0)) || ((b.total||0)-(a.total||0)))
+    : (((b.total||0)-(a.total||0)) || ((b.score||0)-(a.score||0))));
+}
+
 async function loadAdminResults() {
   if(!GAS_URL){document.getElementById('adminResultBody').innerHTML='<div style="font-size:14px;color:var(--tx2);text-align:center;padding:20px">GAS URL을 먼저 설정해주세요</div>';return;}
   // adminRoundSel 값 우선, 없으면 currentRound(지원서 검토에서 불러온 회차) 사용
@@ -5942,7 +5998,7 @@ async function loadAdminResults() {
     const results=data.results||[];
     // ✅ v1.2.54: 중복 제출분을 걷어낸 뒤 집계 — 이 결과가 아래 목록과 확정 체크리스트에 모두 쓰인다
     const _dupRemoved = dedupeVoteResults(results);
-    results.sort((a,b) => (b.score||0) - (a.score||0)); // 지원서 점수 내림차순 정렬
+    sortVoteResults(results); // ✅ v1.2.58: 기본은 투표 점수 내림차순 (토글 시 서류점수)
     // ✅ v1.2.34: 투표가 1건도 없으면 GAS _집계 시트가 없어 results=[]가 되고, 여기서 return하는 바람에
     //   아래 showConfirmArea까지 도달하지 못해 "면접 대상자 확정" 화면 자체가 렌더링되지 않았다.
     //   면접관 투표를 생략하고 AI 서류점수 상위 N명을 직권 확정하는 운영에서는 이 경로가 정상 경로다.
@@ -5975,7 +6031,7 @@ async function loadAdminResults() {
           confirmed: confirmedNames.includes(nm)
         });
       });
-      results.sort((a,b) => (b.score||0) - (a.score||0));
+      sortVoteResults(results); // 전원 total=0이라 결과적으로 서류점수 순
       toast(`투표 기록이 없어 서류점수 순으로 표시합니다 (${results.length}명) — 관리자 직권 확정`, 'ok');
     }
     const medals=['🥇','🥈','🥉'];
@@ -5986,7 +6042,21 @@ async function loadAdminResults() {
         <span style="color:var(--tx2)">같은 분이 투표를 두 번 이상 제출한 경우입니다.
         가장 <b>최근 제출</b>만 반영했으므로 아래 점수가 정상입니다.</span>
       </div>` : '';
-    document.getElementById('adminResultBody').innerHTML=dupBanner+results.map((r,i)=>`
+    // ✅ v1.2.58: 순위 기준 토글 — 기본은 투표 점수, 필요할 때만 서류점수로 본다
+    const noVoteCnt = results.filter(r => !(r.total > 0)).length;
+    const rankBar = `
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+        <div style="font-size:13px;color:var(--tx2)">
+          순위 기준: <b style="color:${voteRankByDoc?'var(--gold)':'var(--ac)'}">${voteRankByDoc?'서류점수':'투표 점수'}</b>
+          ${voteRankByDoc?'':`<span style="font-size:12px">(동점은 서류점수순)</span>`}
+          ${(!voteRankByDoc && noVoteCnt)?`<span style="font-size:12px;color:var(--gold)"> · 투표 0표 ${noVoteCnt}명은 맨 아래에 서류점수순</span>`:''}
+        </div>
+        <div style="display:flex;gap:6px">
+          <button onclick="setVoteRankMode(false)" style="font-size:12px;padding:6px 12px;border-radius:6px;cursor:pointer;font-weight:600;background:${voteRankByDoc?'transparent':'var(--ac)'};color:${voteRankByDoc?'var(--tx)':'#fff'};border:1px solid ${voteRankByDoc?'var(--bd)':'var(--ac)'}">🗳️ 투표 점수순</button>
+          <button onclick="setVoteRankMode(true)" style="font-size:12px;padding:6px 12px;border-radius:6px;cursor:pointer;font-weight:600;background:${voteRankByDoc?'var(--gold)':'transparent'};color:${voteRankByDoc?'#000':'var(--tx)'};border:1px solid ${voteRankByDoc?'var(--gold)':'var(--bd)'}">📄 서류점수순</button>
+        </div>
+      </div>`;
+    document.getElementById('adminResultBody').innerHTML=dupBanner+rankBar+results.map((r,i)=>`
       <div class="rank-row ${r.confirmed?'':''}${i===0?'r1':i===1?'r2':i===2?'r3':''}" style="${r.confirmed?'border-color:var(--green);background:rgba(0,201,122,0.08)':''}">
         <div class="rank-medal">${r.confirmed?'✅':(medals[i]||i+1)}</div>
         <div style="flex:1;min-width:0">
@@ -5996,10 +6066,11 @@ async function loadAdminResults() {
           ${r.voters?`<div style="font-size:13px;color:var(--tx2);margin-top:4px">추천: ${r.voters}</div>`:''}
         </div>
         <div style="text-align:right;flex-shrink:0">
-          <div class="rank-score">${r.total}점</div>
-          <div style="font-size:12px;color:var(--tx2);margin-top:2px;font-style:italic">투표 점수</div>
+          <div class="rank-score">${voteRankByDoc ? (r.score||0) : (r.total||0)}점</div>
+          <div style="font-size:12px;color:var(--tx2);margin-top:2px;font-style:italic">${voteRankByDoc ? '서류점수' : '투표 점수'}</div>
           <div style="font-size:13px;color:var(--tx2);margin-top:2px">우선면접 ${r.rank1}표 · 면접대상 ${r.rank2}표</div>
-          <div style="font-size:13px;color:var(--tx2)">서류점수 ${r.score}점</div>
+          <div style="font-size:13px;color:var(--tx2)">${voteRankByDoc ? `투표 점수 ${r.total||0}점` : `서류점수 ${r.score||0}점`}</div>
+          ${(!voteRankByDoc && !(r.total>0)) ? '<div style="font-size:12px;color:var(--gold);margin-top:2px">투표 0표 · 서류점수순</div>' : ''}
         </div>
       </div>`).join('');
     // 확정 버튼 표시
@@ -8254,6 +8325,22 @@ async function exportExcel() {
 
   if (!exportData.length) { toast('내보낼 데이터가 없습니다','err'); return; }
 
+  // ✅ v1.2.58: 투표 점수(면접 대상자 선발 투표) 열 추가.
+  //   GAS exportData 컬럼에는 투표 결과가 없어 이름으로 머지한다(getResults + 중복 제거).
+  //   투표 기록이 없는 회차면 열이 전부 0이 되므로 아예 붙이지 않는다.
+  try {
+    const voteMap = await fetchVoteMap(round);
+    if (Object.keys(voteMap).length) {
+      exportData = exportData.map(row => {
+        const nm = String(row['이름'] || row.name || '').trim();
+        const v = voteMap[nm] || { total:0, rank1:0, rank2:0 };
+        return Object.assign({}, row, {
+          투표점수: v.total, 우선면접표: v.rank1, 면접대상표: v.rank2
+        });
+      });
+    }
+  } catch(e) {}
+
   // CSV 생성 (엑셀 호환)
   const headers = Object.keys(exportData[0]);
   const bom = '﻿';
@@ -8726,6 +8813,10 @@ async function loadResultDetail() {
       const aptData = await aptRes.json();
       (aptData.records || []).forEach(r => { aptMap[r.name] = r; });
     } catch(e) {}
+    // ✅ v1.2.58: 투표 점수(면접 대상자 선발 투표)를 표·인쇄·엑셀에 함께 보여주기 위해 조회.
+    //   실패해도 빈 맵이라 나머지 화면은 그대로 뜬다.
+    const voteMap = await fetchVoteMap(round);
+    window.__currentRoundVoteMap = voteMap; // 엑셀 내보내기에서 재사용
     const apps = aData.applicants || [];
     const ivResults2 = ivData2.results || [];
     const ivDetails = ivData2.details || [];
@@ -8811,7 +8902,7 @@ async function loadResultDetail() {
       ${safeRender('예비합격 그룹', () => renderResultGroup('🟡 예비 합격', reserve, ivDetails, 'var(--gold)', 'rgba(255,193,7,0.06)'))}
       ${safeRender('불합격 그룹', () => renderResultGroup('❌ 불합격 (면접)', failIv, ivDetails, 'var(--red)', 'rgba(255,82,82,0.04)'))}
       ${absent.length ? safeRender('불참자 그룹', () => renderAbsentGroup(absent)) : ''}
-      ${safeRender('전체 지원자 현황', () => renderDocResultTable(apps, confirmedNames, ivMap, aptMap, absent.map(a => a.applicant)))}
+      ${safeRender('전체 지원자 현황', () => renderDocResultTable(apps, confirmedNames, ivMap, aptMap, absent.map(a => a.applicant), voteMap))}
       ${isAdmin ? safeRender('최종 결정 카드', () => renderFinalDecisionCard(round, confirmedNames, ivResults2, isClosed, absent.map(a => a.applicant))) : ''}`;
     // ✅ v1.0.59: 카드 렌더 직후 AI 보고서 캐시 상태 확인 (회차 종결 시에만)
     if (isAdmin && isClosed) {
@@ -8902,7 +8993,7 @@ function renderAbsentGroup(absent) {
   </div>`;
 }
 
-function renderDocResultTable(apps, confirmedNames, ivMap, aptMap = {}, absentNames = []) {
+function renderDocResultTable(apps, confirmedNames, ivMap, aptMap = {}, absentNames = [], voteMap = {}) {
   if (!apps.length) return '';
   // ✅ v1.0.33: 각 지원자별 총점 사전 계산 후 총점 내림차순 정렬
   const enriched = apps.map(a => {
@@ -8948,13 +9039,15 @@ function renderDocResultTable(apps, confirmedNames, ivMap, aptMap = {}, absentNa
     </div>
     <div style="overflow-x:auto"><table class="ctbl" style="width:100%;min-width:520px">
       <thead><tr>
-        <th>이름</th><th>직종</th><th>지원서점수</th><th>인적성</th><th>지원서결과</th><th>면접결과</th><th>총점</th><th>최종</th>
+        <th>이름</th><th>직종</th><th>지원서점수</th><th>투표점수</th><th>득표</th><th>인적성</th><th>지원서결과</th><th>면접결과</th><th>총점</th><th>최종</th>
       </tr></thead>
       <tbody>${sorted.map(e=>{
         const a=e.app, r=e.r;
         const disq=r._disqualified;
         const conf=confirmedNames.includes(r.name);
         const iv=e.iv;
+        // ✅ v1.2.58: 면접 대상자 선발 투표 점수 (우선면접 3점·면접대상 1점). 없으면 '-'
+        const vote = (voteMap && voteMap[r.name]) || { total:0, rank1:0, rank2:0 };
         // ✅ v1.0.40: 마스터의 최종 결정값 우선 표시 (없으면 면접관 집계)
         const finRaw = iv ? effectiveResult(iv) : '';
         const fin = finRaw || (disq?'지원서탈락':'미확정');
@@ -8974,6 +9067,8 @@ function renderDocResultTable(apps, confirmedNames, ivMap, aptMap = {}, absentNa
           <td style="font-weight:700">${r.name||'-'}</td>
           <td style="font-size:13px">${a.empType} ${a.job}</td>
           <td style="font-family:'DM Mono',monospace;color:${(r.fit_score||0)>=70?'var(--green)':(r.fit_score||0)>=50?'var(--gold)':'var(--red)'}">${r.fit_score||0}점</td>
+          <td style="font-family:'DM Mono',monospace;color:${vote.total>0?'var(--ac)':'var(--tx2)'};font-size:13px">${vote.total>0?vote.total+'점':'-'}</td>
+          <td style="font-size:12px;color:var(--tx2)">${vote.total>0?`우선 ${vote.rank1}·대상 ${vote.rank2}`:'-'}</td>
           <td style="font-family:'DM Mono',monospace;color:${aptColor};font-size:13px">${aptStr}</td>
           <td>${disq?'<span style="color:var(--red)">탈락</span>':conf?'<span style="color:var(--green)">면접확정</span>':'통과'}</td>
           <td>${iv?iv.ivScore+'점':'-'}</td>
@@ -9016,7 +9111,12 @@ function printDocResult() {
   const totalCount = document.querySelectorAll('.doc-row').length;
   const isFiltered = visibleRows.length < totalCount;
   const modeLabel = isFiltered ? `🎤 면접자만 ${visibleRows.length}명` : `전체 ${visibleRows.length}명`;
-  const headers = ['이름','직종','지원서점수','인적성','지원서결과','면접결과','총점','최종'];
+  // ✅ v1.2.58: 헤더를 하드코딩하면 화면 표에 열을 추가할 때마다 인쇄물과 어긋난다
+  //   (실제로 투표점수 열이 인쇄에서 누락돼 있었다). 화면 thead에서 그대로 읽는다.
+  const headEl = visibleRows[0].closest('table')?.querySelectorAll('thead th') || [];
+  const headers = headEl.length
+    ? Array.from(headEl).map(th => (th.textContent||'').trim())
+    : ['이름','직종','지원서점수','투표점수','득표','인적성','지원서결과','면접결과','총점','최종'];
 
   let tbody = '';
   visibleRows.forEach(tr => {
