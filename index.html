@@ -1261,6 +1261,16 @@ function _savePromotionDoc(){
 function _loadPromotionDoc(round){ try{ const raw=localStorage.getItem(_promoDocKey(round)); return raw?JSON.parse(raw):null; }catch(e){ return null; } }
 // ✅ v1.2.0: ADMIN_CODE 평문 제거 — _사용자 시트 role='admin'로 검증. 호환 위해 빈 상수 유지 (서서히 코드에서 제거)
 const ADMIN_CODE = ''; // deprecated
+// ✅ v1.2.57 (2026.07.29) — 지역인재 ↔ 재직기간 추적 (작업자 요청):
+//   회사가 인천 향토기업이라, 인천 소재 대학 출신이 실제로 오래 다니는지 추적한다.
+//   유의미한 차이가 확인되면 그때 서류·면접 가산점 반영 여부를 판단한다(작업자 결정).
+//   → 채용분석 탭에 '지역인재 ↔ 재직기간' 카드 추가. 인원·평균재직·퇴사율·평균종합점수 비교.
+//     기준 학교 목록은 화면에서 편집 가능(localStorage, 기본값 인천 소재 대학 10종).
+//   ⚠️ 이 지표는 채점에 반영되지 않는다. 표시·추적 전용이다.
+//   ⚠️ 거주지는 지원서에서 추출하지 않으므로 지금은 출신학교만 본다. 거주지 축을 넣으려면
+//      추출 항목 추가가 필요하고, 그 시점 이후 회차부터만 쌓인다.
+//   ⚠️ 표본이 양쪽 3명 미만이면 비교하지 말라고 화면에 명시한다. 적은 표본으로 결론을 내면
+//      가산점 판단이 틀어진다. 학력이 비어 분류 못 한 인원 수도 함께 표시한다(조용히 빼지 않는다).
 // ✅ v1.2.56 (2026.07.29) — 배점 합계 자동 검사 (본사 개요서 작성 중 지적받아 보완):
 //   채점 기준을 프롬프트 문자열에 두는 구조는 인사담당자가 직접 고칠 수 있는 게 장점이지만,
 //   그동안 배점 합계가 100인지는 아무도 검사하지 않았다. 40+30+20+10을 40+30+20+20으로
@@ -1462,7 +1472,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.2.56';
+const APP_VERSION = 'v1.2.57';
 const APP_VERSION_DATE = '2026.07.29';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -7575,6 +7585,8 @@ async function loadAnalytics() {
           aptGrade: apt.grade || '',
           aptScore: apt.score ? Number(apt.score) : null,
           aptEval: apt.eval || '',
+          // ✅ v1.2.57: 지역인재 분석용 — 학교명이 들어있는 학력 문자열
+          education: r.education || r.education_all || '',
         });
       });
     });
@@ -7796,8 +7808,131 @@ function renderAnalytics() {
       </table></div>
     </div>
 
+    <!-- 지역인재 재직 비교 -->
+    ${renderRegionalAnalysis(persons)}
+
     <!-- 면접관별 채용 품질 분석 -->
     ${renderInterviewerAnalysis(_analyticsRaw.details, persons)}`;
+}
+
+// ══════════════════════════════════════════
+// ✅ v1.2.57: 지역인재 ↔ 재직기간 분석
+//   회사가 인천 향토기업이라, 인천 소재 대학 출신이 실제로 오래 다니는지 추적한다.
+//   ⚠️ 이 분석은 채점에 반영되지 않는다. 표시·추적 전용이다.
+//      유의미한 차이가 확인되면 그때 가산점 반영 여부를 판단한다(작업자 결정 사항).
+//   ⚠️ 거주지는 지원서에서 추출하지 않으므로 지금은 '출신학교'만 본다.
+//      거주지 축을 넣으려면 추출 항목 추가가 필요하고, 그 시점 이후 회차부터만 쌓인다.
+// ══════════════════════════════════════════
+const LS_LOCAL_SCHOOLS = 'snct_local_schools';
+const DEFAULT_LOCAL_SCHOOLS = [
+  '인천대', '인하대', '인하공업전문', '인하공전',
+  '인천재능', '경인여자', '경인여대', '경인교육', '경인교대', '인천가톨릭'
+];
+function getLocalSchools() {
+  try {
+    const raw = localStorage.getItem(LS_LOCAL_SCHOOLS);
+    if (raw) { const a = JSON.parse(raw); if (Array.isArray(a) && a.length) return a; }
+  } catch (e) {}
+  return DEFAULT_LOCAL_SCHOOLS;
+}
+function setLocalSchools(list) {
+  try { localStorage.setItem(LS_LOCAL_SCHOOLS, JSON.stringify(list)); } catch (e) {}
+}
+// 학력 문자열에 지역대학이 포함되는가. 공백·괄호를 제거해 표기 흔들림을 흡수한다.
+function isLocalSchool(eduText) {
+  const t = String(eduText || '').replace(/[\s()（）]/g, '');
+  if (!t) return null; // 데이터 없음 — false와 구분한다
+  return getLocalSchools().some(k => t.includes(String(k).replace(/\s/g, '')));
+}
+function editLocalSchools() {
+  const cur = getLocalSchools().join(', ');
+  const v = prompt(
+    '지역대학으로 볼 학교 키워드를 쉼표로 구분해 입력하세요.\n'
+    + '학력 문자열에 이 키워드가 포함되면 지역대학으로 집계합니다.\n\n'
+    + '예) 인천대, 인하대, 인하공전, 인천재능, 경인여대\n'
+    + '(비우고 확인하면 기본값으로 되돌립니다)', cur);
+  if (v === null) return;
+  const list = v.split(',').map(s => s.trim()).filter(Boolean);
+  if (!list.length) { try { localStorage.removeItem(LS_LOCAL_SCHOOLS); } catch (e) {} toast('기본값으로 되돌렸습니다', 'ok'); }
+  else { setLocalSchools(list); toast(list.length + '개 키워드로 저장했습니다', 'ok'); }
+  renderAnalytics();
+}
+function renderRegionalAnalysis(persons) {
+  const schools = getLocalSchools();
+  const head = `<div class="ct" style="margin-bottom:4px">📍 지역인재 ↔ 재직기간</div>
+    <div style="font-size:12px;color:var(--tx2);margin-bottom:10px;line-height:1.6">
+      인천 소재 대학 출신자가 실제로 오래 재직하는지 추적합니다 ·
+      <b style="color:var(--tx2)">채점에는 반영되지 않는 참고 지표</b>
+      <button class="btn btn-o" style="font-size:11px;padding:2px 8px;margin-left:6px" onclick="editLocalSchools()">기준 학교 편집</button>
+      <div style="margin-top:4px">현재 기준: ${schools.join(' · ')}</div>
+    </div>`;
+
+  // 학력 데이터 자체가 없으면 조용히 넘어가지 않고 그 사실을 알린다
+  const known = persons.filter(p => isLocalSchool(p.education) !== null);
+  if (!known.length) {
+    return `<div class="card" style="margin-bottom:14px">${head}
+      <div style="font-size:13px;color:var(--gold);background:rgba(244,168,0,0.08);border:1px solid var(--gold);border-radius:8px;padding:12px 14px;line-height:1.7">
+        <b>학력 데이터가 없어 집계할 수 없습니다.</b><br>
+        <span style="color:var(--tx2)">면접집계에 학력이 저장되지 않은 회차입니다.
+        이후 회차부터는 쌓이며, 과거 회차는 지원서 분석 데이터에서 학력을 옮겨와야 합니다.</span>
+      </div></div>`;
+  }
+
+  const grp = (arr) => {
+    const t = arr.filter(p => p.tenure !== null);
+    const avgT = t.length ? Math.round(t.reduce((s, p) => s + p.tenure, 0) / t.length) : null;
+    const left = arr.filter(p => p.isLeft).length;
+    const withJoin = arr.filter(p => p.joinDate).length;
+    const sc = arr.filter(p => p.total > 0);
+    return {
+      n: arr.length,
+      avgTenure: avgT,
+      tenureN: t.length,
+      leftRate: withJoin ? Math.round(left / withJoin * 100) : null,
+      avgTotal: sc.length ? (sc.reduce((s, p) => s + p.total, 0) / sc.length).toFixed(1) : null,
+    };
+  };
+  const local = grp(known.filter(p => isLocalSchool(p.education) === true));
+  const other = grp(known.filter(p => isLocalSchool(p.education) === false));
+  const unknown = persons.length - known.length;
+
+  const cell = (g) => g.n === 0 ? '<td colspan="4" style="color:var(--tx2);font-size:13px">해당 없음</td>' : `
+      <td style="font-weight:700">${g.n}명</td>
+      <td>${g.avgTenure === null ? '<span style="color:var(--tx2)">-</span>' : Math.floor(g.avgTenure / 30) + '개월 <span style="font-size:11px;color:var(--tx2)">(' + g.tenureN + '명)</span>'}</td>
+      <td>${g.leftRate === null ? '<span style="color:var(--tx2)">-</span>' : g.leftRate + '%'}</td>
+      <td>${g.avgTotal === null ? '<span style="color:var(--tx2)">-</span>' : g.avgTotal + '점'}</td>`;
+
+  // 판단 가능 여부를 숫자로 말해준다 — 표본이 적으면 비교하지 말라고 못박는다
+  const enough = local.tenureN >= 3 && other.tenureN >= 3;
+  const diff = (local.avgTenure !== null && other.avgTenure !== null)
+    ? Math.round((local.avgTenure - other.avgTenure) / 30) : null;
+  const verdict = !enough
+    ? `<b style="color:var(--gold)">표본 부족 — 아직 비교하지 마십시오.</b>
+       <span style="color:var(--tx2)">재직기간이 있는 인원이 지역 ${local.tenureN}명 / 그 외 ${other.tenureN}명입니다.
+       양쪽 3명 이상이 되어야 의미를 볼 수 있습니다.</span>`
+    : `지역대학 출신이 <b style="color:${diff > 0 ? 'var(--green)' : diff < 0 ? 'var(--red)' : 'var(--tx2)'}">
+       ${diff > 0 ? '약 ' + diff + '개월 길게' : diff < 0 ? '약 ' + Math.abs(diff) + '개월 짧게' : '비슷하게'}</b> 재직했습니다.
+       <span style="color:var(--tx2)">표본이 작으므로 회차가 더 쌓인 뒤 재확인하십시오.</span>`;
+
+  return `<div class="card" style="margin-bottom:14px">${head}
+    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:14px">
+      <thead><tr>
+        <th style="text-align:left">구분</th><th style="text-align:left">인원</th>
+        <th style="text-align:left">평균 재직</th><th style="text-align:left">퇴사율</th>
+        <th style="text-align:left">평균 종합점수</th>
+      </tr></thead>
+      <tbody>
+        <tr><td style="font-weight:700;color:var(--ac)">지역대학 출신</td>${cell(local)}</tr>
+        <tr><td style="font-weight:700">그 외</td>${cell(other)}</tr>
+      </tbody>
+    </table></div>
+    <div style="margin-top:10px;font-size:13px;line-height:1.7;background:rgba(255,255,255,0.03);border-radius:8px;padding:10px 12px">${verdict}</div>
+    ${unknown ? `<div style="margin-top:8px;font-size:12px;color:var(--gold)">⚠️ 학력이 비어 있어 분류하지 못한 인원 ${unknown}명은 위 집계에서 제외했습니다.</div>` : ''}
+    <div style="margin-top:8px;font-size:11px;color:var(--tx2);line-height:1.6">
+      ※ 거주지 기준은 아직 지원서에서 수집하지 않아 <b>출신학교만</b> 반영했습니다.<br>
+      ※ 퇴사율은 입사일이 입력된 인원 대비입니다. 재직 중 인원의 재직기간은 오늘까지로 계산합니다.
+    </div>
+  </div>`;
 }
 
 // ✅ v1.0.31: 면접관 데이터 출처 뱃지 — 직접 평가/순위 환산 구분
