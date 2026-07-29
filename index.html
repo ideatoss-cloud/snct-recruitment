@@ -708,10 +708,14 @@ hr.dv{border:none;border-top:1px solid var(--bd);margin:13px 0;}
             <option value="">-- 회차 선택 --</option>
           </select>
           <button class="btn btn-o" style="font-size:14px" onclick="loadAdminRounds()">🔄 회차목록</button>
+          <!-- ✅ v1.2.59: 인쇄·엑셀은 회차 권한자 전원에게 연다(작업자 결정).
+               면접관은 [지원서 검토] 탭에서 같은 내용을 이미 보고, 엑셀도 그 탭의
+               '일반 사용자 회차 조회' 카드에 원래부터 열려 있었다 — 새로 여는 정보가 아니다.
+               관리자 전용으로 남기는 것은 파괴적이거나 대외 발신용인 두 개뿐이다. -->
+          <button class="btn btn-o" style="font-size:14px" onclick="printResults()">🖨️ 인쇄</button>
+          <button class="btn btn-o" style="font-size:14px" onclick="exportExcel()">📥 엑셀</button>
           <span id="adminOnlyBtns" style="display:none;gap:8px">
             <button class="btn btn-r" style="font-size:14px" onclick="resetAllVotes()">🗑️ 초기화</button>
-            <button class="btn btn-o" style="font-size:14px" onclick="printResults()">🖨️ 인쇄</button>
-            <button class="btn btn-o" style="font-size:14px" onclick="exportExcel()">📥 엑셀</button>
             <button class="btn btn-p" style="font-size:14px" onclick="openVoteMailModal()">✉️ 투표결과 메일</button>
           </span>
         </div>
@@ -1319,6 +1323,10 @@ const ADMIN_CODE = ''; // deprecated
 //      화면 폭 600px 이하에서 회차 권한만 있는 면접관에게 [초기화][인쇄][엑셀]이 그대로 보였다.
 //      '초기화'는 투표와 면접 확정 명단까지 지우는 버튼이다. CSS에서 display 선언을 제거했다.
 //      → display는 JS(isAdmin 판정)에만 맡긴다. 이 CSS에 display를 다시 넣지 말 것.
+//      ⚠️ 다만 **인쇄·엑셀은 원래 관리자 전용일 이유가 없었다**(작업자 지적). 면접관은
+//         [지원서 검토] 탭에서 같은 내용을 이미 보고, 엑셀도 그 탭의 '일반 사용자 회차 조회'
+//         카드에 원래부터 열려 있었다. 그래서 둘은 전용 영역 밖으로 뺐다.
+//         adminOnlyBtns에 남는 것은 **파괴적(초기화)이거나 대외 발신용(투표결과 메일)**인 것뿐이다.
 //   ① printResults(집계 탭 [🖨️ 인쇄])에 투표 점수가 아예 없어 서류점수 순으로만 나왔다.
 //      v1.2.58에서 고친 건 [면접 집계] 탭의 printDocResult로 **다른 인쇄물**이었다.
 //      이제 화면의 순위 기준(voteRankByDoc)을 따라가고 카드에 투표 점수·득표를 함께 찍는다.
