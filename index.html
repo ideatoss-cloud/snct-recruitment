@@ -1077,6 +1077,12 @@ kim@gmail.com"
       </div>
     </div>
     <div id="voteMailWarn" style="display:none;margin-bottom:10px;flex-shrink:0"></div>
+    <!-- ✅ v1.2.61: 그룹웨어 제목란에 넣을 문구도 같이 뽑아 준다 -->
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-shrink:0;background:var(--bg2);border:1px solid var(--bd);border-radius:8px;padding:8px 12px">
+      <span style="font-size:12px;color:var(--tx2);flex-shrink:0">메일 제목</span>
+      <span id="vmSubject" style="flex:1;font-size:13.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+      <button class="btn btn-o" style="font-size:12px;padding:5px 10px;flex-shrink:0" onclick="copyVoteMail('subject')">📋 복사</button>
+    </div>
     <div id="voteMailPreview" style="flex:1;overflow-y:auto;background:#f1f5f9;border-radius:8px;padding:4px"></div>
     <div style="display:flex;justify-content:space-between;gap:8px;margin-top:12px;flex-shrink:0;flex-wrap:wrap">
       <button class="btn btn-o" onclick="closeVoteMailModal()">닫기</button>
@@ -1581,7 +1587,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.2.60';
+const APP_VERSION = 'v1.2.61';
 const APP_VERSION_DATE = '2026.07.29';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -6282,24 +6288,62 @@ function _voteMailData(){
 //   사내 그룹웨어 메일에는 맞지 않는다. 그룹웨어가 쓰는 마크업 그대로 — 굴림체 9pt,
 //   margin 0, line-height 1.2의 <p> 단락과 인라인 스타일 표로 낸다.
 //   ⚠️ 스타일은 전부 인라인이어야 한다. <style> 블록은 붙여넣을 때 대부분 날아간다.
-const GW_FONT = 'font-family:굴림체;font-size:9pt;color:rgb(0, 0, 0);';
-const GW_P = GW_FONT + 'margin-top:0px;margin-bottom:0px;line-height:1.2;';
+// ⚠️ v1.2.61: 처음엔 그룹웨어 기본값(굴림체 9pt · line-height 1.2)을 그대로 썼는데
+//   빽빽해서 읽기 나빴다(작업자 지적). 그건 그룹웨어의 기본값일 뿐 읽기 좋으라고 정한 값이 아니다.
+//   폰트·간격을 바꿔도 붙여넣기는 똑같이 되므로 **10pt · 줄간격 1.7 · 맑은 고딕**으로 올린다.
+//   (굴림체는 작은 크기에서 비트맵으로 렌더돼 특히 읽기 나쁘다. 없는 PC를 위해 뒤에 남겨둔다)
+const GW_FONT = "font-family:'맑은 고딕','Malgun Gothic',굴림체,sans-serif;font-size:10pt;color:rgb(0, 0, 0);";
+const GW_P = GW_FONT + 'margin-top:0px;margin-bottom:0px;line-height:1.7;';
 const _gwP = (html) => `<p style="${GW_P}">${html}</p>`;
 const _gwBlank = () => `<p style="${GW_P}"><br /></p>`;
+// 표 아래 부연처럼 작게 낼 것
+const _gwSmall = (html) => `<p style="${GW_FONT.replace('10pt','9pt').replace('rgb(0, 0, 0)','rgb(102, 102, 102)')}margin-top:0px;margin-bottom:0px;line-height:1.6;">${html}</p>`;
+
+// 회차 ID(20260727_신입_재무회계)는 시스템 값이라 메일에 그대로 실으면 읽기 나쁘다.
+// 사람이 읽는 형태로 바꾼다 → '재무회계 신입 (2026.07.27 접수)'
+function _roundLabel(round){
+  const m = String(round||'').match(/^(\d{4})(\d{2})(\d{2})_(.+?)_(.+)$/);
+  return m ? `${m[5]} ${m[4]} (${m[1]}.${m[2]}.${m[3]} 접수)` : String(round||'');
+}
+function _roundShort(round){
+  const m = String(round||'').match(/^\d{8}_(.+?)_(.+)$/);
+  return m ? `${m[2]} ${m[1]}` : String(round||'');
+}
+
+// 메일 제목 — 그룹웨어 제목란에 넣을 문구
+function _voteMailSubject(d){
+  return `[면접 대상자 확인 요청] ${_roundShort(d.round)} 서류 검토 투표 결과`;
+}
+
+// 박스 — div보다 table이 그룹웨어·아웃룩에서 안 깨진다
+function _gwBox(inner, bg, border){
+  return `<table style="border-collapse:collapse;width:100%;max-width:620px;"><tbody><tr>`
+    + `<td style="border:1px solid ${border};background-color:${bg};padding:13px 17px;">${inner}</td>`
+    + `</tr></tbody></table>`;
+}
 
 function _voteMailRows(d){
   // 상위 N명 + 기준선 + 다음 3명. 그 아래는 싣지 않는다(작업자 확정)
-  const cell = (v, extra) => `<td style="border:1px solid rgb(153, 153, 153);padding:3px 6px;${extra||''}">${v}</td>`;
-  const row = (r, i, dim) => `<tr>`
-    + cell(i+1, 'text-align:center;' + (dim?'color:rgb(128, 128, 128);':''))
-    + cell(_escapeHtml(r.name||''), dim?'color:rgb(128, 128, 128);':'font-weight:bold;')
-    + cell((r.total||0)+'점', 'text-align:center;' + (dim?'color:rgb(128, 128, 128);':'font-weight:bold;'))
-    + cell(r.rank1||0, 'text-align:center;' + (dim?'color:rgb(128, 128, 128);':''))
-    + cell(r.rank2||0, 'text-align:center;' + (dim?'color:rgb(128, 128, 128);':''))
-    + cell((r.score||0)+'점', 'text-align:center;' + (dim?'color:rgb(128, 128, 128);':''))
-    + `</tr>`;
+  const BD = '1px solid rgb(190, 195, 204)';
+  const cell = (v, extra) => `<td style="border:${BD};padding:7px 10px;${extra||''}">${v}</td>`;
+  const row = (r, i, dim) => {
+    const bg = dim ? 'rgb(250, 250, 250)' : (i % 2 ? 'rgb(247, 250, 254)' : 'rgb(255, 255, 255)');
+    const fg = dim ? 'color:rgb(140, 145, 152);' : '';
+    return `<tr>`
+      + cell(i+1, `text-align:center;background-color:${bg};${fg}`)
+      + cell(_escapeHtml(r.name||''), `background-color:${bg};${fg}` + (dim?'':'font-weight:bold;'))
+      + cell((r.total||0)+'점', `text-align:center;background-color:${bg};${fg}`
+          + (dim?'':'font-weight:bold;color:rgb(31, 56, 100);'))
+      + cell(r.rank1||0, `text-align:center;background-color:${bg};${fg}`)
+      + cell(r.rank2||0, `text-align:center;background-color:${bg};${fg}`)
+      + cell((r.score||0)+'점', `text-align:center;background-color:${bg};${fg}`)
+      + `</tr>`;
+  };
+  // 기준선 — 아래위가 확실히 갈려 보이게 굵은 선을 준다
   const cut = d.nextUp.length
-    ? `<tr><td colspan="6" style="border:1px solid rgb(153, 153, 153);padding:3px 6px;text-align:center;background-color:rgb(242, 242, 242);">— 면접 대상 ${d.n}명 기준선 —</td></tr>`
+    ? `<tr><td colspan="6" style="border:${BD};border-top:2px solid rgb(31, 56, 100);`
+      + `padding:5px 10px;text-align:center;background-color:rgb(238, 241, 246);`
+      + `font-size:9pt;color:rgb(90, 96, 105);">▲ 면접 대상 ${d.n}명 &nbsp;/&nbsp; ▼ 이하 참고</td></tr>`
     : '';
   return d.picked.map((r,i) => row(r,i,false)).join('')
        + cut
@@ -6307,51 +6351,84 @@ function _voteMailRows(d){
 }
 
 function _buildVoteMailHtml(d){
-  const th = (t) => `<td style="border:1px solid rgb(153, 153, 153);padding:3px 6px;text-align:center;background-color:rgb(222, 234, 246);font-weight:bold;">${t}</td>`;
+  const NAVY = 'rgb(31, 56, 100)';
+  const th = (t, w) => `<td style="border:1px solid ${NAVY};padding:8px 10px;text-align:center;`
+    + `background-color:${NAVY};color:rgb(255, 255, 255);font-weight:bold;${w?'width:'+w+';':''}">${t}</td>`;
   const who = String(SENDER_INFO.senderName||'').replace(/\s*(차장|과장|대리|부장|팀장|사원|주임)\s*$/, '').trim();
   const P = [];
+
+  // 제목 줄 — 메일을 열자마자 무슨 건인지 보이게
+  P.push(`<p style="${GW_FONT.replace('10pt','13pt')}margin:0px;line-height:1.5;font-weight:bold;color:${NAVY};">`
+    + `${_escapeHtml(_roundShort(d.round))} 서류 검토 — 투표 결과 및 면접 대상자(안)</p>`);
+  P.push(`<p style="${GW_FONT.replace('10pt','9pt').replace('rgb(0, 0, 0)','rgb(120, 125, 133)')}margin:2px 0px 0px 0px;line-height:1.5;">`
+    + `${_escapeHtml(_roundLabel(d.round))}</p>`);
+  P.push(`<p style="margin:10px 0px;line-height:0;"><span style="display:inline-block;width:100%;max-width:620px;border-top:2px solid ${NAVY};"></span></p>`);
+
   P.push(_gwP(`안녕하십니까. ${_escapeHtml(SENDER_INFO.team)} ${_escapeHtml(who)}입니다.`));
-  P.push(_gwBlank());
-  P.push(_gwP(`<b>${_escapeHtml(d.round)}</b> 지원서 검토 투표 결과를 공유드립니다.`));
+  P.push(_gwP('서류 검토 투표에 참여해 주셔서 감사합니다. 결과를 아래와 같이 공유드립니다.'));
   if(d.voters.length)
-    P.push(_gwP(`투표에는 ${_escapeHtml(d.voters.join(' · '))} ${d.voters.length}분이 참여해 주셨습니다.`));
+    P.push(_gwSmall(`투표 참여 ${d.voters.length}분 : ${_escapeHtml(d.voters.join(' · '))}`));
   P.push(_gwBlank());
-  P.push(`<table style="border-collapse:collapse;${GW_FONT}">`
-    + `<tbody><tr>${th('순위')}${th('이름')}${th('투표 점수')}${th('우선면접')}${th('면접대상')}${th('서류점수')}</tr>`
+
+  // ── 표
+  P.push(`<table style="border-collapse:collapse;${GW_FONT}width:100%;max-width:620px;">`
+    + `<tbody><tr>${th('순위','48px')}${th('이름')}${th('투표 점수','80px')}`
+    + `${th('우선면접','66px')}${th('면접대상','66px')}${th('서류점수','72px')}</tr>`
     + _voteMailRows(d) + `</tbody></table>`);
-  P.push(_gwP(`※ 투표 점수 = 우선면접 3점 · 면접대상 1점 합산`
-    + (d.nextUp.length ? ' / 기준선 아래 3명은 참고용입니다.' : '')));
+  P.push(_gwSmall(`※ 투표 점수 = 우선면접 3점 + 면접대상 1점`
+    + (d.nextUp.length ? ` · 기준선 아래 ${d.nextUp.length}명은 판단에 참고하시라고 함께 표기했습니다.` : '')));
   P.push(_gwBlank());
-  P.push(_gwP(`위 결과에 따라 <b>상위 ${d.n}명</b>을 면접 대상자로 확정하고자 합니다.`));
-  P.push(_gwP(`&nbsp;&nbsp;→ <b>${_escapeHtml(d.picked.map(r=>r.name).join(', '))}</b>`));
-  P.push(_gwP(`다른 의견이 있으시면 ${d.deadline ? '<b>'+_escapeHtml(d.deadline)+'</b>까지 ' : ''}회신 부탁드립니다.`));
-  P.push(_gwP('회신이 없으시면 동의하신 것으로 보고 진행하겠습니다.'));
+
+  // ── 결론 (가장 중요한 부분이므로 박스로 띄운다)
+  P.push(_gwBox(
+    `<p style="${GW_P}font-weight:bold;color:${NAVY};">위 결과에 따라 상위 ${d.n}명을 면접 대상자로 확정하고자 합니다.</p>`
+    + `<p style="${GW_FONT.replace('10pt','11pt')}margin:7px 0px 0px 0px;line-height:1.7;font-weight:bold;">`
+    + `${_escapeHtml(d.picked.map(r=>r.name).join('  ·  '))}</p>`
+    + `<p style="${GW_P}margin-top:10px;">다른 의견이 있으시면 `
+    + `${d.deadline ? '<b>'+_escapeHtml(d.deadline)+'</b>까지 ' : ''}회신 부탁드립니다.<br />`
+    + `회신이 없으시면 동의하신 것으로 보고 진행하겠습니다.</p>`,
+    'rgb(244, 247, 252)', 'rgb(180, 195, 220)'));
   P.push(_gwBlank());
-  P.push(_gwP('<b>[면접 일정]</b>'));
-  P.push(_gwP(`&nbsp;&nbsp;일시 : ${d.date ? _escapeHtml(d.date) : '(미정)'}`));
-  P.push(_gwP(`&nbsp;&nbsp;장소 : ${d.place ? _escapeHtml(d.place) : '(미정)'}`));
+
+  // ── 면접 일정
+  P.push(_gwBox(
+    `<p style="${GW_P}font-weight:bold;">면접 일정</p>`
+    + `<p style="${GW_P}margin-top:5px;">일시 &nbsp;&nbsp;<b>${d.date ? _escapeHtml(d.date) : '(미정)'}</b></p>`
+    + `<p style="${GW_P}">장소 &nbsp;&nbsp;<b>${d.place ? _escapeHtml(d.place) : '(미정)'}</b></p>`,
+    'rgb(250, 250, 250)', 'rgb(210, 213, 218)'));
   P.push(_gwBlank());
+
   P.push(_gwP('검토해 주셔서 감사합니다.'));
   P.push(_gwBlank());
-  P.push(_gwP(`${_escapeHtml(SENDER_INFO.companyFull)} ${_escapeHtml(SENDER_INFO.team)} ${_escapeHtml(SENDER_INFO.senderName)}`));
+  P.push(`<p style="${GW_FONT.replace('rgb(0, 0, 0)','rgb(90, 96, 105)')}margin:0px;line-height:1.6;">`
+    + `${_escapeHtml(SENDER_INFO.companyFull)} ${_escapeHtml(SENDER_INFO.team)} `
+    + `<b style="color:rgb(0, 0, 0);">${_escapeHtml(SENDER_INFO.senderName)}</b></p>`);
   return P.join('\n');
 }
 
 function _buildVoteMailText(d){
   const L = [];
   const who = String(SENDER_INFO.senderName||'').replace(/\s*(차장|과장|대리|부장|팀장|사원|주임)\s*$/, '').trim();
+  L.push(`${_roundShort(d.round)} 서류 검토 — 투표 결과 및 면접 대상자(안)`);
+  L.push(`${_roundLabel(d.round)}`);
+  L.push('─'.repeat(52));
+  L.push('');
   L.push(`안녕하십니까. ${SENDER_INFO.team} ${who}입니다.`);
+  L.push('서류 검토 투표에 참여해 주셔서 감사합니다. 결과를 아래와 같이 공유드립니다.');
+  if(d.voters.length) L.push(`투표 참여 ${d.voters.length}분 : ${d.voters.join(' · ')}`);
   L.push('');
-  L.push(`${d.round} 지원서 검토 투표 결과를 공유드립니다.`);
-  if(d.voters.length) L.push(`투표 참여: ${d.voters.join(', ')} (${d.voters.length}명)`);
-  L.push('');
-  L.push('[투표 결과]  ※ 투표 점수 = 우선면접 3점 · 면접대상 1점 합산');
-  d.picked.forEach((r,i) => L.push(
-    `${String(i+1).padStart(2,' ')}. ${r.name}  |  투표 ${r.total||0}점 (우선 ${r.rank1||0}·대상 ${r.rank2||0})  |  서류 ${r.score||0}점`));
+  L.push('[투표 결과]  ※ 투표 점수 = 우선면접 3점 + 면접대상 1점');
+  const pad = (s, w) => { // 한글은 2칸으로 세야 자릿수가 맞는다
+    const width = [...String(s)].reduce((a,ch) => a + (ch.charCodeAt(0) > 0x2000 ? 2 : 1), 0);
+    return String(s) + ' '.repeat(Math.max(0, w - width));
+  };
+  const line = (r, i, mark) => `${String(i+1).padStart(2,' ')}. ${pad(r.name, 14)}`
+    + `투표 ${String((r.total||0)+'점').padStart(4,' ')} (우선 ${r.rank1||0}·대상 ${r.rank2||0})`
+    + `   서류 ${String((r.score||0)+'점').padStart(4,' ')}${mark||''}`;
+  d.picked.forEach((r,i) => L.push(line(r, i)));
   if(d.nextUp.length){
-    L.push(`---- 면접 대상 ${d.n}명 기준선 ----`);
-    d.nextUp.forEach((r,i) => L.push(
-      `${String(d.n+i+1).padStart(2,' ')}. ${r.name}  |  투표 ${r.total||0}점 (우선 ${r.rank1||0}·대상 ${r.rank2||0})  |  서류 ${r.score||0}점  (참고)`));
+    L.push(`   ${'─'.repeat(12)} 면접 대상 ${d.n}명 기준선 ${'─'.repeat(12)}`);
+    d.nextUp.forEach((r,i) => L.push(line(r, d.n+i, '  (참고)')));
   }
   L.push('');
   L.push(`위 결과에 따라 상위 ${d.n}명을 면접 대상자로 확정하고자 합니다.`);
@@ -6397,7 +6474,10 @@ function renderVoteMailPreview(){
 
   const html = _buildVoteMailHtml(d);
   const text = _buildVoteMailText(d);
-  window.__voteMailCache = { html, text };
+  const subject = _voteMailSubject(d);
+  window.__voteMailCache = { html, text, subject };
+  const subEl = document.getElementById('vmSubject');
+  if(subEl){ subEl.textContent = subject; subEl.title = subject; }
   const pv = document.getElementById('voteMailPreview');
   if(pv) pv.innerHTML = `<iframe style="width:100%;height:520px;border:0;background:#fff;border-radius:6px"
     srcdoc="${_escapeHtml('<body style="background:#fff;margin:0;padding:14px">' + html + '</body>')}"></iframe>`;
@@ -6408,6 +6488,7 @@ function copyVoteMail(kind){
   if(!c){ toast('본문이 아직 만들어지지 않았습니다','err'); return; }
   // 소스 창 — 브라우저 제약을 안 받는 확실한 경로. 그룹웨어 "소스 보기"에 붙여넣는다
   if(kind === 'source'){ _openHtmlSourceWindow(c.html); return; }
+  if(kind === 'subject'){ _fallbackCopy(c.subject || ''); return; }
   if(kind === 'text'){
     const t = c.text;
     if(navigator.clipboard?.writeText){
