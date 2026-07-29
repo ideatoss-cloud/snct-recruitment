@@ -1608,7 +1608,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.2.63';
+const APP_VERSION = 'v1.2.64';
 const APP_VERSION_DATE = '2026.07.29';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -3700,6 +3700,7 @@ const EMAIL_TEMPLATES = {
       return _buildEmailBody({
         title: '서류 전형 결과 안내',
         headerColor: '#475569',
+        hideContact: true, // ✅ v1.2.64: 불합격 통보에는 연락처를 넣지 않는다(작업자 지시)
         // ✅ v1.2.40: 문안 개선 — 검토 성의·구조적 사유·개별피드백 양해를 추가해 이의제기 소지를 줄인다
         mainMessage: `${_greeting(false)}<br><br>${nm}님,<br><br>당사 ${job ? job+' ' : ''}채용에 관심을 가지고 지원해 주셔서 감사합니다.<br><br>`
           + `제출해 주신 입사지원서를 현업부서와 채용 담당자가 면밀히 검토하였으나,<br>`
@@ -3786,6 +3787,7 @@ const EMAIL_TEMPLATES = {
       return _buildEmailBody({
         title: '면접 전형 결과 안내',
         headerColor: '#475569',
+        hideContact: true, // ✅ v1.2.64: 불합격 통보에는 연락처를 넣지 않는다(작업자 지시)
         // ✅ v1.2.40: 서류 불합격 문안과 동일한 톤으로 정리
         mainMessage: `${_greeting(false)}<br><br>${nm}님,<br><br>당사 ${job ? job+' ' : ''}채용 절차에 참여해 주셔서 감사합니다.<br><br>`
           + `면접에서 보여주신 답변과 경험을 면밀히 검토하였으나,<br>`
@@ -3829,8 +3831,10 @@ const EMAIL_TEMPLATES = {
       return _buildEmailBody({
         title: '채용검진 안내',
         headerColor: '#0369a1',
-        // ✅ v1.2.50: 검진 대상자는 일정 조율 문의가 실제로 오므로 휴대전화를 남긴다(작업자 지시)
-        showMobile: true,
+        // ✅ v1.2.64 (작업자 지시): 면접 합격자에게 개인 휴대번호까지 나가던 것을 뺐다.
+        //   대신 담당자명을 남겨 누가 보낸 메일인지는 분명히 한다 → '관리팀 이희경 차장'.
+        //   (v1.2.50에서 '일정 조율 문의가 온다'는 이유로 휴대전화를 넣었으나 철회)
+        personal: true,
         mainMessage: `${_greeting(false)}<br><br>${nm}님,<br><br>당사 ${job ? job+' ' : ''}채용 절차 관련하여<br><b style="color:#0369a1">면접 전형에 합격</b>하셨습니다.<br>축하드립니다.<br><br>이에 <b>채용검진 절차</b>를 추가적으로 진행하고자 안내 메일 드립니다.`,
         detail: `
           <div style="text-align:center;margin:24px 0">
@@ -3877,6 +3881,9 @@ const EMAIL_TEMPLATES = {
         headerColor: '#15803d',
         // ✅ v1.2.40: 최종 합격만 담당자명 유지 — 개인 축하 성격이고, 입사 전까지 실제 창구가 되기 때문
         personal: true,
+        // ✅ v1.2.64: 휴대전화 노출을 personal에서 분리했으므로 여기서 명시한다.
+        //   최종 합격자는 입사 전까지 실제 연락 창구가 필요해 기존대로 남긴다(작업자 지시는 면접 합격 건).
+        showMobile: true,
         mainMessage: `${_greeting(true)}<br><br>${nm}님,<br><br>${_escapeHtml(SENDER_INFO.companyShort)} ${job ? job+' ' : ''}업무 <b style="color:#15803d">최종 합격</b>을 진심으로 축하드립니다. 🎉`,
         detail: `
           <div style="text-align:center;margin:24px 0">
@@ -4129,14 +4136,21 @@ function _buildEmailBody(opts) {
     ${opts.mainMessage}
     ${opts.detail ? `<div style="margin-top:14px">${opts.detail}</div>` : ''}
     ${opts.closing ? `<div style="margin-top:18px">${opts.closing}</div>` : ''}
-    <!-- 시그니처 — ✅ v1.2.40: 기본은 부서명만. 최종 합격 통보만 담당자명 표기(opts.personal) -->
+    <!-- 시그니처 — ✅ v1.2.40: 기본은 부서명만. 담당자명 표기는 opts.personal
+         ✅ v1.2.64 (작업자 지시):
+           · opts.hideContact — 사무실 전화·이메일을 빼고 이름/부서만 남긴다.
+             **불합격 통보에 연락처를 넣지 않는다.** 회신할 창구가 필요한 안내가 아니고,
+             굳이 남기면 문의를 유도하게 된다.
+           · 휴대전화 조건에서 personal을 뗐다. 예전엔 personal이면 휴대전화가 딸려 나가서
+             면접 합격(검진 안내)에 담당자명을 넣으려면 개인번호까지 나갔다.
+             이제 **이름 표기(personal)와 휴대전화 노출(showMobile)은 별개**다. -->
     <div style="margin-top:26px;padding:14px 16px;background:#f8fafc;border-left:3px solid #1e293b;border-radius:3px;font-size:13px;line-height:1.7;color:#475569">
       <div style="font-weight:700;color:#1e293b">${opts.personal
         ? _escapeHtml(SENDER_INFO.senderRole)
         : _escapeHtml(SENDER_INFO.companyFull) + ' ' + _escapeHtml(SENDER_INFO.team)}</div>
-      <div style="font-family:'DM Mono',monospace;font-size:12px">사무실 ${_escapeHtml(SENDER_INFO.officePhone)}</div>
-      ${(opts.personal || opts.showMobile) ? `<div style="font-family:'DM Mono',monospace;font-size:12px">휴대전화 ${_escapeHtml(SENDER_INFO.mobile)}</div>` : ''}
-      <div style="font-family:'DM Mono',monospace;font-size:12px">이메일 <a href="mailto:${_escapeHtml(SENDER_INFO.replyToEmail)}" style="color:#1e40af;text-decoration:none">${_escapeHtml(SENDER_INFO.replyToEmail)}</a></div>
+      ${opts.hideContact ? '' : `<div style="font-family:'DM Mono',monospace;font-size:12px">사무실 ${_escapeHtml(SENDER_INFO.officePhone)}</div>`}
+      ${opts.showMobile ? `<div style="font-family:'DM Mono',monospace;font-size:12px">휴대전화 ${_escapeHtml(SENDER_INFO.mobile)}</div>` : ''}
+      ${opts.hideContact ? '' : `<div style="font-family:'DM Mono',monospace;font-size:12px">이메일 <a href="mailto:${_escapeHtml(SENDER_INFO.replyToEmail)}" style="color:#1e40af;text-decoration:none">${_escapeHtml(SENDER_INFO.replyToEmail)}</a></div>`}
     </div>
   </div>
 </div></body></html>`;
