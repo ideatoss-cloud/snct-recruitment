@@ -1325,6 +1325,27 @@ function _savePromotionDoc(){
 function _loadPromotionDoc(round){ try{ const raw=localStorage.getItem(_promoDocKey(round)); return raw?JSON.parse(raw):null; }catch(e){ return null; } }
 // ✅ v1.2.0: ADMIN_CODE 평문 제거 — _사용자 시트 role='admin'로 검증. 호환 위해 빈 상수 유지 (서서히 코드에서 제거)
 const ADMIN_CODE = ''; // deprecated
+// ✅ v1.2.62 (2026.07.29) — [이의 없음 — 메일대로 N명 확정] 버튼 (작업자 지시):
+//   메일로 "상위 N명으로 하겠습니다"를 알리고 이의신청을 받은 뒤, 이의가 없으면
+//   체크박스를 일일이 고르지 않고 한 번에 확정한다.
+//   ⚠️ 기준은 '지금 상위 N명'이 아니라 **메일로 알린 그 명단**이다.
+//      이의신청을 받은 대상이 그 명단이므로, 그 사이 순위가 바뀌었어도 임의로 갈아치우지 않는다.
+//   ⚠️ 그래서 명단을 저장해 둔다 — 메일을 **복사한 시점**에 snct_voteMailSent에 기록한다
+//      (미리보기만 연 것은 보낸 게 아니므로 기록하지 않는다).
+//      메일 발송 후 투표가 더 들어오면 순위가 달라지는데, 모르고 확정하면
+//      "면접관에게 알린 명단"과 "실제 확정된 명단"이 어긋난다.
+//      → 확정 화면과 확인창 양쪽에서 **밀려난 사람·새로 들어온 사람을 명시**하고 고르게 한다.
+//   doConfirmInterviewees(skipConfirm) — 확인창 중복만 막는다.
+//   ⚠️ 단 '전원 취소'(체크 0건)는 skipConfirm이어도 반드시 묻는다.
+// ✅ v1.2.61 (2026.07.29) — 투표결과 메일 가독성 (작업자 지적):
+//   그룹웨어 기본값(굴림체 9pt·line-height 1.2)을 그대로 따라가 빽빽했다. 그건 기본값일 뿐
+//   읽기 좋으라고 정한 값이 아니고, 폰트·간격을 바꿔도 붙여넣기는 동일하다.
+//   → 맑은 고딕 10pt · 줄간격 1.7. 구조도 제목줄 → 인사 → 표 → **결론 박스** →
+//     **면접 일정 박스** → 서명으로 바꿔 결론이 먼저 눈에 들어오게 했다.
+//   ⚠️ 박스는 div가 아니라 **table**로 만든다 — 그룹웨어·아웃룩에서 div 테두리는 잘 깨진다.
+//   ⚠️ 회차 ID(20260727_신입_재무회계)는 시스템 값이라 그대로 싣지 않는다.
+//      _roundLabel/_roundShort로 '재무회계 신입 (2026.07.27 접수)'로 바꾼다.
+//   메일 제목도 만들어 준다(_voteMailSubject) — 모달 상단에 표시·복사.
 // ✅ v1.2.60 (2026.07.29) — 투표결과 메일이 실제로 못 쓸 물건이었다 (실사용 중 발견):
 //   ① **[HTML 복사]를 눌러도 텍스트가 붙었다.** navigator.clipboard.write(ClipboardItem)만
 //      썼는데, 이건 HTTPS(보안 컨텍스트)가 아니면 아예 안 되고, 되더라도 편집기가 text/plain을
@@ -1587,7 +1608,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.2.61';
+const APP_VERSION = 'v1.2.62';
 const APP_VERSION_DATE = '2026.07.29';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -6163,6 +6184,28 @@ async function loadAdminResults() {
         <span style="color:var(--tx2)">같은 분이 투표를 두 번 이상 제출한 경우입니다.
         가장 <b>최근 제출</b>만 반영했으므로 아래 점수가 정상입니다.</span>
       </div>` : '';
+    // ✅ v1.2.62: 투표 마감 상태 — 마감 뒤 표가 더 들어왔으면 반드시 알린다
+    const _closed = _voteClosedInfo(round);
+    let closedBanner = '';
+    if(_closed){
+      let closedAt = '';
+      try{ closedAt = new Date(_closed.at).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}); }catch(e){}
+      const snapMap = {};
+      (_closed.snapshot||[]).forEach(s => { snapMap[s.name] = s; });
+      const changed = results.filter(r => {
+        const s = snapMap[r.name];
+        return !s || (s.total||0) !== (r.total||0);
+      }).map(r => r.name);
+      closedBanner = `
+        <div style="background:${changed.length?'rgba(244,168,0,0.10)':'rgba(0,201,122,0.08)'};border:1px solid ${changed.length?'var(--gold)':'rgba(0,201,122,0.4)'};border-radius:9px;padding:11px 14px;margin-bottom:12px;font-size:13.5px;line-height:1.7">
+          <span style="color:${changed.length?'var(--gold)':'var(--green)'};font-weight:700">🔒 투표 마감됨${closedAt?` (${closedAt})`:''}</span>
+          <span style="color:var(--tx2)"> — 메일·확정은 <b>마감 시점 집계</b>를 기준으로 합니다.</span>
+          ${changed.length ? `<br><span style="color:var(--gold)">⚠️ 마감 뒤 표가 바뀐 사람이 있습니다 : <b>${changed.join(', ')}</b></span>
+            <br><span style="color:var(--tx2);font-size:13px">아래 목록은 최신 집계이지만, 메일과 확정은 마감 시점 명단을 씁니다.
+            최신 집계로 진행하시려면 마감을 취소하고 다시 마감하세요.</span>` : ''}
+          <button class="btn btn-o" style="font-size:12px;padding:4px 10px;margin-left:8px" onclick="reopenVoting()">마감 취소</button>
+        </div>`;
+    }
     // ✅ v1.2.58: 순위 기준 토글 — 기본은 투표 점수, 필요할 때만 서류점수로 본다
     const noVoteCnt = results.filter(r => !(r.total > 0)).length;
     const rankBar = `
@@ -6177,7 +6220,7 @@ async function loadAdminResults() {
           <button onclick="setVoteRankMode(true)" style="font-size:12px;padding:6px 12px;border-radius:6px;cursor:pointer;font-weight:600;background:${voteRankByDoc?'var(--gold)':'transparent'};color:${voteRankByDoc?'#000':'var(--tx)'};border:1px solid ${voteRankByDoc?'var(--gold)':'var(--bd)'}">📄 서류점수순</button>
         </div>
       </div>`;
-    document.getElementById('adminResultBody').innerHTML=dupBanner+rankBar+results.map((r,i)=>`
+    document.getElementById('adminResultBody').innerHTML=closedBanner+dupBanner+rankBar+results.map((r,i)=>`
       <div class="rank-row ${r.confirmed?'':''}${i===0?'r1':i===1?'r2':i===2?'r3':''}" style="${r.confirmed?'border-color:var(--green);background:rgba(0,201,122,0.08)':''}">
         <div class="rank-medal">${r.confirmed?'✅':(medals[i]||i+1)}</div>
         <div style="flex:1;min-width:0">
@@ -6227,12 +6270,68 @@ function _josa(word, withJong, withoutJong){
   return ((code - 0xAC00) % 28) ? withJong : withoutJong;
 }
 
+// ✅ v1.2.62: 투표 마감 (작업자 지시)
+//   [투표결과 메일]을 누르면 먼저 마감을 묻는다. 마감을 찍으면 **그 시점의 집계가 기준**이 되어
+//   메일·확정이 같은 명단을 본다. 마감 뒤에 표가 더 들어와도 명단이 흔들리지 않는다.
+//   ⚠️ GAS를 건드리지 않으므로 **면접관의 투표 제출을 실제로 막지는 못한다.**
+//      이 마감은 '관리자가 어느 시점 집계로 진행하는지' 기준을 고정하는 것이고,
+//      마감 뒤 새 투표가 들어오면 화면에 알린다. (진짜 잠금은 GAS 작업 때 — 7장)
+//   ⚠️ localStorage라 이 PC에만 기록된다. 다른 PC에서 열면 마감 표시가 안 보인다.
+const LS_VOTE_CLOSED = 'snct_voteClosed';
+
+function _voteClosedInfo(round){
+  try{
+    const s = JSON.parse(localStorage.getItem(LS_VOTE_CLOSED)||'null');
+    return (s && s.round === round) ? s : null;
+  }catch(e){ return null; }
+}
+
+function _closeVoting(round, list){
+  try{
+    localStorage.setItem(LS_VOTE_CLOSED, JSON.stringify({
+      round,
+      at: new Date().toISOString(),
+      // 마감 시점 스냅샷 — 이후 집계가 바뀌었는지 대조하는 기준
+      snapshot: list.map(r => ({ name:r.name, total:r.total||0, rank1:r.rank1||0, rank2:r.rank2||0,
+                                 score:r.score||0, voters:r.voters||'' }))
+    }));
+  }catch(e){}
+}
+
+function reopenVoting(){
+  if(!isAdmin){ toast('관리자만 가능합니다','err'); return; }
+  const c = _voteClosedInfo(currentRound);
+  if(!c){ toast('마감된 회차가 아닙니다','err'); return; }
+  if(!confirm('투표 마감을 취소할까요?\n\n다시 [✉️ 투표결과 메일]을 누르실 때 새로 마감하게 됩니다.\n(이미 보낸 메일이나 확정된 명단은 바뀌지 않습니다)')) return;
+  try{ localStorage.removeItem(LS_VOTE_CLOSED); }catch(e){}
+  toast('투표 마감을 취소했습니다','ok');
+  loadAdminResults();
+}
+
 function openVoteMailModal(){
   if(!isAdmin){ toast('관리자만 가능합니다','err'); return; }
   const vr = window.__voteResults;
   if(!vr || !Array.isArray(vr.list) || !vr.list.length){
     toast('투표 결과가 없습니다 — 회차를 먼저 불러와 주세요','err');
     return;
+  }
+  // ── 투표 마감 먼저
+  if(!_voteClosedInfo(vr.round)){
+    const voted = vr.list.filter(r => (r.total||0) > 0);
+    const voters = [...new Set(vr.list.flatMap(r =>
+      String(r.voters||'').split(',').map(s => s.replace(/\(\s*\d+\s*순위\s*\)/,'').trim()).filter(Boolean)))];
+    if(!confirm('［투표 마감］\n\n'
+      + `회차 : ${_roundLabel(vr.round)}\n`
+      + `투표한 면접관 : ${voters.length}명${voters.length?' ('+voters.join(', ')+')':''}\n`
+      + `표를 받은 지원자 : ${voted.length}명\n\n`
+      + '지금 시점의 집계로 마감하고 안내 메일을 작성할까요?\n\n'
+      + '· 마감하면 이 시점 명단이 기준이 되어 메일과 최종 확정이 같은 명단을 봅니다.\n'
+      + '· 마감 뒤에 표가 더 들어오면 화면에 알려드립니다.\n'
+      + '· 면접관의 투표 제출 자체를 막지는 못합니다(기준을 고정하는 것입니다).\n'
+      + '· 마감은 이 PC에 기록되며 [마감 취소]로 되돌릴 수 있습니다.')) return;
+    _closeVoting(vr.round, vr.list);
+    toast('투표를 마감했습니다 — 이 시점 집계가 기준입니다','ok');
+    try{ loadAdminResults(); }catch(e){}
   }
   // 면접 일시 — 이미 지정해 두었으면 그대로 채운다(리마인드 문구에 쓰인다)
   let ivStr = '';
@@ -6266,8 +6365,13 @@ function closeVoteMailModal(){
 
 function _voteMailData(){
   const vr = window.__voteResults || { round:'', list:[] };
+  // ✅ v1.2.62: 마감했으면 **마감 시점 스냅샷**을 쓴다.
+  //   마감 뒤 표가 더 들어와도 메일과 확정이 같은 명단을 보게 하려는 것이다.
+  const closed = _voteClosedInfo(vr.round);
+  const src = (closed && Array.isArray(closed.snapshot) && closed.snapshot.length)
+    ? closed.snapshot : (vr.list||[]);
   // 화면 토글과 무관하게 투표 점수 순으로 다시 세운다(동점은 서류점수)
-  const list = [...(vr.list||[])].sort((a,b) =>
+  const list = [...src].sort((a,b) =>
     ((b.total||0)-(a.total||0)) || ((b.score||0)-(a.score||0)));
   const n = Math.max(1, Math.min(99, Number(document.getElementById('vmCount')?.value) || 5));
   return {
@@ -6278,7 +6382,7 @@ function _voteMailData(){
     date: (document.getElementById('vmDate')?.value || '').trim(),
     place: (document.getElementById('vmPlace')?.value || '').trim(),
     deadline: (document.getElementById('vmDeadline')?.value || '').trim(),
-    voters: [...new Set((vr.list||[]).flatMap(r =>
+    voters: [...new Set(src.flatMap(r =>
       String(r.voters||'').split(',').map(s => s.replace(/\(\s*\d+\s*순위\s*\)/,'').trim()).filter(Boolean)))]
   };
 }
@@ -6483,9 +6587,30 @@ function renderVoteMailPreview(){
     srcdoc="${_escapeHtml('<body style="background:#fff;margin:0;padding:14px">' + html + '</body>')}"></iframe>`;
 }
 
+// ✅ v1.2.62: 복사한 시점의 명단을 남긴다 — [메일대로 확정] 버튼이 이걸 기준으로 대조한다.
+//   미리보기를 열어본 것과 실제로 복사해서 보낸 것은 다르므로 **복사할 때만** 기록한다.
+//   ⚠️ 메일을 보낸 뒤 투표가 더 들어오면 상위 N명이 바뀐다. 그 사실을 모르고 확정하면
+//      "메일로 알린 명단"과 "실제 확정된 명단"이 달라진다. 그래서 명단 자체를 저장해 둔다.
+const LS_VOTE_MAIL_SENT = 'snct_voteMailSent';
+function _recordVoteMailSent(){
+  try{
+    const d = _voteMailData();
+    localStorage.setItem(LS_VOTE_MAIL_SENT, JSON.stringify({
+      round: d.round, n: d.n, picked: d.picked.map(r => r.name), at: new Date().toISOString()
+    }));
+  }catch(e){}
+}
+function _voteMailSentInfo(round){
+  try{
+    const s = JSON.parse(localStorage.getItem(LS_VOTE_MAIL_SENT)||'null');
+    return (s && s.round === round) ? s : null;
+  }catch(e){ return null; }
+}
+
 function copyVoteMail(kind){
   const c = window.__voteMailCache;
   if(!c){ toast('본문이 아직 만들어지지 않았습니다','err'); return; }
+  if(kind !== 'subject') _recordVoteMailSent();
   // 소스 창 — 브라우저 제약을 안 받는 확실한 경로. 그룹웨어 "소스 보기"에 붙여넣는다
   if(kind === 'source'){ _openHtmlSourceWindow(c.html); return; }
   if(kind === 'subject'){ _fallbackCopy(c.subject || ''); return; }
@@ -6573,7 +6698,8 @@ function _openHtmlSourceWindow(bodyHtml){
   }
 }
 
-async function doConfirmInterviewees() {
+// skipConfirm — confirmAsMailed(v1.2.62)가 이미 확인을 받았을 때 확인창 중복을 막는다
+async function doConfirmInterviewees(skipConfirm) {
   if(!isAdmin){toast('관리자만 가능합니다','err');return;}
   if(!GAS_URL){toast('GAS URL 필요','err');return;}
   const round = currentRound;
@@ -6584,8 +6710,9 @@ async function doConfirmInterviewees() {
   //   불가능했다(부분 취소만 가능). 후보가 화면에 있으면 0명 제출을 전원 취소로 처리한다.
   if(!confirmed.length){
     if(!checkboxes.length){ toast('확정할 지원자를 선택해주세요','err'); return; }
+    // ⚠️ 전원 취소는 skipConfirm이어도 반드시 묻는다 — 명단이 통째로 비워지는 동작이다
     if(!confirm('선택된 지원자가 없습니다.\n\n기존 면접 확정을 모두 취소할까요?\n(확정 명단이 비워지며 모든 사용자에게 즉시 공유됩니다)')) return;
-  } else if(!confirm(`${confirmed.join(', ')} (${confirmed.length}명)을 면접 대상자로 확정할까요?
+  } else if(!skipConfirm && !confirm(`${confirmed.join(', ')} (${confirmed.length}명)을 면접 대상자로 확정할까요?
 모든 사용자에게 즉시 공유됩니다.`))return;
   try{
     const res=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({action:'confirmInterviewees',userEmail: currentUserEmail,round,confirmed})});
@@ -11595,7 +11722,83 @@ function showConfirmArea(results) {
       }).join('')}
     </div>` : '<div style="font-size:14px;color:var(--tx2);padding:10px 0">모든 대상자가 이미 확정되었습니다.</div>';
 
-  document.getElementById('confirmCheckList').innerHTML = confirmedHtml + pendingHtml;
+  // ✅ v1.2.62: 메일로 "상위 N명으로 하겠다"고 알린 뒤 이의가 없으면 한 번에 확정 (작업자 지시)
+  const sent = _voteMailSentInfo(currentRound);
+  let sentAtLabel = '';
+  try{ sentAtLabel = sent ? new Date(sent.at).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}) : ''; }catch(e){}
+  // 메일을 보낸 뒤 투표가 더 들어왔으면 지금 순위가 다를 수 있다 → 미리 대조해서 보여준다
+  let drift = null;
+  if(sent){
+    const cur = [...results].sort((a,b)=>((b.total||0)-(a.total||0))||((b.score||0)-(a.score||0)))
+      .slice(0, sent.n).map(r => r.name);
+    const added = cur.filter(n => sent.picked.indexOf(n) < 0);
+    const dropped = sent.picked.filter(n => cur.indexOf(n) < 0);
+    if(added.length || dropped.length) drift = { cur, added, dropped };
+  }
+  const mailedHtml = sent ? `
+    <div style="background:${drift?'rgba(244,168,0,0.08)':'rgba(0,180,216,0.06)'};border:1px solid ${drift?'var(--gold)':'rgba(0,180,216,0.32)'};border-radius:9px;padding:12px 14px;margin-bottom:12px">
+      <div style="font-size:13.5px;color:var(--tx2);line-height:1.75">
+        📩 ${sentAtLabel ? `<b>${sentAtLabel}</b>에 ` : ''}면접관들께 <b style="color:var(--ac)">상위 ${sent.n}명</b>을 알렸습니다<br>
+        <span style="color:var(--tx)">${sent.picked.join(' · ')}</span>
+      </div>
+      ${drift ? `
+      <div style="margin-top:9px;font-size:13px;color:var(--gold);line-height:1.7">
+        ⚠️ <b>메일을 보낸 뒤 투표가 바뀌어 지금 순위가 다릅니다.</b><br>
+        <span style="color:var(--tx2)">현재 상위 ${sent.n}명 : ${drift.cur.join(' · ')}</span>
+        ${drift.dropped.length?`<br><span style="color:var(--tx2)">밀려난 사람 : <b>${drift.dropped.join(' · ')}</b></span>`:''}
+        ${drift.added.length?`<br><span style="color:var(--tx2)">새로 들어온 사람 : <b>${drift.added.join(' · ')}</b></span>`:''}
+      </div>` : ''}
+      <button class="btn btn-g" style="margin-top:10px;font-size:14px" onclick="confirmAsMailed()">
+        ✅ 이의 없음 — 메일대로 ${sent.n}명 확정
+      </button>
+    </div>` : '';
+
+  document.getElementById('confirmCheckList').innerHTML = mailedHtml + confirmedHtml + pendingHtml;
+}
+
+// ✅ v1.2.62: 메일로 알린 명단 그대로 확정.
+//   ⚠️ 기준은 '지금 상위 N명'이 아니라 **메일로 알린 그 명단**이다.
+//      이의신청을 받은 대상이 그 명단이므로, 그 사이 순위가 바뀌었어도 임의로 갈아치우지 않는다.
+//      다르면 확인창에서 차이를 보여주고 작업자가 고르게 한다.
+async function confirmAsMailed(){
+  if(!isAdmin){ toast('관리자만 가능합니다','err'); return; }
+  const sent = _voteMailSentInfo(currentRound);
+  if(!sent){ toast('이 회차에서 투표결과 메일을 복사한 기록이 없습니다','err'); return; }
+  const list = [...((window.__voteResults && window.__voteResults.list) || [])]
+    .sort((a,b) => ((b.total||0)-(a.total||0)) || ((b.score||0)-(a.score||0)));
+  const cur = list.slice(0, sent.n).map(r => r.name);
+  const added = cur.filter(n => sent.picked.indexOf(n) < 0);
+  const dropped = sent.picked.filter(n => cur.indexOf(n) < 0);
+
+  let msg;
+  if(added.length || dropped.length){
+    msg = '⚠️ 메일을 보낸 뒤 투표가 바뀌어 지금 순위가 다릅니다.\n\n'
+      + `메일로 알린 명단 : ${sent.picked.join(', ')}\n`
+      + `현재 상위 ${sent.n}명 : ${cur.join(', ')}\n\n`
+      + (dropped.length ? `밀려난 사람 : ${dropped.join(', ')}\n` : '')
+      + (added.length ? `새로 들어온 사람 : ${added.join(', ')}\n` : '')
+      + '\n면접관들께 이의신청을 받은 것은 위쪽(메일로 알린) 명단입니다.\n'
+      + '그 명단 그대로 확정할까요?\n\n'
+      + '[취소]를 누르시면 아무것도 바뀌지 않습니다. 현재 순위대로 하시려면\n'
+      + '취소 후 아래 체크박스에서 직접 고르십시오.';
+  } else {
+    msg = `메일로 알린 ${sent.n}명을 면접 대상자로 확정합니다.\n\n`
+      + sent.picked.join(', ')
+      + '\n\n모든 사용자에게 즉시 공유됩니다. 진행할까요?';
+  }
+  if(!confirm(msg)) return;
+
+  // 확정은 전체 교체다 — 메일 명단에 있는 사람만 체크된 상태로 만든다
+  const boxes = document.querySelectorAll('[id^="cf_"]');
+  if(!boxes.length){ toast('확정 후보 목록이 없습니다 — 회차를 다시 불러와 주세요','err'); return; }
+  boxes.forEach(cb => { cb.checked = sent.picked.indexOf(cb.id.replace('cf_','')) >= 0; });
+  const checked = [...boxes].filter(cb => cb.checked).length;
+  if(checked !== sent.picked.length){
+    if(!confirm(`메일로 알린 ${sent.picked.length}명 중 ${checked}명만 현재 목록에 있습니다.\n`
+      + '(회차를 다시 불러왔거나 명단이 바뀐 경우입니다)\n\n'
+      + `${checked}명만 확정하고 진행할까요?`)) return;
+  }
+  await doConfirmInterviewees(true);
 }
 
 // ══════════════════════════════════════════
