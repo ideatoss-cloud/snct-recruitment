@@ -1067,7 +1067,7 @@ kim@gmail.com"
       </div>
       <div style="flex:1;min-width:170px">
         <div style="font-size:13px;color:var(--tx2);margin-bottom:4px">장소</div>
-        <input type="text" id="vmPlace" placeholder="예) 운영건물 7층 회의실" oninput="renderVoteMailPreview()"
+        <input type="text" id="vmPlace" placeholder="예) 운영동 7층 회의실" oninput="renderVoteMailPreview()"
           style="width:100%;padding:7px 10px;background:var(--bg2);border:1px solid var(--bd);border-radius:7px;color:var(--tx);font-size:14px;box-sizing:border-box">
       </div>
       <div style="width:150px">
@@ -6193,6 +6193,8 @@ async function loadAdminResults() {
 //      투표 결과를 공유하는 메일에 서류점수 순위를 실으면 받는 사람이 오해한다.
 // ══════════════════════════════════════════
 const LS_VOTE_MAIL = 'snct_voteMailOpts';
+// 면접 장소 기본값 (작업자 지정) — 회차마다 바꾸시면 그 값이 다음 회차에 이어진다
+const DEFAULT_IV_PLACE = '운영동 7층 회의실';
 
 // 이름 뒤 조사 — 받침 있으면 앞것, 없으면 뒷것 ('박희재과' → '박희재와')
 function _josa(word, withJong, withoutJong){
@@ -6224,7 +6226,7 @@ function openVoteMailModal(){
   const setVal = (id, v) => { const el=document.getElementById(id); if(el) el.value = v; };
   setVal('vmCount', saved.count || 5);
   setVal('vmDate', ivStr || saved.date || '');
-  setVal('vmPlace', saved.place || '');
+  setVal('vmPlace', saved.place || DEFAULT_IV_PLACE);
   setVal('vmDeadline', saved.deadline || '');
   const sub = document.getElementById('voteMailSubtitle');
   if(sub) sub.textContent = `${vr.round} · 투표 점수 순 (우선면접 3점 · 면접대상 1점)`;
@@ -6309,7 +6311,6 @@ function _buildVoteMailHtml(d){
         <div>일시 : <b>${d.date ? _escapeHtml(d.date) : '(미정)'}</b></div>
         <div>장소 : <b>${d.place ? _escapeHtml(d.place) : '(미정)'}</b></div>
       </div>
-      <div style="margin-top:8px;font-size:12px;color:#64748b">면접 질문지와 평가표는 면접 당일 별도로 전달드립니다.</div>
     </div>`;
   return _buildEmailBody({
     title: `${d.round} 서류 검토 투표 결과 및 면접 대상자(안)`,
@@ -6344,7 +6345,6 @@ function _buildVoteMailText(d){
   L.push('[면접 일정]');
   L.push(`  일시 : ${d.date || '(미정)'}`);
   L.push(`  장소 : ${d.place || '(미정)'}`);
-  L.push('  ※ 면접 질문지와 평가표는 면접 당일 별도로 전달드립니다.');
   L.push('');
   L.push('검토해 주셔서 감사합니다.');
   L.push('');
