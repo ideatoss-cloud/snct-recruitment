@@ -1608,7 +1608,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.2.62';
+const APP_VERSION = 'v1.2.63';
 const APP_VERSION_DATE = '2026.07.29';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -11735,6 +11735,26 @@ function showConfirmArea(results) {
     const dropped = sent.picked.filter(n => cur.indexOf(n) < 0);
     if(added.length || dropped.length) drift = { cur, added, dropped };
   }
+  // ⚠️ v1.2.63: 처음엔 '메일 복사 기록'이 있을 때만 버튼을 띄웠는데, 이미 메일을 보낸 뒤에
+  //   기능이 들어간 회차에서는 기록이 없어 버튼이 아예 안 보였다(실사용 중 지적).
+  //   → 기록이 없으면 인원수를 직접 넣어 상위 N명을 확정할 수 있게 항상 띄운다.
+  let _mailOpts = {};
+  try{ _mailOpts = JSON.parse(localStorage.getItem(LS_VOTE_MAIL)||'{}'); }catch(e){}
+  const _defN = Math.max(1, Math.min(99, Number(_mailOpts.count) || 5));
+  const noRecordHtml = sent ? '' : `
+    <div style="background:rgba(0,180,216,0.06);border:1px solid rgba(0,180,216,0.32);border-radius:9px;padding:12px 14px;margin-bottom:12px">
+      <div style="font-size:13.5px;color:var(--tx2);line-height:1.75">
+        📩 <b style="color:var(--ac)">면접관에게 안내한 인원수대로 한 번에 확정</b>합니다.
+        체크박스를 하나씩 고르지 않으셔도 됩니다.
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">
+        <span style="font-size:13px;color:var(--tx2)">투표 점수 상위</span>
+        <input type="number" id="topNInput" min="1" max="99" value="${_defN}"
+          style="width:70px;padding:6px 9px;background:var(--bg2);border:1px solid var(--bd);border-radius:7px;color:var(--tx);font-size:14px;text-align:center">
+        <span style="font-size:13px;color:var(--tx2)">명</span>
+        <button class="btn btn-g" style="font-size:14px" onclick="confirmTopN()">✅ 이 인원으로 확정</button>
+      </div>
+    </div>`;
   const mailedHtml = sent ? `
     <div style="background:${drift?'rgba(244,168,0,0.08)':'rgba(0,180,216,0.06)'};border:1px solid ${drift?'var(--gold)':'rgba(0,180,216,0.32)'};border-radius:9px;padding:12px 14px;margin-bottom:12px">
       <div style="font-size:13.5px;color:var(--tx2);line-height:1.75">
@@ -11753,7 +11773,40 @@ function showConfirmArea(results) {
       </button>
     </div>` : '';
 
-  document.getElementById('confirmCheckList').innerHTML = mailedHtml + confirmedHtml + pendingHtml;
+  document.getElementById('confirmCheckList').innerHTML = noRecordHtml + mailedHtml + confirmedHtml + pendingHtml;
+}
+
+// ✅ v1.2.63: 메일 복사 기록이 없을 때 — 인원수를 직접 넣어 투표 점수 상위 N명을 확정.
+//   기록이 있으면 confirmAsMailed(그 명단 그대로)를 쓴다. 이건 기록이 없을 때의 경로다.
+async function confirmTopN(){
+  if(!isAdmin){ toast('관리자만 가능합니다','err'); return; }
+  const el = document.getElementById('topNInput');
+  const n = Math.max(1, Math.min(99, Number(el && el.value) || 0));
+  if(!n){ toast('인원수를 입력해주세요','err'); return; }
+  const list = [...((window.__voteResults && window.__voteResults.list) || [])]
+    .sort((a,b) => ((b.total||0)-(a.total||0)) || ((b.score||0)-(a.score||0)));
+  if(!list.length){ toast('투표 결과가 없습니다 — 회차를 다시 불러와 주세요','err'); return; }
+  const picked = list.slice(0, n);
+
+  // ⚠️ 조용히 자르지 않는다 — 경계가 애매하면 반드시 알린다
+  const warns = [];
+  if(list.length < n) warns.push(`후보가 ${list.length}명뿐이라 ${list.length}명만 확정됩니다.`);
+  const cut = list[n-1], next = list[n];
+  if(cut && next && (cut.total||0) === (next.total||0))
+    warns.push(`${cut.name}과(와) ${next.name}의 투표 점수가 ${cut.total}점으로 같습니다. 여기서 자르면 동점자를 가르게 됩니다.`);
+  const zero = picked.filter(r => !(r.total > 0));
+  if(zero.length) warns.push(`투표를 한 표도 받지 않은 분이 포함됩니다 : ${zero.map(r=>r.name).join(', ')}`);
+
+  if(!confirm(`투표 점수 상위 ${picked.length}명을 면접 대상자로 확정합니다.\n\n`
+    + picked.map((r,i) => `${i+1}. ${r.name}  (투표 ${r.total||0}점 · 서류 ${r.score||0}점)`).join('\n')
+    + (warns.length ? '\n\n⚠️ ' + warns.join('\n⚠️ ') : '')
+    + '\n\n모든 사용자에게 즉시 공유됩니다. 진행할까요?')) return;
+
+  const names = picked.map(r => r.name);
+  const boxes = document.querySelectorAll('[id^="cf_"]');
+  if(!boxes.length){ toast('확정 후보 목록이 없습니다 — 회차를 다시 불러와 주세요','err'); return; }
+  boxes.forEach(cb => { cb.checked = names.indexOf(cb.id.replace('cf_','')) >= 0; });
+  await doConfirmInterviewees(true);
 }
 
 // ✅ v1.2.62: 메일로 알린 명단 그대로 확정.
