@@ -250,7 +250,12 @@ hr.dv{border:none;border-top:1px solid var(--bd);margin:13px 0;}
   #resultRoundSel,#adminRoundSel{width:100% !important;margin-bottom:8px;}
 
   /* 집계 탭 버튼 영역 */
-  #adminOnlyBtns{display:flex !important;flex-wrap:wrap;gap:6px;}
+  /* ⚠️ v1.2.59: 여기 있던 display:flex !important 가 인라인 display:none 을 이겨서,
+     관리자가 아닌 사람이 휴대폰으로 보면 [초기화][인쇄][엑셀]이 그대로 노출됐다.
+     ('초기화'는 투표와 면접 확정 명단까지 지운다.)
+     display는 JS(isAdmin ? inline-flex : none)에만 맡기고 여기선 줄바꿈만 손댄다.
+     display를 다시 넣지 말 것. */
+  #adminOnlyBtns{flex-wrap:wrap;gap:6px;}
 
   /* 면접 일시 지정 */
   #ivDateAdminArea .flex-row{flex-direction:column;}
@@ -707,6 +712,7 @@ hr.dv{border:none;border-top:1px solid var(--bd);margin:13px 0;}
             <button class="btn btn-r" style="font-size:14px" onclick="resetAllVotes()">🗑️ 초기화</button>
             <button class="btn btn-o" style="font-size:14px" onclick="printResults()">🖨️ 인쇄</button>
             <button class="btn btn-o" style="font-size:14px" onclick="exportExcel()">📥 엑셀</button>
+            <button class="btn btn-p" style="font-size:14px" onclick="openVoteMailModal()">✉️ 투표결과 메일</button>
           </span>
         </div>
       </div>
@@ -715,7 +721,7 @@ hr.dv{border:none;border-top:1px solid var(--bd);margin:13px 0;}
       <div style="background:rgba(0,180,216,0.06);border:1px solid rgba(0,180,216,0.2);border-radius:9px;padding:11px 14px;margin-bottom:14px;font-size:14px;color:var(--tx2);line-height:1.8">
         <b style="color:var(--ac)">📋 면접 대상자 확정 프로세스</b><br>
         ① 일반 사용자(면접관)들이 <b>면접대상 선정</b> 탭에서 투표 제출
-        → ② 아래 결과(투표+서류 합산)를 확인
+        → ② 아래 결과(<b>투표 점수</b> 기준, 서류점수 병기)를 확인
         → ③ 하단 <b>✅ 면접 대상자 확정</b>에서 관리자가 직접 체크박스 선택 후 확정 버튼 클릭
       </div>
       <div id="adminResultBody"><div class="empty" style="min-height:200px"><div class="empty-ic">📊</div><div style="font-size:14px">회차를 선택하고 새로고침을 눌러주세요</div></div></div>
@@ -1032,6 +1038,52 @@ kim@gmail.com"
   </div>
 </div>
 
+<!-- ✅ v1.2.59: 투표 결과 공유 메일 본문 생성 (관리자 전용).
+     면접관들에게 "이 투표 결과로 상위 N명을 면접 대상자로 하려는데 동의하시는지" 묻는 메일.
+     실제 발송은 그룹웨어에서 하므로 여기서는 본문만 만들어 복사한다. -->
+<div class="ov" id="voteMailModal">
+  <div class="modal" style="width:96vw;max-width:900px;max-height:92vh;display:flex;flex-direction:column">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-shrink:0">
+      <div>
+        <h2 style="font-size:16px;margin:0">✉️ 투표 결과 공유 메일 (면접관 동의 요청)</h2>
+        <div id="voteMailSubtitle" style="font-size:12px;color:var(--tx2);margin-top:3px"></div>
+      </div>
+      <button class="btn btn-o" style="padding:5px 11px;font-size:14px" onclick="closeVoteMailModal()">✕</button>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px;flex-shrink:0">
+      <div style="width:120px">
+        <div style="font-size:13px;color:var(--tx2);margin-bottom:4px">면접 인원수</div>
+        <input type="number" id="vmCount" min="1" max="99" value="5" oninput="renderVoteMailPreview()"
+          style="width:100%;padding:7px 10px;background:var(--bg2);border:1px solid var(--bd);border-radius:7px;color:var(--tx);font-size:14px;box-sizing:border-box">
+      </div>
+      <div style="flex:1;min-width:210px">
+        <div style="font-size:13px;color:var(--tx2);margin-bottom:4px">면접 일시</div>
+        <input type="text" id="vmDate" placeholder="예) 8월 3일(월) 오후 2시" oninput="renderVoteMailPreview()"
+          style="width:100%;padding:7px 10px;background:var(--bg2);border:1px solid var(--bd);border-radius:7px;color:var(--tx);font-size:14px;box-sizing:border-box">
+      </div>
+      <div style="flex:1;min-width:170px">
+        <div style="font-size:13px;color:var(--tx2);margin-bottom:4px">장소</div>
+        <input type="text" id="vmPlace" placeholder="예) 운영건물 7층 회의실" oninput="renderVoteMailPreview()"
+          style="width:100%;padding:7px 10px;background:var(--bg2);border:1px solid var(--bd);border-radius:7px;color:var(--tx);font-size:14px;box-sizing:border-box">
+      </div>
+      <div style="width:150px">
+        <div style="font-size:13px;color:var(--tx2);margin-bottom:4px">회신 기한</div>
+        <input type="text" id="vmDeadline" placeholder="예) 오늘 오후 5시" oninput="renderVoteMailPreview()"
+          style="width:100%;padding:7px 10px;background:var(--bg2);border:1px solid var(--bd);border-radius:7px;color:var(--tx);font-size:14px;box-sizing:border-box">
+      </div>
+    </div>
+    <div id="voteMailWarn" style="display:none;margin-bottom:10px;flex-shrink:0"></div>
+    <div id="voteMailPreview" style="flex:1;overflow-y:auto;background:#f1f5f9;border-radius:8px;padding:4px"></div>
+    <div style="display:flex;justify-content:space-between;gap:8px;margin-top:12px;flex-shrink:0;flex-wrap:wrap">
+      <button class="btn btn-o" onclick="closeVoteMailModal()">닫기</button>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn btn-o" onclick="copyVoteMail('text')">📋 텍스트 복사</button>
+        <button class="btn btn-p" onclick="copyVoteMail('html')">📋 HTML 복사 (그룹웨어)</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ✅ v1.0.66: 발송/클릭 상세 모달 - 카드 클릭 시 수신자별 개별 확인 -->
 <div class="ov" id="emailEngagementModal">
   <div class="modal" style="width:96vw;max-width:760px;max-height:88vh;display:flex;flex-direction:column">
@@ -1261,6 +1313,26 @@ function _savePromotionDoc(){
 function _loadPromotionDoc(round){ try{ const raw=localStorage.getItem(_promoDocKey(round)); return raw?JSON.parse(raw):null; }catch(e){ return null; } }
 // ✅ v1.2.0: ADMIN_CODE 평문 제거 — _사용자 시트 role='admin'로 검증. 호환 위해 빈 상수 유지 (서서히 코드에서 제거)
 const ADMIN_CODE = ''; // deprecated
+// ✅ v1.2.59 (2026.07.29) — 투표 결과 공유 + 권한 노출 버그 (작업자 지적 3건):
+//   ⚠️ [권한] 모바일에서 관리자 버튼이 비관리자에게 노출되고 있었다 (치명).
+//      모바일 CSS `#adminOnlyBtns{display:flex !important}`가 인라인 display:none을 이겼다.
+//      화면 폭 600px 이하에서 회차 권한만 있는 면접관에게 [초기화][인쇄][엑셀]이 그대로 보였다.
+//      '초기화'는 투표와 면접 확정 명단까지 지우는 버튼이다. CSS에서 display 선언을 제거했다.
+//      → display는 JS(isAdmin 판정)에만 맡긴다. 이 CSS에 display를 다시 넣지 말 것.
+//   ① printResults(집계 탭 [🖨️ 인쇄])에 투표 점수가 아예 없어 서류점수 순으로만 나왔다.
+//      v1.2.58에서 고친 건 [면접 집계] 탭의 printDocResult로 **다른 인쇄물**이었다.
+//      이제 화면의 순위 기준(voteRankByDoc)을 따라가고 카드에 투표 점수·득표를 함께 찍는다.
+//      투표 결과는 loadAdminResults가 window.__voteResults에 캐시한 값을 쓴다.
+//   ② [✉️ 투표결과 메일] 신설 (관리자 전용) — 면접관들에게 "이 결과로 상위 N명을 면접
+//      대상자로 하려는데 동의하시는지" 묻는 메일 본문을 만든다. 실발송은 그룹웨어에서 하므로
+//      본문만 만들어 HTML·텍스트로 복사한다. 면접 인원수 N은 회차마다 입력(기본 5).
+//      명단은 상위 N명 + 기준선 + 다음 3명(작업자 확정 — 자른 지점이 타당한지 보이게).
+//      면접 일시·장소 리마인드 포함. 일시는 회차에 지정해 둔 값을 자동으로 채운다.
+//      ⚠️ 이 메일은 순위 토글과 무관하게 **항상 투표 점수 순**이다. 투표 결과 공유 메일에
+//         서류점수 순위를 실으면 받는 사람이 오해한다.
+//      ⚠️ 기준선이 애매하면 조용히 자르지 않고 경고한다 — 경계 동점 / 0표인데 포함 /
+//         후보가 N명보다 적음 / 일시·장소 미입력.
+//   ③ 화면 안내문의 '아래 결과(투표+서류 합산)' 라벨을 정정했다. 합산이 아니라 투표 점수다.
 // ✅ v1.2.58 (2026.07.29) — 면접 대상자 선발은 '투표 점수'가 기준이다 (작업자 지시):
 //   ⚠️ 용어 — 여기서 '투표 점수'는 면접 *대상자를 뽑기 위한* 투표 합계(우선면접 3점·면접대상 1점)다.
 //      면접을 *실시한 뒤* 매기는 '면접 평가 점수'(ivScore, calcWeightedTotal)와 다른 값이다.
@@ -1485,7 +1557,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.2.58';
+const APP_VERSION = 'v1.2.59';
 const APP_VERSION_DATE = '2026.07.29';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -2964,12 +3036,24 @@ async function loadMemo(appId) {
 function printResults() {
   const done = applicants.filter(a => a.status === 'done');
   if (!done.length) { toast('분석 완료된 지원자가 없습니다', 'err'); return; }
-  const sorted = [...done].sort((a,b) =>
-    ((b.result?.fit_score||0)+getTotalBonus(b.id)) - ((a.result?.fit_score||0)+getTotalBonus(a.id))
-  );
+  // ✅ v1.2.59: 이 인쇄물에 투표 점수가 아예 없어 서류점수 순으로만 나왔다(작업자 지적).
+  //   면접관들에게 "이 투표 결과로 이렇게 자르겠다"를 보여줄 자료라 투표 점수가 핵심이다.
+  //   화면의 순위 기준(voteRankByDoc)을 그대로 따라간다 — 화면과 인쇄물이 다르면 안 된다.
+  //   ⚠️ 투표 결과는 [면접대상 선정] 화면을 한 번 열어야 캐시된다. 없으면 서류점수 순으로 낸다.
+  const vc = (window.__voteResults && window.__voteResults.list) || [];
+  const voteMap = {};
+  vc.forEach(v => { const n=String(v.name||'').trim(); if(n) voteMap[n] = v; });
+  const hasVotes = vc.some(v => (v.total||0) > 0);
+  const byVote = hasVotes && !voteRankByDoc;
+  const vOf = (a) => voteMap[(a.result?.name)||''] || { total:0, rank1:0, rank2:0 };
+  const docOf = (a) => Math.min(100, (a.result?.fit_score||0) + getTotalBonus(a.id));
+  const sorted = [...done].sort((a,b) => byVote
+    ? ((vOf(b).total||0) - (vOf(a).total||0)) || (docOf(b) - docOf(a))
+    : (docOf(b) - docOf(a)));
   const rows = sorted.map((a, i) => {
     const r = a.result || {};
     const total = Math.min(100, (r.fit_score||0) + getTotalBonus(a.id));
+    const v = vOf(a);
     const scoreColor = total >= 70 ? '#2e7d32' : total >= 50 ? '#e65100' : '#c62828';
     const lic = Array.isArray(r.licenses) ? r.licenses.join(', ') : (r.licenses||'-');
     const strengths = (r.strengths||[]).join(' · ');
@@ -2990,7 +3074,11 @@ function printResults() {
             <span class="print-meta">${fmtGenderPlain(r.gender)!=='-'?fmtGenderPlain(r.gender)+' · ':''}${fmtAge(r.age,r.birth)} · ${a.empType||''} ${a.job||''}</span>
             ${r._disqualified ? '<span class="print-disq">탈락</span>' : ''}
           </div>
-          <div class="print-score" style="color:${scoreColor}">${total}점</div>
+          <div style="text-align:right;flex-shrink:0">
+            <div class="print-score" style="color:${byVote ? '#1565c0' : scoreColor}">${byVote ? v.total : total}점</div>
+            <div class="print-sub">${byVote ? '투표 점수 · 서류 ' + total + '점' : (hasVotes ? '서류점수 · 투표 ' + (v.total||0) + '점' : '서류점수')}</div>
+            ${hasVotes ? `<div class="print-sub">우선면접 ${v.rank1||0}표 · 면접대상 ${v.rank2||0}표</div>` : ''}
+          </div>
         </div>
         <div class="print-summary">${r.summary||''}</div>
         <div class="print-grid">
@@ -3022,6 +3110,7 @@ function printResults() {
       .print-meta { font-size:13px; color:#555; }
       .print-disq { background:#c62828; color:#fff; font-size:11px; padding:2px 6px; border-radius:3px; margin-left:6px; }
       .print-score { font-size:20px; font-weight:900; }
+      .print-sub { font-size:11px; color:#666; margin-top:1px; white-space:nowrap; }
       .print-summary { font-size:13px; color:#333; margin-bottom:8px; line-height:1.5; padding:6px 8px; background:#f8f9fa; border-radius:4px; }
       .print-grid { display:grid; grid-template-columns:1fr 1fr; gap:3px 16px; margin-bottom:5px; font-size:13px; }
       .print-row { font-size:13px; margin-top:4px; }
@@ -3037,7 +3126,9 @@ function printResults() {
       <h1>SNCT 채용에이전트 — ${roundLabel} 분석 결과 (${sorted.length}명)</h1>
       <button onclick="window.print()" style="padding:6px 14px;background:#1565c0;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:14px">🖨️ 인쇄</button>
     </div>
-    <div class="print-date">출력일: ${new Date().toLocaleString('ko-KR')} · 담당: ${currentUser||'미지정'}</div>
+    <div class="print-date">출력일: ${new Date().toLocaleString('ko-KR')} · 담당: ${currentUser||'미지정'}
+      · 순위 기준: <b>${byVote ? '투표 점수 (우선면접 3점·면접대상 1점)' : '서류점수'}</b>${byVote ? ' — 동점은 서류점수순' : ''}
+      ${!hasVotes ? '<span style="color:#c62828">· 투표 결과가 없어 서류점수 순입니다. [면접대상 선정] 화면을 먼저 열어주세요</span>' : ''}</div>
     ${rows}
   </body></html>`);
   printWin.document.close();
@@ -6073,6 +6164,10 @@ async function loadAdminResults() {
           ${(!voteRankByDoc && !(r.total>0)) ? '<div style="font-size:12px;color:var(--gold);margin-top:2px">투표 0표 · 서류점수순</div>' : ''}
         </div>
       </div>`).join('');
+    // ✅ v1.2.59: 인쇄·투표결과 메일이 같은 집계를 쓰도록 캐시.
+    //   화면에 보이는 것과 인쇄물·메일이 어긋나지 않게 하려는 것이다.
+    //   (여기 담기는 값은 이미 dedupeVoteResults를 거쳤다)
+    window.__voteResults = { round, list: results };
     // 확정 버튼 표시
     showConfirmArea(results);
     // 면접일시 설정 영역 표시 (관리자)
@@ -6080,6 +6175,233 @@ async function loadAdminResults() {
     if (ivDateArea) ivDateArea.style.display = isAdmin ? 'block' : 'none';
     showIvDateBanner(round);
   } catch(e){document.getElementById('adminResultBody').innerHTML=`<div style="color:var(--red);font-size:14px;padding:20px">${e.message}</div>`;}
+}
+
+// ══════════════════════════════════════════
+// ✅ v1.2.59: 투표 결과 공유 메일 (관리자 전용, 작업자 지시)
+//   면접관들에게 "투표 결과가 이렇게 나왔고 상위 N명을 면접 대상자로 하려는데 동의하시는지"를
+//   묻는 메일 본문을 만든다. 실제 발송은 그룹웨어에서 하므로 여기서는 본문만 만들어 복사한다.
+//   ⚠️ 이 메일은 순위 토글(voteRankByDoc)과 무관하게 **항상 투표 점수 순**이다.
+//      투표 결과를 공유하는 메일에 서류점수 순위를 실으면 받는 사람이 오해한다.
+// ══════════════════════════════════════════
+const LS_VOTE_MAIL = 'snct_voteMailOpts';
+
+// 이름 뒤 조사 — 받침 있으면 앞것, 없으면 뒷것 ('박희재과' → '박희재와')
+function _josa(word, withJong, withoutJong){
+  const last = String(word||'').trim().slice(-1);
+  if(!last) return withJong;
+  const code = last.charCodeAt(0);
+  if(code < 0xAC00 || code > 0xD7A3) return withJong; // 한글이 아니면 기본형
+  return ((code - 0xAC00) % 28) ? withJong : withoutJong;
+}
+
+function openVoteMailModal(){
+  if(!isAdmin){ toast('관리자만 가능합니다','err'); return; }
+  const vr = window.__voteResults;
+  if(!vr || !Array.isArray(vr.list) || !vr.list.length){
+    toast('투표 결과가 없습니다 — 회차를 먼저 불러와 주세요','err');
+    return;
+  }
+  // 면접 일시 — 이미 지정해 두었으면 그대로 채운다(리마인드 문구에 쓰인다)
+  let ivStr = '';
+  try{
+    const stored = JSON.parse(localStorage.getItem(LS_IV_DATE)||'{}');
+    const info = stored[vr.round];
+    if(info) ivStr = info.display || (info.date ? formatIvDate(info.date, info.time) : '');
+  }catch(e){}
+  // 장소·회신기한은 회차마다 크게 안 바뀌므로 지난번 입력을 기억해 둔다
+  let saved = {};
+  try{ saved = JSON.parse(localStorage.getItem(LS_VOTE_MAIL)||'{}'); }catch(e){}
+
+  const setVal = (id, v) => { const el=document.getElementById(id); if(el) el.value = v; };
+  setVal('vmCount', saved.count || 5);
+  setVal('vmDate', ivStr || saved.date || '');
+  setVal('vmPlace', saved.place || '');
+  setVal('vmDeadline', saved.deadline || '');
+  const sub = document.getElementById('voteMailSubtitle');
+  if(sub) sub.textContent = `${vr.round} · 투표 점수 순 (우선면접 3점 · 면접대상 1점)`;
+  document.getElementById('voteMailModal').classList.add('on');
+  renderVoteMailPreview();
+}
+
+function closeVoteMailModal(){
+  document.getElementById('voteMailModal').classList.remove('on');
+}
+
+function _voteMailData(){
+  const vr = window.__voteResults || { round:'', list:[] };
+  // 화면 토글과 무관하게 투표 점수 순으로 다시 세운다(동점은 서류점수)
+  const list = [...(vr.list||[])].sort((a,b) =>
+    ((b.total||0)-(a.total||0)) || ((b.score||0)-(a.score||0)));
+  const n = Math.max(1, Math.min(99, Number(document.getElementById('vmCount')?.value) || 5));
+  return {
+    round: vr.round || '',
+    list, n,
+    picked: list.slice(0, n),
+    nextUp: list.slice(n, n + 3), // 경계선 바로 아래 3명 — 자른 지점이 타당한지 보이게
+    date: (document.getElementById('vmDate')?.value || '').trim(),
+    place: (document.getElementById('vmPlace')?.value || '').trim(),
+    deadline: (document.getElementById('vmDeadline')?.value || '').trim(),
+    voters: [...new Set((vr.list||[]).flatMap(r =>
+      String(r.voters||'').split(',').map(s => s.replace(/\(\s*\d+\s*순위\s*\)/,'').trim()).filter(Boolean)))]
+  };
+}
+
+function _voteMailRows(d){
+  // 상위 N명 + 경계선 + 다음 3명. 그 아래는 싣지 않는다(작업자 확정)
+  const row = (r, i, dim) => `
+    <tr style="${dim?'color:#94a3b8;':''}background:${dim?'#fff':(i<3?'#f0f9ff':'#fff')}">
+      <td style="padding:7px 8px;border:1px solid #e2e8f0;text-align:center">${i+1}</td>
+      <td style="padding:7px 8px;border:1px solid #e2e8f0;font-weight:${dim?'400':'700'}">${_escapeHtml(r.name||'')}</td>
+      <td style="padding:7px 8px;border:1px solid #e2e8f0;text-align:center;font-weight:${dim?'400':'700'}">${r.total||0}점</td>
+      <td style="padding:7px 8px;border:1px solid #e2e8f0;text-align:center">${r.rank1||0}</td>
+      <td style="padding:7px 8px;border:1px solid #e2e8f0;text-align:center">${r.rank2||0}</td>
+      <td style="padding:7px 8px;border:1px solid #e2e8f0;text-align:center">${r.score||0}점</td>
+    </tr>`;
+  const cut = d.nextUp.length ? `
+    <tr><td colspan="6" style="padding:5px 8px;border:1px solid #e2e8f0;background:#fef3c7;color:#92400e;font-size:12px;text-align:center">
+      ── 면접 대상 ${d.n}명 기준선 ──</td></tr>` : '';
+  return d.picked.map((r,i) => row(r,i,false)).join('')
+       + cut
+       + d.nextUp.map((r,i) => row(r, d.n+i, true)).join('');
+}
+
+function _buildVoteMailHtml(d){
+  const table = `
+    <table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:10px">
+      <thead><tr style="background:#1e293b;color:#fff">
+        <th style="padding:8px;border:1px solid #1e293b">순위</th>
+        <th style="padding:8px;border:1px solid #1e293b">이름</th>
+        <th style="padding:8px;border:1px solid #1e293b">투표 점수</th>
+        <th style="padding:8px;border:1px solid #1e293b">우선면접</th>
+        <th style="padding:8px;border:1px solid #1e293b">면접대상</th>
+        <th style="padding:8px;border:1px solid #1e293b">서류점수</th>
+      </tr></thead>
+      <tbody>${_voteMailRows(d)}</tbody>
+    </table>
+    <div style="font-size:12px;color:#64748b;margin-top:6px">
+      투표 점수 = 우선면접 3점 · 면접대상 1점 합산${d.nextUp.length ? ' · 기준선 아래 3명은 참고용으로 함께 표기했습니다' : ''}
+    </div>`;
+  const mainMessage = `
+    <div>안녕하십니까. 관리팀입니다.</div>
+    <div style="margin-top:10px"><b>${_escapeHtml(d.round)}</b> 지원서 검토 투표 결과를 공유드립니다.
+    ${d.voters.length ? `투표에는 <b>${d.voters.map(_escapeHtml).join(' · ')}</b> ${d.voters.length}분이 참여해 주셨습니다.` : ''}</div>
+    ${table}`;
+  const detail = `
+    <div style="background:#f0f9ff;border-left:3px solid #0284c7;padding:12px 14px;border-radius:3px">
+      <div style="font-weight:700;color:#0c4a6e">위 결과에 따라 상위 ${d.n}명을 면접 대상자로 확정하고자 합니다.</div>
+      <div style="margin-top:6px">${_escapeHtml(d.picked.map(r=>r.name).join(' · '))}</div>
+      <div style="margin-top:10px;font-size:13px">다른 의견이 있으시면
+        ${d.deadline ? `<b>${_escapeHtml(d.deadline)}</b>까지 ` : ''}회신 부탁드립니다.
+        회신이 없으시면 동의하신 것으로 보고 진행하겠습니다.</div>
+    </div>
+    <div style="margin-top:14px;background:#f8fafc;border-left:3px solid #1e293b;padding:12px 14px;border-radius:3px">
+      <div style="font-weight:700;color:#1e293b">📅 면접 일정 안내</div>
+      <div style="margin-top:6px;font-size:13px;line-height:1.9">
+        <div>일시 : <b>${d.date ? _escapeHtml(d.date) : '(미정)'}</b></div>
+        <div>장소 : <b>${d.place ? _escapeHtml(d.place) : '(미정)'}</b></div>
+      </div>
+      <div style="margin-top:8px;font-size:12px;color:#64748b">면접 질문지와 평가표는 면접 당일 별도로 전달드립니다.</div>
+    </div>`;
+  return _buildEmailBody({
+    title: `${d.round} 서류 검토 투표 결과 및 면접 대상자(안)`,
+    headerColor: '#1e293b',
+    mainMessage,
+    detail,
+    closing: '<div>검토해 주셔서 감사합니다.</div>'
+  });
+}
+
+function _buildVoteMailText(d){
+  const L = [];
+  L.push('안녕하십니까. 관리팀입니다.');
+  L.push('');
+  L.push(`${d.round} 지원서 검토 투표 결과를 공유드립니다.`);
+  if(d.voters.length) L.push(`투표 참여: ${d.voters.join(', ')} (${d.voters.length}명)`);
+  L.push('');
+  L.push('[투표 결과]  ※ 투표 점수 = 우선면접 3점 · 면접대상 1점 합산');
+  d.picked.forEach((r,i) => L.push(
+    `${String(i+1).padStart(2,' ')}. ${r.name}  |  투표 ${r.total||0}점 (우선 ${r.rank1||0}·대상 ${r.rank2||0})  |  서류 ${r.score||0}점`));
+  if(d.nextUp.length){
+    L.push(`---- 면접 대상 ${d.n}명 기준선 ----`);
+    d.nextUp.forEach((r,i) => L.push(
+      `${String(d.n+i+1).padStart(2,' ')}. ${r.name}  |  투표 ${r.total||0}점 (우선 ${r.rank1||0}·대상 ${r.rank2||0})  |  서류 ${r.score||0}점  (참고)`));
+  }
+  L.push('');
+  L.push(`위 결과에 따라 상위 ${d.n}명을 면접 대상자로 확정하고자 합니다.`);
+  L.push(`  → ${d.picked.map(r=>r.name).join(', ')}`);
+  L.push(`다른 의견이 있으시면 ${d.deadline ? d.deadline+'까지 ' : ''}회신 부탁드립니다.`);
+  L.push('회신이 없으시면 동의하신 것으로 보고 진행하겠습니다.');
+  L.push('');
+  L.push('[면접 일정]');
+  L.push(`  일시 : ${d.date || '(미정)'}`);
+  L.push(`  장소 : ${d.place || '(미정)'}`);
+  L.push('  ※ 면접 질문지와 평가표는 면접 당일 별도로 전달드립니다.');
+  L.push('');
+  L.push('검토해 주셔서 감사합니다.');
+  L.push('');
+  L.push(`${SENDER_INFO.companyFull} ${SENDER_INFO.team}`);
+  return L.join('\n');
+}
+
+function renderVoteMailPreview(){
+  const d = _voteMailData();
+  // 지난번 입력 기억 (장소·회신기한은 회차마다 거의 같다)
+  try{ localStorage.setItem(LS_VOTE_MAIL, JSON.stringify({
+    count: d.n, date: d.date, place: d.place, deadline: d.deadline })); }catch(e){}
+
+  // ⚠️ 조용히 자르지 않는다 — 기준선이 애매한 상황은 반드시 알린다
+  const warns = [];
+  if(d.list.length < d.n) warns.push(`투표 결과에 <b>${d.list.length}명</b>뿐인데 면접 인원을 ${d.n}명으로 두셨습니다.`);
+  const cutR = d.list[d.n-1], nextR = d.list[d.n];
+  if(cutR && nextR && (cutR.total||0) === (nextR.total||0))
+    warns.push(`<b>${_escapeHtml(cutR.name)}</b>${_josa(cutR.name,'과','와')} <b>${_escapeHtml(nextR.name)}</b>의 투표 점수가 <b>${cutR.total}점으로 같습니다.</b> 여기서 자르면 동점자를 가르게 됩니다.`);
+  const zero = d.picked.filter(r => !(r.total>0));
+  if(zero.length) warns.push(`면접 대상 ${d.n}명 안에 <b>투표를 한 표도 받지 않은 분 ${zero.length}명</b>이 포함돼 있습니다 (${zero.map(r=>_escapeHtml(r.name)).join(', ')}).`);
+  if(!d.date) warns.push('면접 일시가 비어 있습니다. 리마인드 문구에 <b>(미정)</b>으로 나갑니다.');
+  if(!d.place) warns.push('장소가 비어 있습니다. 리마인드 문구에 <b>(미정)</b>으로 나갑니다.');
+
+  const warnEl = document.getElementById('voteMailWarn');
+  if(warnEl){
+    warnEl.style.display = warns.length ? 'block' : 'none';
+    warnEl.innerHTML = warns.length ? `
+      <div style="background:rgba(244,168,0,0.10);border:1px solid var(--gold);border-radius:9px;padding:10px 13px;font-size:13px;line-height:1.7;color:var(--gold)">
+        ${warns.map(w => '⚠️ ' + w).join('<br>')}
+      </div>` : '';
+  }
+
+  const html = _buildVoteMailHtml(d);
+  const text = _buildVoteMailText(d);
+  window.__voteMailCache = { html, text };
+  const pv = document.getElementById('voteMailPreview');
+  if(pv) pv.innerHTML = `<iframe style="width:100%;height:520px;border:0;background:#fff;border-radius:6px"
+    srcdoc="${_escapeHtml(html)}"></iframe>`;
+}
+
+function copyVoteMail(kind){
+  const c = window.__voteMailCache;
+  if(!c){ toast('본문이 아직 만들어지지 않았습니다','err'); return; }
+  if(kind === 'text'){
+    const t = c.text;
+    if(navigator.clipboard?.writeText){
+      navigator.clipboard.writeText(t).then(()=>toast('텍스트 본문 복사 완료 ✅','ok')).catch(()=>_fallbackCopy(t));
+    } else _fallbackCopy(t);
+    return;
+  }
+  // HTML — 그룹웨어 편집기에 붙이면 표 서식이 살아있게 text/html로 넣는다
+  const body = c.html.replace(/^[\s\S]*?<body[^>]*>/i,'').replace(/<\/body>[\s\S]*$/i,'');
+  try{
+    const item = new ClipboardItem({
+      'text/html': new Blob([body], {type:'text/html'}),
+      'text/plain': new Blob([c.text], {type:'text/plain'})
+    });
+    navigator.clipboard.write([item])
+      .then(()=>toast('HTML 본문 복사 완료 ✅ 그룹웨어에 붙여넣으세요','ok'))
+      .catch(()=>{ _fallbackCopy(c.text); toast('HTML 복사가 막혀 텍스트로 복사했습니다','err'); });
+  }catch(e){
+    _fallbackCopy(c.text);
+    toast('이 브라우저는 HTML 복사를 지원하지 않아 텍스트로 복사했습니다','err');
+  }
 }
 
 async function doConfirmInterviewees() {
