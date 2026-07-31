@@ -717,6 +717,7 @@ hr.dv{border:none;border-top:1px solid var(--bd);margin:13px 0;}
           <span id="adminOnlyBtns" style="display:none;gap:8px">
             <button class="btn btn-r" style="font-size:14px" onclick="resetAllVotes()">🗑️ 초기화</button>
             <button class="btn btn-p" style="font-size:14px" onclick="openVoteMailModal()">✉️ 투표결과 메일</button>
+            <button class="btn btn-o" style="font-size:14px" onclick="openTravelFeeModal()">🚌 교통비 확인서</button>
           </span>
         </div>
       </div>
@@ -1037,6 +1038,42 @@ kim@gmail.com"
       <div style="display:flex;gap:6px">
         <button class="btn btn-o" onclick="copyHealthCheckList()" style="border-color:#0ea5e9;color:#0ea5e9">📋 명단 복사 (엑셀)</button>
         <button class="btn btn-p" onclick="saveHealthCheckListData()" style="background:linear-gradient(135deg,#0ea5e9,#0369a1)">💾 저장</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ✅ v1.2.70: 입사지원자 교통비 지급확인서 (관리자 전용).
+     면접 확정자 명단으로 만들어 인쇄 → 면접 당일 실물 서명을 받아 비용처리한다.
+     ⚠️ 거주지 열은 넣지 않는다(작업자 지시) — 서명만 받으면 되고, 주소는 수집하지 않는다. -->
+<div class="ov" id="travelFeeModal">
+  <div class="modal" style="width:96vw;max-width:820px;max-height:92vh;display:flex;flex-direction:column">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-shrink:0">
+      <div>
+        <h2 style="font-size:16px;margin:0">🚌 입사지원자 교통비 지급확인서</h2>
+        <div id="travelFeeSubtitle" style="font-size:12px;color:var(--tx2);margin-top:3px"></div>
+      </div>
+      <button class="btn btn-o" style="padding:5px 11px;font-size:14px" onclick="closeTravelFeeModal()">✕</button>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px;flex-shrink:0">
+      <div style="flex:1;min-width:240px">
+        <div style="font-size:13px;color:var(--tx2);margin-bottom:4px">면접일자</div>
+        <input type="text" id="tfDate" placeholder="예) 2026. 8. 3.(월) 13:00" oninput="renderTravelFeeRows()"
+          style="width:100%;padding:7px 10px;background:var(--bg2);border:1px solid var(--bd);border-radius:7px;color:var(--tx);font-size:14px;box-sizing:border-box">
+      </div>
+      <div style="width:160px">
+        <div style="font-size:13px;color:var(--tx2);margin-bottom:4px">1인당 교통비 (원)</div>
+        <input type="number" id="tfAmount" min="0" step="1000" value="50000" oninput="renderTravelFeeRows()"
+          style="width:100%;padding:7px 10px;background:var(--bg2);border:1px solid var(--bd);border-radius:7px;color:var(--tx);font-size:14px;box-sizing:border-box;text-align:right">
+      </div>
+    </div>
+    <div id="travelFeeWarn" style="display:none;margin-bottom:10px;flex-shrink:0"></div>
+    <div id="travelFeeBody" style="flex:1;overflow-y:auto"></div>
+    <div style="display:flex;justify-content:space-between;gap:8px;margin-top:12px;flex-shrink:0;flex-wrap:wrap;align-items:center">
+      <button class="btn btn-o" onclick="closeTravelFeeModal()">닫기</button>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <span id="tfTotalLabel" style="font-size:14px;font-weight:700"></span>
+        <button class="btn btn-p" onclick="printTravelFee()">🖨️ 인쇄 / PDF 저장</button>
       </div>
     </div>
   </div>
@@ -1608,7 +1645,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.2.69';
+const APP_VERSION = 'v1.2.70';
 const APP_VERSION_DATE = '2026.07.29';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -5423,7 +5460,7 @@ ${reqLic?`⚠️필수자격증: ${reqLic} — 최종취득 여부만 licenses�
   ⚠️분기 점수는 위 점수 기준표에 실제로 적힌 값만 사용할 것. 표에 없는 값을 만들어내지 말 것
 
 출력JSON:
-{"name":"이름","age":"만나이(숫자만, 예:30). ⚠️지원서에 적힌 나이를 그대로 옮기지 말 것 — 연나이로 적거나 잘못 적은 경우가 있다. 반드시 birth(생년월일)를 기준으로 오늘 날짜에 맞춰 계산한 만 나이를 넣을 것. 생년월일을 못 읽으면 기재된 나이를 넣되 그때만 허용","birth":"생년월일(YYYY.MM.DD 형식, 예:1996.05.14). 일자를 알 수 없으면 생년월까지만 YYYY.MM. 형식으로","gender":"성별 '남' 또는 '여'. ⚠️지원서 양식에는 '군필/면제/미해당' 같은 선택지가 모두 인쇄되어 있다. 글자가 보인다는 이유로 판단하지 말고, 체크 표시(☑ ■ ✓ ●)가 된 항목 또는 실제로 값이 채워진 칸만 근거로 삼을 것. 판단 순서: ①이력서에 성별이 명시 → 그대로 ①-2 출신 학교가 여자대학교·여자고등학교(여대·여고·여상 포함, 학부/고교 기준. 여대 '대학원'은 남성도 가능하므로 제외) → 여 ②병역란의 군별·계급·복무기간 칸에 실제 내용이 채워져 있음(예: 육군/병장/2016.03~2018.01) → 남 ③'군필'에 체크 표시가 되어 있음 → 남 ④자기소개서·경력 본문에 군 복무 이행이 서술됨(예: '군 복무 중', '전역 후', '병장 만기제대', 보직 언급) → 남 ⑤'미해당' 또는 '면제'에 체크 표시 → 여(면제는 남성일 수도 있으므로 '미해당'일 때만 여로 판단) ⑥위 근거가 없거나, 스캔·OCR 등으로 체크 표시를 구분할 수 없으면 반드시 빈 문자열. 이름·한자·영문표기로 추측하는 것은 절대 금지","gender_basis":"성별 판단 근거 — ①이면 '기재', ②③④⑤면 '병역', 근거 없거나 체크 구분 불가면 '없음'","contact":"연락처","email":"이메일주소(없으면 빈문자열)","education":"최종학력 — 학교명+전공+졸업여부를 반드시 함께 (예: '인하대학교 금융투자학과 재학', '홍익대학교 경영학과 졸업예정', '경희대학교 경영학과 졸업')","education_status":"위 최종학력의 상태. 졸업/졸업예정/재학/휴학/수료/중퇴/불명 중 정확히 하나만. ⚠️학력사항 표의 '구분(졸업 등)' 칸을 그대로 따를 것. 재학기간 종료일이 비어 있거나 미래 날짜면 '재학'","education_all":"학력사항 표의 모든 학교를 '학교명 전공 상태' 형식으로 최신순 나열 (예: '인하대학교 금융투자학과 재학, 안산국제비즈니스고등학교 졸업')","gpa":"학점(숫자만, 예:3.8. 없으면 null)","gpa_scale":"만점기준(4.5만 인정. 없으면 null)","career_years":"총경력","last_company":"최근직장","licenses":["최종취득 자격증명만 한 개씩 배열 원소로. 필기합격·응시중·취득예정은 제외하고 최종합격·취득만. 쉼표로 이어붙인 한 개의 문자열로 반환 금지"],"career_history":[{"company":"회사명","position":"직책","period":"재직기간","duration":"재직연수","tasks":"담당업무","relevance":"직무관련성(높음/보통/낮음/없음)"}],"score_breakdown":{"항목명":{"score":점수,"max":최대점수,"reason":"산정근거"}},"fit_score":score_breakdown의 모든 항목 score를 그대로 더한 단순합계(학점가산 등 위 기준표의 가산 항목도 score_breakdown에 항목으로 넣고 이 합계에 포함할 것. score_breakdown에 없는 임의 가점을 따로 더하는 것만 금지),"fit_comment":"항목별근거포함 종합의견 3~4문장","strengths":["강점1","강점2","강점3"],"concerns":["우려1","우려2"],"interview_points":["포인트1","포인트2","포인트3","포인트4"],"loyalty_risk":true또는false,"summary":"한줄요약"}
+{"name":"이름","age":"만나이(숫자만, 예:30). ⚠️지원서에 적힌 나이를 그대로 옮기지 말 것 — 연나이로 적거나 잘못 적은 경우가 있다. 반드시 birth(생년월일)를 기준으로 오늘 날짜에 맞춰 계산한 만 나이를 넣을 것. 생년월일을 못 읽으면 기재된 나이를 넣되 그때만 허용","birth":"생년월일(YYYY.MM.DD 형식, 예:1996.05.14). 일자를 알 수 없으면 생년월까지만 YYYY.MM. 형식으로","gender":"성별 '남' 또는 '여'. ⚠️지원서 양식에는 '군필/면제/미해당' 같은 선택지가 모두 인쇄되어 있다. 글자가 보인다는 이유로 판단하지 말고, 체크 표시(☑ ■ ✓ ●)가 된 항목 또는 실제로 값이 채워진 칸만 근거로 삼을 것. 판단 순서: ①이력서에 성별이 명시 → 그대로 ①-2 출신 학교가 여자대학교·여자고등학교(여대·여고·여상 포함, 학부/고교 기준. 여대 '대학원'은 남성도 가능하므로 제외) → 여 ②병역란의 군별·계급·복무기간 칸에 실제 내용이 채워져 있음(예: 육군/병장/2016.03~2018.01) → 남 ③'군필'에 체크 표시가 되어 있음 → 남 ④자기소개서·경력 본문에 군 복무 이행이 서술됨(예: '군 복무 중', '전역 후', '병장 만기제대', 보직 언급) → 남 ⑤'미해당' 또는 '면제'에 체크 표시 → 여(면제는 남성일 수도 있으므로 '미해당'일 때만 여로 판단) ⑥위 근거가 없거나, 스캔·OCR 등으로 체크 표시를 구분할 수 없으면 반드시 빈 문자열. 이름·한자·영문표기로 추측하는 것은 절대 금지","gender_basis":"성별 판단 근거 — ①이면 '기재', ②③④⑤면 '병역', 근거 없거나 체크 구분 불가면 '없음'","contact":"연락처","email":"이메일주소(없으면 빈문자열)","residence":"거주지 — 시/군/구 + 도로명까지만 (예: '인천시 서구 봉오대로', '서울시 강남구 테헤란로'). 상세주소(동/호수)는 넣지 말 것. 지원서에 주소가 없으면 빈 문자열","education":"최종학력 — 학교명+전공+졸업여부를 반드시 함께 (예: '인하대학교 금융투자학과 재학', '홍익대학교 경영학과 졸업예정', '경희대학교 경영학과 졸업')","education_status":"위 최종학력의 상태. 졸업/졸업예정/재학/휴학/수료/중퇴/불명 중 정확히 하나만. ⚠️학력사항 표의 '구분(졸업 등)' 칸을 그대로 따를 것. 재학기간 종료일이 비어 있거나 미래 날짜면 '재학'","education_all":"학력사항 표의 모든 학교를 '학교명 전공 상태' 형식으로 최신순 나열 (예: '인하대학교 금융투자학과 재학, 안산국제비즈니스고등학교 졸업')","gpa":"학점(숫자만, 예:3.8. 없으면 null)","gpa_scale":"만점기준(4.5만 인정. 없으면 null)","career_years":"총경력","last_company":"최근직장","licenses":["최종취득 자격증명만 한 개씩 배열 원소로. 필기합격·응시중·취득예정은 제외하고 최종합격·취득만. 쉼표로 이어붙인 한 개의 문자열로 반환 금지"],"career_history":[{"company":"회사명","position":"직책","period":"재직기간","duration":"재직연수","tasks":"담당업무","relevance":"직무관련성(높음/보통/낮음/없음)"}],"score_breakdown":{"항목명":{"score":점수,"max":최대점수,"reason":"산정근거"}},"fit_score":score_breakdown의 모든 항목 score를 그대로 더한 단순합계(학점가산 등 위 기준표의 가산 항목도 score_breakdown에 항목으로 넣고 이 합계에 포함할 것. score_breakdown에 없는 임의 가점을 따로 더하는 것만 금지),"fit_comment":"항목별근거포함 종합의견 3~4문장","strengths":["강점1","강점2","강점3"],"concerns":["우려1","우려2"],"interview_points":["포인트1","포인트2","포인트3","포인트4"],"loyalty_risk":true또는false,"summary":"한줄요약"}
 
 ⚠️중요: 이력서 원문에 실제로 기재된 내용만 사용. 없는 정보는 절대 추측·창작 금지. 불명확한 항목은 "-"로 표기.
 
@@ -6453,6 +6490,170 @@ function _josa(word, withJong, withoutJong){
   const code = last.charCodeAt(0);
   if(code < 0xAC00 || code > 0xD7A3) return withJong; // 한글이 아니면 기본형
   return ((code - 0xAC00) % 28) ? withJong : withoutJong;
+}
+
+// ══════════════════════════════════════════
+// ✅ v1.2.70: 입사지원자 교통비 지급확인서 (관리자 전용, 작업자 지시)
+//   면접 확정자 명단으로 만들어 인쇄 → 면접 당일 실물 서명을 받아 비용처리한다.
+//   **비용 증빙 용도**에 충실하게: 누구에게 · 얼마를 · 언제 · 수령 확인(서명).
+//   ⚠️ 거주지는 넣지 않는다(작업자 지시). 개인별 금액은 다르게 줄 수 있어 각각 수정 가능.
+// ══════════════════════════════════════════
+const LS_TRAVEL_FEE = 'snct_travelFee';
+
+function openTravelFeeModal(){
+  if(!isAdmin){ toast('관리자만 가능합니다','err'); return; }
+  const list = (typeof confirmedList !== 'undefined' ? confirmedList : []);
+  if(!list.length){
+    toast('면접 확정자가 없습니다 — 먼저 면접 대상자를 확정해주세요','err');
+    return;
+  }
+  // 면접일시가 지정돼 있으면 채워 준다
+  let ivStr = '';
+  try{
+    const stored = JSON.parse(localStorage.getItem(LS_IV_DATE)||'{}');
+    const info = stored[currentRound];
+    if(info) ivStr = info.display || (info.date ? formatIvDate(info.date, info.time) : '');
+  }catch(e){}
+  ivStr = String(ivStr).replace(/^\s*[📅\s]*면접\s*일시\s*[:：]\s*/, '').trim();
+
+  let saved = {};
+  try{ saved = JSON.parse(localStorage.getItem(LS_TRAVEL_FEE)||'{}'); }catch(e){}
+  const mine = saved[currentRound] || {};
+  const dEl = document.getElementById('tfDate');
+  const aEl = document.getElementById('tfAmount');
+  if(dEl) dEl.value = mine.date || ivStr || '';
+  if(aEl) aEl.value = mine.amount || 50000;
+  window.__tfPer = Object.assign({}, mine.per || {}); // 개인별 조정액
+
+  const sub = document.getElementById('travelFeeSubtitle');
+  if(sub) sub.textContent = `${_roundLabel(currentRound)} · 면접 확정자 ${list.length}명`;
+  document.getElementById('travelFeeModal').classList.add('on');
+  renderTravelFeeRows();
+}
+
+function closeTravelFeeModal(){
+  document.getElementById('travelFeeModal').classList.remove('on');
+}
+
+function _tfData(){
+  const list = (typeof confirmedList !== 'undefined' ? confirmedList : []);
+  const base = Math.max(0, Number(document.getElementById('tfAmount')?.value) || 0);
+  const per = window.__tfPer || {};
+  const rows = list.map(c => ({
+    name: c.name,
+    amount: (per[c.name] != null && per[c.name] !== '') ? Math.max(0, Number(per[c.name])) : base
+  }));
+  return {
+    date: (document.getElementById('tfDate')?.value || '').trim(),
+    base, rows,
+    total: rows.reduce((s,r) => s + (r.amount||0), 0)
+  };
+}
+
+function setTravelFeeOne(name, v){
+  if(!window.__tfPer) window.__tfPer = {};
+  if(v === '' || v == null) delete window.__tfPer[name];
+  else window.__tfPer[name] = v;
+  renderTravelFeeRows();
+}
+
+function renderTravelFeeRows(){
+  const d = _tfData();
+  // 입력값 기억 (회차별)
+  try{
+    const saved = JSON.parse(localStorage.getItem(LS_TRAVEL_FEE)||'{}');
+    saved[currentRound] = { date: d.date, amount: d.base, per: window.__tfPer || {} };
+    localStorage.setItem(LS_TRAVEL_FEE, JSON.stringify(saved));
+  }catch(e){}
+
+  const warns = [];
+  if(!d.date) warns.push('면접일자가 비어 있습니다 — 증빙 서류에 지급 근거가 없으면 곤란합니다.');
+  if(d.rows.some(r => !r.amount)) warns.push('금액이 0원인 사람이 있습니다.');
+  const w = document.getElementById('travelFeeWarn');
+  if(w){
+    w.style.display = warns.length ? 'block' : 'none';
+    w.innerHTML = warns.length ? `<div style="background:rgba(244,168,0,0.10);border:1px solid var(--gold);border-radius:9px;padding:10px 13px;font-size:13px;line-height:1.7;color:var(--gold)">${warns.map(x=>'⚠️ '+x).join('<br>')}</div>` : '';
+  }
+
+  document.getElementById('travelFeeBody').innerHTML = `
+    <div style="font-size:12.5px;color:var(--tx2);margin-bottom:8px">금액을 다르게 주실 분은 개별로 고치시면 됩니다. 서명은 인쇄물에 직접 받으십시오.</div>
+    <table class="ctbl" style="width:100%">
+      <thead><tr><th style="width:48px">No</th><th>성명</th><th style="width:150px">교통비(원)</th></tr></thead>
+      <tbody>${d.rows.map((r,i)=>`
+        <tr>
+          <td style="text-align:center">${i+1}</td>
+          <td style="font-weight:700">${_escapeHtml(r.name)}</td>
+          <td><input type="number" min="0" step="1000" value="${r.amount}"
+            oninput="setTravelFeeOne('${String(r.name).replace(/'/g,"\\'")}', this.value)"
+            style="width:100%;padding:5px 8px;background:var(--bg2);border:1px solid var(--bd);border-radius:6px;color:var(--tx);font-size:14px;text-align:right;box-sizing:border-box"></td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+  const t = document.getElementById('tfTotalLabel');
+  if(t) t.textContent = `합계 ${d.rows.length}명 · ${d.total.toLocaleString()}원`;
+}
+
+function printTravelFee(){
+  const d = _tfData();
+  if(!d.rows.length){ toast('대상자가 없습니다','err'); return; }
+  if(!d.date && !confirm('면접일자가 비어 있습니다.\n지급 근거가 없는 증빙이 됩니다. 그대로 인쇄할까요?')) return;
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}년 ${today.getMonth()+1}월 ${today.getDate()}일`;
+  const w = window.open('', '_blank', 'width=900,height=800');
+  if(!w){ toast('팝업이 차단되었습니다','err'); return; }
+  const rows = d.rows.map((r,i)=>`
+    <tr>
+      <td class="c">${i+1}</td>
+      <td class="c nm">${_escapeHtml(r.name)}</td>
+      <td class="r">${(r.amount||0).toLocaleString()}</td>
+      <td class="sign"></td>
+      <td></td>
+    </tr>`).join('');
+  w.document.write(`<html><head><meta charset="UTF-8"><title>입사지원자 교통비 지급확인서</title>
+<style>
+  @page { size: A4; margin: 20mm; }
+  body{font-family:'Malgun Gothic','맑은 고딕',sans-serif;color:#000;background:#fff;padding:10px}
+  h1{font-size:20px;text-align:center;letter-spacing:2px;margin:0 0 26px 0}
+  .meta{font-size:14px;line-height:2;margin-bottom:6px}
+  .unit{text-align:right;font-size:12px;margin-bottom:4px}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{border:1px solid #000;padding:9px 8px}
+  th{background:#f0f0f0;text-align:center;font-weight:700}
+  .c{text-align:center}
+  .r{text-align:right;font-family:'DM Mono',monospace}
+  .nm{font-weight:700}
+  .sign{height:44px}
+  tfoot td{font-weight:700;background:#f8f8f8}
+  .confirm{margin-top:26px;font-size:14px;line-height:2}
+  .date{margin-top:30px;text-align:center;font-size:15px}
+  .org{margin-top:22px;text-align:center;font-size:16px;font-weight:700;letter-spacing:1px}
+  @media print{ body{padding:0} button{display:none} }
+</style></head><body>
+  <button onclick="window.print()" style="padding:8px 18px;margin-bottom:14px;background:#1565c0;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:14px">🖨️ 인쇄</button>
+  <h1>입사지원자 교통비 지급확인서</h1>
+  <div class="meta">
+    ○ 면접일자 : <b>${_escapeHtml(d.date || '(미기재)')}</b><br>
+    ○ 지 급 처 : 면접 참석자 ${d.rows.length}명<br>
+    ○ 지급사유 : 면접 참석에 따른 교통비 지급
+  </div>
+  <div class="unit">(단위 : 원)</div>
+  <table>
+    <thead><tr>
+      <th style="width:56px">No</th><th style="width:130px">성 명</th>
+      <th style="width:130px">교 통 비</th><th>서 명</th><th style="width:110px">비 고</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+    <tfoot><tr>
+      <td class="c" colspan="2">계 (${d.rows.length}명)</td>
+      <td class="r">${d.total.toLocaleString()}</td><td></td><td></td>
+    </tr></tfoot>
+  </table>
+  <div class="confirm">위 금액을 면접 교통비로 정히 수령하였음을 확인합니다.</div>
+  <div class="date">${todayStr}</div>
+  <div class="org">${_escapeHtml(SENDER_INFO.companyFull)} ${_escapeHtml(SENDER_INFO.team)}</div>
+</body></html>`);
+  w.document.close();
+  setTimeout(()=>{ try{ w.focus(); }catch(e){} }, 100);
 }
 
 // ✅ v1.2.62: 투표 마감 (작업자 지시)
