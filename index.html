@@ -1667,7 +1667,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.2.76';
+const APP_VERSION = 'v1.2.77';
 const APP_VERSION_DATE = '2026.07.29';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -2019,6 +2019,31 @@ async function openJobMgr() {
   // ✅ v1.2.76: 직종 '*' 행 = 고정 면접관. 목록에서 분리해 textarea로 보여준다.
   var fixed = _jobMgrList.filter(function(m){ return String(m.job||'').trim() === '*' && m.email; });
   _jobMgrList = _jobMgrList.filter(function(m){ return String(m.job||'').trim() !== '*'; });
+
+  // ✅ v1.2.77 (작업자 지시): 재무·회계는 재무회계로 통합됐다. 경고를 띄우지 말고 그냥 지운다.
+  //   중복 행도 같이 정리한다(과거에 쌓인 것이 계속 실려 왔다 — 저장은 전체 교체라 새로 생기진 않는다).
+  var _liveJobs = getAllJobs();
+  var _before = _jobMgrList.length;
+  var _seenJM = {};
+  _jobMgrList = _jobMgrList.filter(function(m){
+    var j = String(m.job||'').trim();
+    if (j && _liveJobs.indexOf(j) < 0) return false;          // 지금 쓰지 않는 직종 → 삭제
+    var key = j + '|' + String(m.email||'').toLowerCase().trim();
+    if (_seenJM[key]) return false;                            // 중복 → 삭제
+    _seenJM[key] = 1;
+    return true;
+  });
+  var _fixSeen = {};
+  fixed = fixed.filter(function(m){
+    var e = String(m.email||'').toLowerCase().trim();
+    if (!e || _fixSeen[e]) return false;
+    _fixSeen[e] = 1; return true;
+  });
+  var _removed = _before - _jobMgrList.length;
+  if (_removed > 0) {
+    // 조용히 지우지는 않는다. 다만 경고 배너가 아니라 한 줄 안내로.
+    setTimeout(function(){ toast('쓰지 않는 직종·중복 ' + _removed + '건을 정리했습니다 — [저장]을 눌러 반영하세요', 'ok'); }, 300);
+  }
   var ta = document.getElementById('fixedIvList');
   if (ta) ta.value = fixed.map(function(m){ return m.email; }).join(String.fromCharCode(10));
 
@@ -2043,26 +2068,12 @@ function renderJobMgrList() {
   //   '재무'로 등록된 팀장은 '재무회계' 회차에서 찾아지지 않는다.
   //   채점 쪽에는 구직종 별칭을 넣었지만 팀장 매칭에는 넣지 않아 놓친 부분이다.
   //   경고를 띄워 관리자가 현재 직종으로 다시 등록하게 한다.
+  // ✅ v1.2.77: 구직종 경고 배너 제거(작업자 지시). openJobMgr에서 이미 지우고 들어온다.
   var live = getAllJobs();
-  var stale = _jobMgrList.filter(function(m){
-    return m.email && String(m.email).trim() && m.job && live.indexOf(m.job) === -1;
-  });
   var html = '';
-  if (stale.length) {
-    html += '<div style="background:rgba(244,168,0,0.10);border:1px solid var(--gold);border-radius:8px;padding:11px 13px;margin-bottom:12px;font-size:13px;line-height:1.75;color:var(--gold)">'
-      + '<b>⚠️ 지금 쓰지 않는 직종에 팀장이 등록돼 있습니다</b><br>'
-      + '<span style="color:var(--tx2)">'
-      + stale.map(function(m){ return '<b>' + m.job + '</b> (' + m.email + ')'; }).join(', ')
-      + '<br>이 직종으로는 회차가 만들어지지 않으므로 <b>자동 접근이 되지 않습니다.</b> '
-      + '아래 현재 직종 목록에서 같은 이메일을 다시 등록해 주세요. '
-      + '(예: 재무·회계 → <b>재무회계</b>)</span></div>';
-  }
   _jobMgrList.forEach(function(m, i) {
-    var isStale = m.email && String(m.email).trim() && m.job && live.indexOf(m.job) === -1;
     html += '<div style="display:grid;grid-template-columns:120px 1fr 1fr;gap:6px;align-items:center;padding:6px 0;border-bottom:1px solid var(--bd)">';
-    html += '<div style="font-size:14px;font-weight:600;color:' + (isStale?'var(--gold)':'var(--ac)') + '"'
-         + (isStale?' title="현재 쓰지 않는 직종 — 자동 접근 안 됨"':'') + '>'
-         + (isStale?'⚠️ ':'') + (m.job||'직군') + '</div>';
+    html += '<div style="font-size:14px;font-weight:600;color:var(--ac)">' + (m.job||'직군') + '</div>';
     html += '<input type="text" value="' + (m.email||'') + '" placeholder="팀장 이메일"';
     html += ' style="font-size:13px;padding:5px 8px;background:rgba(255,255,255,0.04);border:1px solid var(--bd);border-radius:6px;color:var(--tx)"';
     html += ' oninput="updateJobMgr(' + i + ',&quot;email&quot;,this.value)">';
