@@ -1667,7 +1667,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.2.78';
+const APP_VERSION = 'v1.2.79';
 const APP_VERSION_DATE = '2026.07.29';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -2804,7 +2804,13 @@ function goTab(t) {
     // ✅ 면접일시 배너는 관리자/일반 모두 표시
     showIvDateBanner(currentRound);
     // ✅ 면접 탭 진입 시 applicants 로드 완료 후 refreshIvApplicants 실행
+    // ⚠️ v1.2.79: 회차 목록이 아직 안 왔을 때 이 탭에 들어오면 currentRound가 비어 있어
+    //   loadFromSheet를 건너뛰었다 → 지원자 드롭다운이 빈 채로 남았다(작업자 스크린샷).
+    //   회차부터 확보하고 지원자를 불러온다.
     (async () => {
+      if (GAS_URL && !currentRound) {
+        try { await loadRounds(true); } catch(e) {}   // 안에서 applyLatestRound까지 한다
+      }
       if (GAS_URL && currentRound && !applicants.filter(a=>a.status==='done').length) {
         await loadFromSheet();
       }
