@@ -1645,7 +1645,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.2.70';
+const APP_VERSION = 'v1.2.71';
 const APP_VERSION_DATE = '2026.07.29';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -7303,11 +7303,13 @@ async function onIvAppChange() {
       renderIvPanel();
     }
   };
-  // qCache에 이미 있으면 즉시 표시
-  if (qCache[aId] && Object.keys(qCache[aId]).length) {
+  // qCache에 이미 있으면 즉시 표시 (API 호출 없음)
+  if (_qFilledTypes(aId).length) {
     document.getElementById('qcard').style.display = 'block';
-    updateQTypeTabs();
-    renderQuestions(qCache[aId][currentQType||'종합']||[]);
+    // ✅ v1.2.71: switchQType을 거친다 — 비어 있는 유형이면 재생성 버튼이 나오게
+    ivData = ivData || {};
+    if (!ivData.applicant) ivData.applicant = applicants.find(x => x.id == aId);
+    switchQType(_qFirstFilled(aId));
     const savedBadge = document.getElementById('qSavedBadge');
     if (savedBadge) savedBadge.style.display = 'none';
     syncIvPanel();
@@ -7321,12 +7323,15 @@ async function onIvAppChange() {
     if (data.success && data.questions) {
       qCache[aId] = data.questions;
       document.getElementById('qcard').style.display = 'block';
-      currentQType = '종합';
-      updateQTypeTabs();
-      renderQuestions(qCache[aId]['종합']||[]);
+      // ✅ v1.2.71: 저장본에 빈 유형이 섞여 있어도 볼 수 있는 것부터 띄우고,
+      //   빈 탭을 누르면 재생성 버튼이 나오게 switchQType을 거친다
+      ivData = ivData || {};
+      if (!ivData.applicant) ivData.applicant = applicants.find(x => x.id == aId);
+      switchQType(_qFirstFilled(aId));
       const savedBadge = document.getElementById('qSavedBadge');
       if (savedBadge) { savedBadge.textContent = '☁️ 저장된 질문지 (' + data.savedAt + ')'; savedBadge.style.display = 'block'; }
-      toast('저장된 질문지 불러옴 ☁️', 'ok');
+      const _miss = Q_TYPES.length - _qFilledTypes(aId).length;
+      toast(_miss ? `저장된 질문지 불러옴 ☁️ — ${_miss}개 유형이 비어 있습니다` : '저장된 질문지 불러옴 ☁️', _miss ? 'err' : 'ok');
       syncIvPanel();
       updateInterviewButtons();
     } else {
@@ -7351,8 +7356,8 @@ async function prepInterview(forcedAId = null) {
 
   // ✅ GAS에 저장된 질문지 있으면 재사용 — 새로 생성 안 함 (API_KEY 불필요)
   if (GAS_URL && currentRound) {
-    // qCache에 없으면 GAS 먼저 확인
-    if (!qCache[aId] || !Object.keys(qCache[aId]).length) {
+    // qCache에 없으면 GAS 먼저 확인 (여기서도 '실제로 담긴 유형'으로 판정 — v1.2.71)
+    if (!_qFilledTypes(aId).length) {
       try {
         const res = await fetch(GAS_URL + '?action=getIvQuestions&userEmail='+encodeURIComponent(currentUserEmail||'')+'&round=' + encodeURIComponent(currentRound) + '&appId=' + encodeURIComponent(aId));
         const data = await res.json();
@@ -7361,21 +7366,26 @@ async function prepInterview(forcedAId = null) {
         }
       } catch(e) {}
     }
-    // 캐시에 질문지 있으면 바로 표시하고 종료
-    if (qCache[aId] && Object.keys(qCache[aId]).length) {
+    // ✅ v1.2.71: 4개 유형이 **모두** 채워져 있을 때만 재사용하고 끝낸다.
+    //   예전엔 키 개수로만 봐서, 일부가 빈 저장본이면 그대로 종료돼 **되살릴 방법이 없었다.**
+    //   일부만 있으면 아래로 내려가 새로 생성한다(API 키가 없으면 안내 후 중단 — 그때는
+    //   유형 탭의 개별 재생성 버튼을 쓰면 된다).
+    const _filled = _qFilledTypes(aId);
+    if (_filled.length === Q_TYPES.length) {
       const ivList = ivStr.split(/[,，]/).map(s => s.trim()).filter(Boolean);
       ivData = { applicant: a, questions: [], interviewers: ivList };
       renderIvPanel();
       document.getElementById('qcard').style.display = 'block';
-      currentQType = '종합';
-      updateQTypeTabs();
-      renderQuestions(qCache[aId]['종합'] || []);
+      switchQType(_qFirstFilled(aId));
       const savedBadge = document.getElementById('qSavedBadge');
       if (savedBadge) { savedBadge.textContent = '☁️ 저장된 질문지 사용 중 (공유)'; savedBadge.style.display = 'block'; }
-      if (!isBatch) toast('저장된 질문지 불러옴 ☁️ — 동일 질문지 공유 중', 'ok');
+      if (!isBatch) toast('저장된 질문지 불러옴 ☁️ — 동일 질문지 공유 중 (API 호출 없음)', 'ok');
       if (!isBatch) btn.disabled = false;
       updateInterviewButtons();
       return;
+    }
+    if (_filled.length && !isBatch) {
+      toast(`${Q_TYPES.length - _filled.length}개 유형이 비어 있어 새로 생성합니다`, 'err');
     }
   }
 
@@ -7622,7 +7632,7 @@ async function syncIvQuestionsForConfirmed() {
   }
   const tasks = confirmedList.map(async c => {
     const a = applicants.find(x => (x.result?.name||'') === c.name);
-    if (!a || (qCache[a.id] && Object.keys(qCache[a.id]).length)) return; // 매칭 실패 또는 이미 캐시
+    if (!a || _qFilledTypes(a.id).length) return; // 매칭 실패 또는 이미 캐시 (v1.2.71: 실제로 담긴 것 기준)
     try {
       const res = await fetch(GAS_URL + '?action=getIvQuestions&userEmail='+encodeURIComponent(currentUserEmail||'')+'&round=' + encodeURIComponent(currentRound) + '&appId=' + encodeURIComponent(a.id));
       const data = await res.json();
@@ -7635,6 +7645,20 @@ async function syncIvQuestionsForConfirmed() {
 
 // ✅ v1.2.69: 질문지 유형별 프롬프트 — 최초 생성과 재생성이 같은 걸 쓰도록 밖으로 뺐다
 const Q_TYPES = ['종합','역량중심','경험중심','기술검증'];
+
+// ✅ v1.2.71: 캐시/저장본에 "키가 있는지"가 아니라 **실제로 질문이 담겼는지**를 센다.
+//   Object.keys(...).length로 판정하면 빈 배열도 1개로 세어 '준비됨'이 된다(v1.2.69에서
+//   화면 쪽은 고쳤지만 불러오기 경로에 같은 판정이 남아 있었다).
+function _qFilledTypes(id){
+  const c = qCache[id];
+  if (!c) return [];
+  return Q_TYPES.filter(t => Array.isArray(c[t]) && c[t].length);
+}
+// 보여줄 유형 하나 고르기 — 종합이 비었으면 채워진 것 중 아무거나, 다 비었으면 '종합'
+function _qFirstFilled(id){
+  const f = _qFilledTypes(id);
+  return f.indexOf('종합') >= 0 ? '종합' : (f[0] || '종합');
+}
 const Q_TYPE_HINT = { 종합:'역량/경험/가치관을 골고루', 역량중심:'직무 역량 위주로',
   경험중심:'STAR 기법(Situation-Task-Action-Result)으로', 기술검증:'기술/직무 지식 위주로' };
 

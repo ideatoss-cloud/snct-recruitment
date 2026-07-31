@@ -1,4 +1,4 @@
-const CACHE_NAME = 'snct-recruitment-v1.2.70';
+const CACHE_NAME = 'snct-recruitment-v1.2.71';
 const STATIC_ASSETS = [
   '/snct-recruitment/',
   '/snct-recruitment/index.html',
