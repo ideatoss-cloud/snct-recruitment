@@ -144,6 +144,13 @@ hr.dv{border:none;border-top:1px solid var(--bd);margin:13px 0;}
 .rank-score{font-family:'DM Mono',monospace;font-size:22px;font-weight:700;color:var(--gold);flex-shrink:0;}
 /* 면접보조 */
 .il{display:grid;grid-template-columns:300px 1fr;gap:20px;align-items:start;}
+/* v1.2.75: 면접 화면 - 질문지를 좁은 좌측(300px)에서 넓은 우측으로 옮겨 평가표와 나란히.
+   면접 중에는 질문을 읽으면서 별점을 매기므로 둘이 같이 보여야 한다(작업자 지적).
+   질문지는 sticky - 평가표를 아래로 스크롤해도 질문이 붙어 있는다. */
+.iv-main{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start;}
+.iv-main > #qcard{position:sticky;top:12px;max-height:calc(100vh - 90px);overflow-y:auto;}
+@media(max-width:1080px){.iv-main{grid-template-columns:1fr;}
+  .iv-main > #qcard{position:static;max-height:none;}}
 .qitem{background:rgba(255,255,255,0.025);border:1px solid var(--bd);border-radius:8px;padding:12px;margin-bottom:8px;}
 .qnum{font-family:'DM Mono',monospace;font-size:12px;color:var(--ac);margin-bottom:4px;}
 .qtxt{font-size:14px;line-height:1.65;}
@@ -600,25 +607,6 @@ hr.dv{border:none;border-top:1px solid var(--bd);margin:13px 0;}
           <button class="btn btn-r" style="width:100%;font-size:14px" onclick="markAbsent()">🚫 불참 처리</button>
         </div>
       </div>
-      <div class="card" id="qcard" style="display:none">
-        <div id="qSavedBadge" style="display:none;font-size:13px;color:var(--tx2);background:rgba(0,180,216,0.08);border:1px solid rgba(0,180,216,0.2);border-radius:6px;padding:4px 10px;margin-bottom:8px"></div>
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
-          <div class="ct" style="margin:0">❓ 면접 질문지</div>
-          <div id="qTypeLoading" style="font-size:13px;color:var(--tx2);display:none">
-            <span class="spinner" style="width:12px;height:12px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:4px"></span>생성 중...
-          </div>
-        </div>
-        <!-- 유형 탭 -->
-        <div style="display:flex;gap:4px;margin-bottom:12px;flex-wrap:wrap" id="qTypeTabs">
-          <button class="btn btn-p" onclick="switchQType('종합')" id="qtab_종합" style="font-size:13px;padding:5px 10px">종합</button>
-          <button class="btn btn-o" onclick="switchQType('역량중심')" id="qtab_역량중심" style="font-size:13px;padding:5px 10px">역량 중심</button>
-          <button class="btn btn-o" onclick="switchQType('경험중심')" id="qtab_경험중심" style="font-size:13px;padding:5px 10px">경험 중심</button>
-          <button class="btn btn-o" onclick="switchQType('기술검증')" id="qtab_기술검증" style="font-size:13px;padding:5px 10px">기술/직무</button>
-        </div>
-        <div id="qlist"></div>
-        <hr class="dv">
-        <button class="btn btn-o" style="width:100%;font-size:14px" onclick="printQ()">🖨️ 질문지 인쇄</button>
-      </div>
       <!-- 인적성 검사 결과 -->
       <div class="card" id="aptCard" style="margin-bottom:14px">
         <div class="ct">🧠 인적성 검사 결과</div>
@@ -672,7 +660,28 @@ hr.dv{border:none;border-top:1px solid var(--bd);margin:13px 0;}
         </div>
       </div>
     </div>
+    <div class="iv-main">
+      <div class="card" id="qcard" style="display:none">
+        <div id="qSavedBadge" style="display:none;font-size:13px;color:var(--tx2);background:rgba(0,180,216,0.08);border:1px solid rgba(0,180,216,0.2);border-radius:6px;padding:4px 10px;margin-bottom:8px"></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+          <div class="ct" style="margin:0">❓ 면접 질문지</div>
+          <div id="qTypeLoading" style="font-size:13px;color:var(--tx2);display:none">
+            <span class="spinner" style="width:12px;height:12px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:4px"></span>생성 중...
+          </div>
+        </div>
+        <!-- 유형 탭 -->
+        <div style="display:flex;gap:4px;margin-bottom:12px;flex-wrap:wrap" id="qTypeTabs">
+          <button class="btn btn-p" onclick="switchQType('종합')" id="qtab_종합" style="font-size:13px;padding:5px 10px">종합</button>
+          <button class="btn btn-o" onclick="switchQType('역량중심')" id="qtab_역량중심" style="font-size:13px;padding:5px 10px">역량 중심</button>
+          <button class="btn btn-o" onclick="switchQType('경험중심')" id="qtab_경험중심" style="font-size:13px;padding:5px 10px">경험 중심</button>
+          <button class="btn btn-o" onclick="switchQType('기술검증')" id="qtab_기술검증" style="font-size:13px;padding:5px 10px">기술/직무</button>
+        </div>
+        <div id="qlist"></div>
+        <hr class="dv">
+        <button class="btn btn-o" style="width:100%;font-size:14px" onclick="printQ()">🖨️ 질문지 인쇄</button>
+      </div>
     <div id="ivpanel"><div class="empty"><div class="empty-ic">🎤</div><div style="font-size:15px;line-height:1.8">좌측에서 지원자를 선택 후<br>면접 준비 시작을 눌러주세요</div></div></div>
+    </div>
   </div>
 </div>
 
@@ -1645,7 +1654,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.2.74';
+const APP_VERSION = 'v1.2.75';
 const APP_VERSION_DATE = '2026.07.29';
 let currentRound = ''; // 현재 선택된 회차
 
