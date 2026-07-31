@@ -1667,7 +1667,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.2.79';
+const APP_VERSION = 'v1.2.80';
 const APP_VERSION_DATE = '2026.07.29';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -7435,7 +7435,10 @@ async function prepInterview(forcedAId = null) {
     //   원칙: **저장된 질문지가 있으면 API 키 없이도 볼 수 있어야 한다**(v1.0.22 설계).
     //   빈 유형은 탭에서 개별 재생성(regenQType)으로 채운다 — 키가 있는 사람만.
     const _filled = _qFilledTypes(aId);
-    if (_filled.length) {
+    // ✅ v1.2.80: [확정자 전원 일괄 준비]는 **빈 유형을 채우는 버튼**이기도 하다(작업자 확인 요청).
+    //   예전엔 저장본이 하나라도 있으면 배치에서도 건너뛰어, 눌러도 빈 유형이 그대로 남았다.
+    //   배치일 때는 4개가 모두 차 있을 때만 스킵하고, 부분이면 아래로 내려가 빈 것만 만든다.
+    if (_filled.length && !(isBatch && _filled.length < Q_TYPES.length)) {
       const ivList = ivStr.split(/[,，]/).map(s => s.trim()).filter(Boolean);
       ivData = { applicant: a, questions: [], interviewers: ivList };
       renderIvPanel();
@@ -7485,7 +7488,9 @@ ${a.pdfText.slice(0,3000)}` : '';
     document.getElementById('qlist').innerHTML = '<div style="text-align:center;padding:20px"><div class="spinner" style="display:inline-block;margin:auto"></div><div style="font-size:14px;color:var(--tx2);margin-top:8px">4가지 유형 질문지 생성 중...</div></div>';
 
     // 4가지 유형 동시 생성 (프롬프트는 _buildQPrompt — 재생성과 같은 걸 쓴다)
-    const types = Q_TYPES;
+    // ✅ v1.2.80: 이미 채워진 유형은 다시 만들지 않는다 — 빈 유형만 생성한다.
+    //   (전체가 비어 있으면 4개 전부가 대상이 되므로 기존 동작과 같다)
+    const types = Q_TYPES.filter(t => !((qCache[aId]||{})[t]||[]).length);
 
     // 병렬 생성 (순차 실패 방지 위해 allSettled)
     const results = await Promise.allSettled(
@@ -7498,7 +7503,7 @@ ${a.pdfText.slice(0,3000)}` : '';
     //   그 탭을 누르면 "질문을 불러오지 못했습니다"만 나왔다(2026.07.29 실사용 중 발견).
     //   빈 유형을 세어 알리고, 탭에서 개별 재생성할 수 있게 한다.
     const cacheKey = a.id;
-    qCache[cacheKey] = {};
+    qCache[cacheKey] = qCache[cacheKey] || {};   // v1.2.80: 기존 채워진 유형은 보존
     const qFailed = [];
     types.forEach((type, i) => {
       let list = [];
