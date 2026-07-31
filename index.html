@@ -1280,6 +1280,19 @@ kim@gmail.com"
       💡 직군별 담당 팀장을 등록하면 해당 직군 채용 회차에 팀장이 자동으로 접근 권한을 갖습니다.<br>
       팀장 권한: 지원서 조회 + 투표 (일반 사용자와 동일)
     </div>
+    <!-- ✅ v1.2.76 (작업자 지시): 고정 면접관은 매 회차 수기로 넣지 않는다.
+         직종 '*'로 저장하면 GAS isJobManager가 모든 회차에서 통과시킨다(이미 지원하던 기능인데
+         화면에서 넣을 방법이 없었다). -->
+    <div style="background:rgba(0,201,122,0.07);border:1px solid rgba(0,201,122,0.35);border-radius:9px;padding:13px 15px;margin-bottom:16px">
+      <div style="font-size:14px;font-weight:700;color:var(--green);margin-bottom:6px">⭐ 고정 면접관 — 모든 회차 자동 접근</div>
+      <div style="font-size:13px;color:var(--tx2);line-height:1.7;margin-bottom:9px">
+        매 회차 권한을 따로 주지 않아도 됩니다. 직종과 무관하게 <b>모든 회차</b>에 자동으로 들어갑니다.<br>
+        <b>한 줄에 한 명씩</b> 이메일을 적으세요.
+      </div>
+      <textarea id="fixedIvList" rows="4" placeholder="hong@sun-kwang.co.kr&#10;kim@sun-kwang.co.kr"
+        style="width:100%;padding:9px 11px;background:var(--bg2);border:1px solid var(--bd);border-radius:7px;color:var(--tx);font-size:14px;box-sizing:border-box;font-family:inherit;line-height:1.7"></textarea>
+    </div>
+    <div style="font-size:13px;font-weight:700;color:var(--tx2);margin-bottom:6px">직군별 팀장 (해당 직군 회차만)</div>
     <div id="jobMgrList"></div>
     <button class="btn btn-o" style="width:100%;margin:10px 0;font-size:14px" onclick="addJobMgrRow()">➕ 항목 추가</button>
     <div style="display:flex;gap:9px">
@@ -1654,7 +1667,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.2.75';
+const APP_VERSION = 'v1.2.76';
 const APP_VERSION_DATE = '2026.07.29';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -2003,6 +2016,12 @@ async function openJobMgr() {
       if (d.success) _jobMgrList = d.managers || [];
     } catch(e) { toast('직군팀장 로드 실패: ' + e.message, 'err'); }
   }
+  // ✅ v1.2.76: 직종 '*' 행 = 고정 면접관. 목록에서 분리해 textarea로 보여준다.
+  var fixed = _jobMgrList.filter(function(m){ return String(m.job||'').trim() === '*' && m.email; });
+  _jobMgrList = _jobMgrList.filter(function(m){ return String(m.job||'').trim() !== '*'; });
+  var ta = document.getElementById('fixedIvList');
+  if (ta) ta.value = fixed.map(function(m){ return m.email; }).join(String.fromCharCode(10));
+
   if (!_jobMgrList.length) {
     _jobMgrList = getAllJobs().map(function(job){ return {job:job, email:'', name:''}; });
   } else {
@@ -2061,6 +2080,18 @@ function addJobMgrRow() { _jobMgrList.push({job:'', email:'', name:''}); renderJ
 async function saveJobMgrList() {
   if (!GAS_URL) { toast('GAS URL을 먼저 설정해주세요','err'); return; }
   var valid = _jobMgrList.filter(function(m){ return m.email && m.email.trim(); });
+  // ✅ v1.2.76: 고정 면접관을 직종 '*' 행으로 변환해 함께 저장한다.
+  //   GAS isJobManager가 sheetJob === '*'를 모든 직종에서 통과시킨다.
+  var taEl = document.getElementById('fixedIvList');
+  var fixedEmails = (taEl ? taEl.value : '').split(/[\s,;]+/)
+    .map(function(x){ return x.trim().toLowerCase(); })
+    .filter(function(x){ return x && x.indexOf('@') > 0; });
+  var seen = {};
+  fixedEmails.forEach(function(em){
+    if (seen[em]) return;
+    seen[em] = 1;
+    valid.push({ job:'*', email: em, name:'고정 면접관' });
+  });
   try {
     var res = await fetch(GAS_URL, {method:'POST', headers:{'Content-Type':'text/plain'},
       body: JSON.stringify({action:'saveJobManagers', userEmail: currentUserEmail, managers:valid})});
@@ -6246,7 +6277,7 @@ async function submitVotes() {
     return {name:r.name||a.name, age:fmtAge(r.age,r.birth), birth:r.birth||'', job:a.job, empType:a.empType, rank, score:(r.fit_score||0)+getTotalBonus(a.id), summary:r.summary||''};
   }).filter(Boolean);
   try {
-    const res=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({action:'submitVotes',userName:currentUser,round:currentRound,votes})});
+    const res=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({action:'submitVotes',userName:currentUser,userEmail:currentUserEmail,round:currentRound,votes})});
     const data=await res.json();
     if(data.success){toast(data.message,'ok');voteSubmitted=true;sendActivityLog('투표제출', votes.length+'명 투표', currentRound);showIvSelect();if(isAdmin)loadAdminResults();try{localStorage.removeItem(LS_ROUNDS);}catch(e){} loadRounds(true, true);} // ✅ 투표 후 회차 목록 강제 갱신
     else toast('제출 실패: '+data.message,'err');
