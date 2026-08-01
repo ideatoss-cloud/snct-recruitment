@@ -1361,7 +1361,7 @@ kim@gmail.com"
   }
   localStorage.setItem('migration_v1_0_3_done', '1');
 })();
-// ⚠️ v1.2.84: 모델명은 localStorage에 남는다. 위 마이그레이션은 gpt-4o·gpt-4o-mini만
+// ⚠️ v1.2.85: 모델명은 localStorage에 남는다. 위 마이그레이션은 gpt-4o·gpt-4o-mini만
 //   고치고 1회만 돌기 때문에, 그 밖의 옛 모델명이 박힌 기기는 **강력 새로고침으로도
 //   안 나아서** 그 사용자만 계속 AI 호출이 실패한다. 유효 목록 밖이면 되돌린다.
 const VALID_MODELS = ['gpt-5.4-mini', 'gpt-5.4', 'gpt-5.5', 'gpt-4o-mini'];
@@ -1680,7 +1680,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.2.84';
+const APP_VERSION = 'v1.2.85';
 const APP_VERSION_DATE = '2026.07.29';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -2024,7 +2024,7 @@ async function openJobMgr() {
   document.getElementById('jobMgrModal').classList.add('on');
   if (GAS_URL) {
     try {
-      var res = await fetch(GAS_URL + '?action=getJobManagers');
+      var res = await fetch(GAS_URL + '?action=getJobManagers&email=' + encodeURIComponent(currentUserEmail || ''));
       var d = await res.json();
       if (d.success) _jobMgrList = d.managers || [];
     } catch(e) { toast('직군팀장 로드 실패: ' + e.message, 'err'); }
@@ -2198,7 +2198,7 @@ async function openRoundAccess(roundId, roundJob) {
           var autoHtml = '<span style="color:var(--tx2)">관리자 전원</span>';
           // _jobMgrList 캐시 있으면 재사용
           if (!_jobMgrList || !_jobMgrList.length) {
-            var res = await fetch(GAS_URL + '?action=getJobManagers');
+            var res = await fetch(GAS_URL + '?action=getJobManagers&email=' + encodeURIComponent(currentUserEmail || ''));
             var d = await res.json();
             if (d.success) _jobMgrList = d.managers || [];
           }
@@ -2274,6 +2274,11 @@ function sendActivityLog(actType, detail, round) {
 
 // ── 앱 공통 로그인 완료 처리 ──
 function finishLogin() {
+  // ⚠️ v1.2.85: 설정을 로그인 후 다시 불러온다.
+  //   loadSettings()는 window.onload에서 돌아 **새 기기 첫 로그인 때는 이메일이 비어있다.**
+  //   GAS가 미등록 호출에게는 담당자 휴대전화·회신주소를 빈 값으로 주므로,
+  //   다시 불러오지 않으면 메일 서명에 연락처가 빠진다.
+  try { loadSettings(); } catch (e) {}
   document.getElementById('loginModal').classList.remove('on');
   document.getElementById('userChip').style.display = 'flex';
   document.getElementById('userNameDisp').textContent = currentUser;
@@ -4153,7 +4158,7 @@ const SENDER_INFO = {
 async function loadSettings() {
   if (!GAS_URL) return;
   try {
-    const res = await fetch(GAS_URL + '?action=getSettings');
+    const res = await fetch(GAS_URL + '?action=getSettings&email=' + encodeURIComponent(currentUserEmail || ''));
     const data = await res.json();
     if (!data.success || !data.settings) return;
     const s = data.settings;
@@ -4189,7 +4194,7 @@ async function openSettingsModal() {
   document.getElementById('settingsModal').classList.add('on');
 
   try {
-    const res = await fetch(GAS_URL + '?action=getSettings');
+    const res = await fetch(GAS_URL + '?action=getSettings&email=' + encodeURIComponent(currentUserEmail || ''));
     const data = await res.json();
     if (!data.success) { toast('설정 조회 실패: ' + (data.message||'-'),'err'); return; }
 
@@ -5102,7 +5107,7 @@ async function callOpenAI(prompt, isJson=true, opts={}) {
       }
       return parsed;
     }
-    // v1.2.84: 원인을 알 수 있게 응답 앞부분을 함께 싣는다
+    // v1.2.85: 원인을 알 수 있게 응답 앞부분을 함께 싣는다
     throw new Error('JSON 파싱 실패 — 응답: ' + String(text).slice(0, 200));
   }
 }
@@ -7396,7 +7401,7 @@ async function onIvAppChange() {
   try {
     const res = await fetch(GAS_URL + '?action=getIvQuestions&userEmail='+encodeURIComponent(currentUserEmail||'')+'&round=' + encodeURIComponent(currentRound) + '&appId=' + encodeURIComponent(aId));
     const data = await res.json();
-    // ✅ v1.2.84: 조회 실패 사유를 화면에 드러낸다.
+    // ✅ v1.2.85: 조회 실패 사유를 화면에 드러낸다.
     //   지금까지는 조용히 생성 버튼으로 떨어져서
     //   "저장본이 없다"와 "권한이 없다"를 구분할 수 없었다.
     if (!data.success || !data.questions) {
@@ -7539,7 +7544,7 @@ ${a.pdfText.slice(0,3000)}` : '';
       if (results[i].status === 'fulfilled') {
         const r2 = results[i].value;
         list = Array.isArray(r2) ? r2 : (r2 && (r2.questions || r2.data || r2.items) || []);
-        // ⚠️ v1.2.84: 응답은 왔는데 questions 키가 없으면 예전엔 조용히 빈 배열이 됐다.
+        // ⚠️ v1.2.85: 응답은 왔는데 questions 키가 없으면 예전엔 조용히 빈 배열이 됐다.
         //   무슨 모양으로 왔는지 남겨야 원인을 안다.
         if (!list.length) console.warn('[질문지 ' + type + '] 응답에 questions 없음. 받은 키:',
           r2 && typeof r2 === 'object' ? Object.keys(r2) : typeof r2, r2);
@@ -7857,13 +7862,13 @@ function switchQType(type) {
   // 평가표는 그대로 유지 (renderIvPanel 호출 안 함)
 }
 
-// ✅ v1.2.84: 자가진단 — 면접관 화면에서 무엇이 비었거나 거부됐는지 한 번에 보여준다.
+// ✅ v1.2.85: 자가진단 — 면접관 화면에서 무엇이 비었거나 거부됐는지 한 번에 보여준다.
 //   관리자 기기에서는 재현이 안 되는 증상이라, 쓰는 사람이 직접 찍어 보낼 수 있어야 한다.
 async function ivSelfDiag() {
   const aId = document.getElementById('ivApp') ? document.getElementById('ivApp').value : '';
   const L = [];
   L.push('■ 채용 에이전트 상태 진단');
-  L.push('앱 버전: v1.2.84');
+  L.push('앱 버전: v1.2.85');
   L.push('로그인: ' + (currentUserEmail || '(비어있음 ← 문제)'));
   L.push('관리자: ' + (isAdmin ? '예' : '아니오'));
   L.push('선택된 회차: ' + (currentRound || '(비어있음 ← 문제)'));
@@ -7906,7 +7911,7 @@ async function regenQType(type) {
   try {
     const r2 = await callOpenAI(_buildQPrompt(a, type), true, {purpose:'ivQuestions'});
     const qs = Array.isArray(r2) ? r2 : (r2 && (r2.questions || r2.data || r2.items) || []);
-    // ⚠️ v1.2.84: 무엇을 받았는지 메시지에 담는다. 예전엔 '못 만들었습니다'로만 끝나 원인을 못 찾았다.
+    // ⚠️ v1.2.85: 무엇을 받았는지 메시지에 담는다. 예전엔 '못 만들었습니다'로만 끝나 원인을 못 찾았다.
     if (!qs.length) {
       const shape = (r2 && typeof r2 === 'object') ? ('키: ' + Object.keys(r2).join(', ')) : ('타입: ' + typeof r2);
       throw new Error('응답에 질문이 없습니다 (' + shape + ') ' + String(JSON.stringify(r2)).slice(0, 200));
