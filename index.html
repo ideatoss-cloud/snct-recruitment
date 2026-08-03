@@ -570,7 +570,7 @@ hr.dv{border:none;border-top:1px solid var(--bd);margin:13px 0;}
     📋 현재 회차: <span id="ivRoundBannerText"></span>
   </div>
   <div id="ivDateBannerIv" style="display:none;background:linear-gradient(135deg,rgba(0,201,122,0.12),rgba(0,201,122,0.06));border:1px solid rgba(0,201,122,0.3);border-radius:10px;padding:10px 16px;margin-bottom:12px;font-size:15px;font-weight:700;color:var(--green);text-align:center"></div>
-  <!-- ⚠️ v1.2.92: 진단 버튼을 **화면 맨 위 전체 폭**으로 옮겼다.
+  <!-- ⚠️ v1.2.93: 진단 버튼을 **화면 맨 위 전체 폭**으로 옮겼다.
        v1.2.84에서 왼쪽 사이드바에만 넣었는데, 질문지를 중앙으로 옮긴 뒤로는
        쓰는 사람이 중앙만 보기 때문에 "버튼이 없다"는 말을 계속 들었다. -->
   <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
@@ -650,7 +650,7 @@ hr.dv{border:none;border-top:1px solid var(--bd);margin:13px 0;}
       </div>
     </div>
     <div class="iv-main">
-      <!-- ⚠️ v1.2.92: 순위 입력표를 사이드바 → **중앙**으로 옮겼다.
+      <!-- ⚠️ v1.2.93: 순위 입력표를 사이드바 → **중앙**으로 옮겼다.
            좌측 좌패에서는 면접관 4명만 돼도 가로 스크롤이 생겨 입력이 불편했다. -->
       <div class="card" id="ivRankCard" style="display:none;margin-bottom:14px">
         <div class="ct">🗳️ 면접관 순위 일괄 입력 <span style="font-size:11px;color:var(--tx2);font-weight:normal">(관리자)</span></div>
@@ -1372,7 +1372,7 @@ kim@gmail.com"
   }
   localStorage.setItem('migration_v1_0_3_done', '1');
 })();
-// ⚠️ v1.2.92: 모델명은 localStorage에 남는다. 위 마이그레이션은 gpt-4o·gpt-4o-mini만
+// ⚠️ v1.2.93: 모델명은 localStorage에 남는다. 위 마이그레이션은 gpt-4o·gpt-4o-mini만
 //   고치고 1회만 돌기 때문에, 그 밖의 옛 모델명이 박힌 기기는 **강력 새로고침으로도
 //   안 나아서** 그 사용자만 계속 AI 호출이 실패한다. 유효 목록 밖이면 되돌린다.
 const VALID_MODELS = ['gpt-5.4-mini', 'gpt-5.4', 'gpt-5.5', 'gpt-4o-mini'];
@@ -1691,7 +1691,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.2.92';
+const APP_VERSION = 'v1.2.93';
 const APP_VERSION_DATE = '2026.07.29';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -1795,7 +1795,7 @@ function effectiveResult(r) {
   return f || r.result || '';
 }
 
-// ✅ v1.2.92 (2026.08.03 작업자 지시): 최종 순위는 **인적성과 면접만**으로 따진다.
+// ✅ v1.2.93 (2026.08.03 작업자 지시): 최종 순위는 **인적성과 면접만**으로 따진다.
 //   서류점수·투표점수는 면접 대상자를 고르는 단계까지의 지표라 총점에서 뺀다.
 //   둘 다 100점 만점으로 받아 **각각 50점으로 환산해 합산**(= 가중평균과 같은 값).
 //   doc:0이면 calcWeightedTotal이 서류점수를 분모에서도 제외한다.
@@ -2288,7 +2288,7 @@ function sendActivityLog(actType, detail, round) {
 
 // ── 앱 공통 로그인 완료 처리 ──
 function finishLogin() {
-  // ⚠️ v1.2.92: 설정을 로그인 후 다시 불러온다.
+  // ⚠️ v1.2.93: 설정을 로그인 후 다시 불러온다.
   //   loadSettings()는 window.onload에서 돌아 **새 기기 첫 로그인 때는 이메일이 비어있다.**
   //   GAS가 미등록 호출에게는 담당자 휴대전화·회신주소를 빈 값으로 주므로,
   //   다시 불러오지 않으면 메일 서명에 연락처가 빠진다.
@@ -5121,7 +5121,7 @@ async function callOpenAI(prompt, isJson=true, opts={}) {
       }
       return parsed;
     }
-    // v1.2.92: 원인을 알 수 있게 응답 앞부분을 함께 싣는다
+    // v1.2.93: 원인을 알 수 있게 응답 앞부분을 함께 싣는다
     throw new Error('JSON 파싱 실패 — 응답: ' + String(text).slice(0, 200));
   }
 }
@@ -7327,6 +7327,20 @@ async function refreshIvApplicants() {
   if (!confirmedList.length && GAS_URL && currentRound) {
     await checkConfirmed();
   }
+  // ✅ v1.2.93: 인적성도 시트에서 불러온다.
+  //   예전엔 업로드한 사람(관리자)의 메모리에만 있어서 **면접관 화면엔 인적성이 안 보였다.**
+  //   검사지 원본 링크(file)도 여기서 함께 받아 [검사지 원본 보기] 버튼에 쓴다.
+  if (!aptitudeResults.length && GAS_URL && currentRound) {
+    try {
+      const _ar = await fetch(GAS_URL + '?action=getAptitude&userEmail=' + encodeURIComponent(currentUserEmail || '')
+        + '&round=' + encodeURIComponent(currentRound));
+      const _ad = await _ar.json();
+      if (_ad.success) {
+        aptitudeResults = _ad.records || [];
+        window.__aptFile = _ad.file || null;
+      }
+    } catch (e) {}
+  }
   const sel = document.getElementById('ivApp');
   const cur = sel.value;
   sel.innerHTML = '<option value="">-- 지원자 선택 --</option>';
@@ -7415,7 +7429,7 @@ async function onIvAppChange() {
   try {
     const res = await fetch(GAS_URL + '?action=getIvQuestions&userEmail='+encodeURIComponent(currentUserEmail||'')+'&round=' + encodeURIComponent(currentRound) + '&appId=' + encodeURIComponent(aId));
     const data = await res.json();
-    // ✅ v1.2.92: 조회 실패 사유를 화면에 드러낸다.
+    // ✅ v1.2.93: 조회 실패 사유를 화면에 드러낸다.
     //   지금까지는 조용히 생성 버튼으로 떨어져서
     //   "저장본이 없다"와 "권한이 없다"를 구분할 수 없었다.
     if (!data.success || !data.questions) {
@@ -7558,7 +7572,7 @@ ${a.pdfText.slice(0,3000)}` : '';
       if (results[i].status === 'fulfilled') {
         const r2 = results[i].value;
         list = Array.isArray(r2) ? r2 : (r2 && (r2.questions || r2.data || r2.items) || []);
-        // ⚠️ v1.2.92: 응답은 왔는데 questions 키가 없으면 예전엔 조용히 빈 배열이 됐다.
+        // ⚠️ v1.2.93: 응답은 왔는데 questions 키가 없으면 예전엔 조용히 빈 배열이 됐다.
         //   무슨 모양으로 왔는지 남겨야 원인을 안다.
         if (!list.length) console.warn('[질문지 ' + type + '] 응답에 questions 없음. 받은 키:',
           r2 && typeof r2 === 'object' ? Object.keys(r2) : typeof r2, r2);
@@ -7877,13 +7891,13 @@ function switchQType(type) {
   // 평가표는 그대로 유지 (renderIvPanel 호출 안 함)
 }
 
-// ✅ v1.2.92: 자가진단 — 면접관 화면에서 무엇이 비었거나 거부됐는지 한 번에 보여준다.
+// ✅ v1.2.93: 자가진단 — 면접관 화면에서 무엇이 비었거나 거부됐는지 한 번에 보여준다.
 //   관리자 기기에서는 재현이 안 되는 증상이라, 쓰는 사람이 직접 찍어 보낼 수 있어야 한다.
 async function ivSelfDiag() {
   const aId = document.getElementById('ivApp') ? document.getElementById('ivApp').value : '';
   const L = [];
   L.push('■ 채용 에이전트 상태 진단');
-  L.push('앱 버전: v1.2.92');
+  L.push('앱 버전: v1.2.93');
   L.push('로그인: ' + (currentUserEmail || '(비어있음 ← 문제)'));
   L.push('관리자: ' + (isAdmin ? '예' : '아니오'));
   L.push('선택된 회차: ' + (currentRound || '(비어있음 ← 문제)'));
@@ -7926,7 +7940,7 @@ async function regenQType(type) {
   try {
     const r2 = await callOpenAI(_buildQPrompt(a, type), true, {purpose:'ivQuestions'});
     const qs = Array.isArray(r2) ? r2 : (r2 && (r2.questions || r2.data || r2.items) || []);
-    // ⚠️ v1.2.92: 무엇을 받았는지 메시지에 담는다. 예전엔 '못 만들었습니다'로만 끝나 원인을 못 찾았다.
+    // ⚠️ v1.2.93: 무엇을 받았는지 메시지에 담는다. 예전엔 '못 만들었습니다'로만 끝나 원인을 못 찾았다.
     if (!qs.length) {
       const shape = (r2 && typeof r2 === 'object') ? ('키: ' + Object.keys(r2).join(', ')) : ('타입: ' + typeof r2);
       throw new Error('응답에 질문이 없습니다 (' + shape + ') ' + String(JSON.stringify(r2)).slice(0, 200));
@@ -8598,6 +8612,8 @@ ${pdfText.slice(0, 8000)}`;
     } else {
       fetch(GAS_URL, {method:'POST', headers:{'Content-Type':'text/plain'},
         body: JSON.stringify({action:'saveAptitude', userEmail: currentUserEmail, round:currentRound,
+          // v1.2.93: 원본 PDF도 같이 올려 Drive에 보관 — 면접관이 검사지를 직접 볼 수 있게
+          fileB64: b64, fileName: file.name,
           records: parsed.map(p => ({name:p.name, grade:p.grade, score:p.score, eval:p.eval, field1:p.field1, field2:p.field2}))})
       }).then(r=>r.json()).then(d=>{
         if (d.success) toast('인적성 데이터 저장됨 ☁️ (' + currentRound + ')', 'ok');
@@ -8679,6 +8695,15 @@ function renderAptitudeInPanel(name) {
       </div>
       <div style="margin-bottom:10px">${fieldRankHtml}</div>
       ${apt.summary ? `<div style="font-size:13px;color:var(--tx2);line-height:1.7;background:rgba(255,255,255,0.03);border-radius:8px;padding:10px">${apt.summary}</div>` : ''}
+      ${window.__aptFile && window.__aptFile.url
+        ? `<a href="${window.__aptFile.url}" target="_blank" rel="noopener" class="btn btn-o"
+             style="width:100%;margin-top:10px;font-size:14px;text-decoration:none;justify-content:center">
+             📄 검사지 원본 보기 (PDF)
+           </a>
+           <div style="font-size:11px;color:var(--tx2);margin-top:5px;text-align:center">전원 분석표 1개 파일 · ${window.__aptFile.savedAt || ''}</div>`
+        : `<div style="font-size:12px;color:var(--tx2);margin-top:10px;text-align:center;background:rgba(255,255,255,0.03);border-radius:8px;padding:8px">
+             검사지 원본이 등록되지 않았습니다 — 관리팀이 인적성 PDF를 다시 올리면 여기서 볼 수 있습니다.
+           </div>`}
     </div>`;
 }
 
@@ -9927,7 +9952,7 @@ async function saveIvDate() {
   showIvDateBanner(round);
   // GAS에도 저장 (다른 PC에서 조회 가능)
   if (GAS_URL) {
-      // ⚠️ v1.2.92: 예전에는 GAS가 거부해도 '저장 완료'라고 알렸다.
+      // ⚠️ v1.2.93: 예전에는 GAS가 거부해도 '저장 완료'라고 알렸다.
       //   질문지가 같은 이유로 몇 주간 조용히 안 저장됐다(2026.08.01).
       try {
       const _r = await fetch(GAS_URL, {
@@ -9979,7 +10004,7 @@ async function saveIvDateManual() {
     if (el) { el.textContent = display; el.style.display = 'block'; }
   });
   if (GAS_URL) {
-      // ⚠️ v1.2.92: 예전에는 GAS가 거부해도 '저장 완료'라고 알렸다.
+      // ⚠️ v1.2.93: 예전에는 GAS가 거부해도 '저장 완료'라고 알렸다.
       //   질문지가 같은 이유로 몇 주간 조용히 안 저장됐다(2026.08.01).
       try {
       const _r = await fetch(GAS_URL, {
@@ -10164,6 +10189,7 @@ async function loadResultDetail() {
       const aptRes = await fetch(GAS_URL+'?action=getAptitude&userEmail='+encodeURIComponent(currentUserEmail||'')+'&round='+encodeURIComponent(round));
       const aptData = await aptRes.json();
       (aptData.records || []).forEach(r => { aptMap[r.name] = r; });
+      window.__aptFile = aptData.file || null;   // v1.2.93: 검사지 원본 링크
     } catch(e) {}
     // ✅ v1.2.58: 투표 점수(면접 대상자 선발 투표)를 표·인쇄·엑셀에 함께 보여주기 위해 조회.
     //   실패해도 빈 맵이라 나머지 화면은 그대로 뜬다.
@@ -10176,7 +10202,7 @@ async function loadResultDetail() {
     // ✅ v1.0.49: 이메일 발송 모달도 confirmedNames/absentNames 필요 — 같이 캐시
     window.__currentRoundApps = apps;
     window.__currentRoundIvResults = ivResults2;
-    // v1.2.92: 면접 평가지 출력용 — 면접관별 상세(항목별 점수 포함)와 인적성 점수
+    // v1.2.93: 면접 평가지 출력용 — 면접관별 상세(항목별 점수 포함)와 인적성 점수
     window.__currentRoundIvDetails = ivDetails;
     window.__currentRoundAptMap = aptMap;
     window.__currentRoundId = round;
@@ -10423,7 +10449,7 @@ function renderDocResultTable(apps, confirmedNames, ivMap, aptMap = {}, absentNa
         return `<tr class="${rowClass}" style="${initHide}${disq?'opacity:0.5':''}">
           <td style="font-weight:700">${r.name||'-'}</td>
           <td style="font-size:13px">${a.empType} ${a.job}</td>
-          <!-- v1.2.92 (작업자 지시): 지원서점수·투표점수·득표 열 제거.
+          <!-- v1.2.93 (작업자 지시): 지원서점수·투표점수·득표 열 제거.
                면접 대상자를 고르는 단계까지의 지표라 최종 순위와 무관하다.
                필요하면 [지원서 검토] 탭과 엑셀 내보내기에 그대로 남아 있다. -->
           <td style="font-family:'DM Mono',monospace;color:${aptColor};font-size:13px">${aptStr}</td>
@@ -10458,7 +10484,7 @@ function filterDocResult(mode) {
 }
 
 // ✅ v1.0.29: 전체 지원자 현황 PDF 출력 (현재 토글 필터 반영)
-// 2026.08.04 v1.2.92: 면접 평가지 출력 — 면접관 요청(8/3 면접 당일 접수, 회차 종료 후 착수).
+// 2026.08.04 v1.2.93: 면접 평가지 출력 — 면접관 요청(8/3 면접 당일 접수, 회차 종료 후 착수).
 //   blank=true 면 점수·의견을 비운 **수기용 양식**, false면 저장된 평가를 채운 **결과 보관본**.
 //   지원자 1명당 A4 1장. 항목별 점수는 GAS getIvResults의 details.scores에서 온다(@93부터 제공).
 function printIvEval(blank) {
@@ -11461,7 +11487,7 @@ async function generateAiReport(round, forceRegenerate = false) {
         const _dd = await _rr.json();
         if (!_dd.success) toast('AI 보고서 시트 저장 실패: ' + (_dd.message||'') + ' (화면에는 표시됨)', 'err');
       } catch(e) {
-        // v1.2.92: 콘솔에만 적으면 쓰는 사람은 모른다 — 다음에 캐시가 비어 재생성 비용이 또 든다
+        // v1.2.93: 콘솔에만 적으면 쓰는 사람은 모른다 — 다음에 캐시가 비어 재생성 비용이 또 든다
         toast('AI 보고서 시트 저장 실패 — ' + e.message + ' (화면에는 표시됨)', 'err');
       }
     }
