@@ -570,6 +570,12 @@ hr.dv{border:none;border-top:1px solid var(--bd);margin:13px 0;}
     📋 현재 회차: <span id="ivRoundBannerText"></span>
   </div>
   <div id="ivDateBannerIv" style="display:none;background:linear-gradient(135deg,rgba(0,201,122,0.12),rgba(0,201,122,0.06));border:1px solid rgba(0,201,122,0.3);border-radius:10px;padding:10px 16px;margin-bottom:12px;font-size:15px;font-weight:700;color:var(--green);text-align:center"></div>
+  <!-- ⚠️ v1.2.89: 진단 버튼을 **화면 맨 위 전체 폭**으로 옮겼다.
+       v1.2.84에서 왼쪽 사이드바에만 넣었는데, 질문지를 중앙으로 옮긴 뒤로는
+       쓰는 사람이 중앙만 보기 때문에 "버튼이 없다"는 말을 계속 들었다. -->
+  <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
+    <button class="btn" onclick="ivSelfDiag()" style="background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;font-weight:700;font-size:14px">🩺 질문지가 안 뜨면 눌러주세요 (상태 진단)</button>
+  </div>
   <div class="il">
     <div>
       <div class="card" style="margin-bottom:14px">
@@ -678,6 +684,9 @@ hr.dv{border:none;border-top:1px solid var(--bd);margin:13px 0;}
           <button class="btn btn-o" onclick="switchQType('기술검증')" id="qtab_기술검증" style="font-size:13px;padding:5px 10px">기술/직무</button>
         </div>
         <div id="qlist"></div>
+        <div style="text-align:right;margin-top:10px">
+          <button class="btn btn-o" onclick="ivSelfDiag()" style="font-size:13px">🩺 상태 진단</button>
+        </div>
         <hr class="dv">
         <button class="btn btn-o" style="width:100%;font-size:14px" onclick="printQ()">🖨️ 질문지 인쇄</button>
       </div>
@@ -1361,7 +1370,7 @@ kim@gmail.com"
   }
   localStorage.setItem('migration_v1_0_3_done', '1');
 })();
-// ⚠️ v1.2.88: 모델명은 localStorage에 남는다. 위 마이그레이션은 gpt-4o·gpt-4o-mini만
+// ⚠️ v1.2.89: 모델명은 localStorage에 남는다. 위 마이그레이션은 gpt-4o·gpt-4o-mini만
 //   고치고 1회만 돌기 때문에, 그 밖의 옛 모델명이 박힌 기기는 **강력 새로고침으로도
 //   안 나아서** 그 사용자만 계속 AI 호출이 실패한다. 유효 목록 밖이면 되돌린다.
 const VALID_MODELS = ['gpt-5.4-mini', 'gpt-5.4', 'gpt-5.5', 'gpt-4o-mini'];
@@ -1680,7 +1689,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.2.88';
+const APP_VERSION = 'v1.2.89';
 const APP_VERSION_DATE = '2026.07.29';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -2274,7 +2283,7 @@ function sendActivityLog(actType, detail, round) {
 
 // ── 앱 공통 로그인 완료 처리 ──
 function finishLogin() {
-  // ⚠️ v1.2.88: 설정을 로그인 후 다시 불러온다.
+  // ⚠️ v1.2.89: 설정을 로그인 후 다시 불러온다.
   //   loadSettings()는 window.onload에서 돌아 **새 기기 첫 로그인 때는 이메일이 비어있다.**
   //   GAS가 미등록 호출에게는 담당자 휴대전화·회신주소를 빈 값으로 주므로,
   //   다시 불러오지 않으면 메일 서명에 연락처가 빠진다.
@@ -5107,7 +5116,7 @@ async function callOpenAI(prompt, isJson=true, opts={}) {
       }
       return parsed;
     }
-    // v1.2.88: 원인을 알 수 있게 응답 앞부분을 함께 싣는다
+    // v1.2.89: 원인을 알 수 있게 응답 앞부분을 함께 싣는다
     throw new Error('JSON 파싱 실패 — 응답: ' + String(text).slice(0, 200));
   }
 }
@@ -7401,7 +7410,7 @@ async function onIvAppChange() {
   try {
     const res = await fetch(GAS_URL + '?action=getIvQuestions&userEmail='+encodeURIComponent(currentUserEmail||'')+'&round=' + encodeURIComponent(currentRound) + '&appId=' + encodeURIComponent(aId));
     const data = await res.json();
-    // ✅ v1.2.88: 조회 실패 사유를 화면에 드러낸다.
+    // ✅ v1.2.89: 조회 실패 사유를 화면에 드러낸다.
     //   지금까지는 조용히 생성 버튼으로 떨어져서
     //   "저장본이 없다"와 "권한이 없다"를 구분할 수 없었다.
     if (!data.success || !data.questions) {
@@ -7544,7 +7553,7 @@ ${a.pdfText.slice(0,3000)}` : '';
       if (results[i].status === 'fulfilled') {
         const r2 = results[i].value;
         list = Array.isArray(r2) ? r2 : (r2 && (r2.questions || r2.data || r2.items) || []);
-        // ⚠️ v1.2.88: 응답은 왔는데 questions 키가 없으면 예전엔 조용히 빈 배열이 됐다.
+        // ⚠️ v1.2.89: 응답은 왔는데 questions 키가 없으면 예전엔 조용히 빈 배열이 됐다.
         //   무슨 모양으로 왔는지 남겨야 원인을 안다.
         if (!list.length) console.warn('[질문지 ' + type + '] 응답에 questions 없음. 받은 키:',
           r2 && typeof r2 === 'object' ? Object.keys(r2) : typeof r2, r2);
@@ -7863,13 +7872,13 @@ function switchQType(type) {
   // 평가표는 그대로 유지 (renderIvPanel 호출 안 함)
 }
 
-// ✅ v1.2.88: 자가진단 — 면접관 화면에서 무엇이 비었거나 거부됐는지 한 번에 보여준다.
+// ✅ v1.2.89: 자가진단 — 면접관 화면에서 무엇이 비었거나 거부됐는지 한 번에 보여준다.
 //   관리자 기기에서는 재현이 안 되는 증상이라, 쓰는 사람이 직접 찍어 보낼 수 있어야 한다.
 async function ivSelfDiag() {
   const aId = document.getElementById('ivApp') ? document.getElementById('ivApp').value : '';
   const L = [];
   L.push('■ 채용 에이전트 상태 진단');
-  L.push('앱 버전: v1.2.88');
+  L.push('앱 버전: v1.2.89');
   L.push('로그인: ' + (currentUserEmail || '(비어있음 ← 문제)'));
   L.push('관리자: ' + (isAdmin ? '예' : '아니오'));
   L.push('선택된 회차: ' + (currentRound || '(비어있음 ← 문제)'));
@@ -7912,7 +7921,7 @@ async function regenQType(type) {
   try {
     const r2 = await callOpenAI(_buildQPrompt(a, type), true, {purpose:'ivQuestions'});
     const qs = Array.isArray(r2) ? r2 : (r2 && (r2.questions || r2.data || r2.items) || []);
-    // ⚠️ v1.2.88: 무엇을 받았는지 메시지에 담는다. 예전엔 '못 만들었습니다'로만 끝나 원인을 못 찾았다.
+    // ⚠️ v1.2.89: 무엇을 받았는지 메시지에 담는다. 예전엔 '못 만들었습니다'로만 끝나 원인을 못 찾았다.
     if (!qs.length) {
       const shape = (r2 && typeof r2 === 'object') ? ('키: ' + Object.keys(r2).join(', ')) : ('타입: ' + typeof r2);
       throw new Error('응답에 질문이 없습니다 (' + shape + ') ' + String(JSON.stringify(r2)).slice(0, 200));
@@ -9913,7 +9922,7 @@ async function saveIvDate() {
   showIvDateBanner(round);
   // GAS에도 저장 (다른 PC에서 조회 가능)
   if (GAS_URL) {
-      // ⚠️ v1.2.88: 예전에는 GAS가 거부해도 '저장 완료'라고 알렸다.
+      // ⚠️ v1.2.89: 예전에는 GAS가 거부해도 '저장 완료'라고 알렸다.
       //   질문지가 같은 이유로 몇 주간 조용히 안 저장됐다(2026.08.01).
       try {
       const _r = await fetch(GAS_URL, {
@@ -9965,7 +9974,7 @@ async function saveIvDateManual() {
     if (el) { el.textContent = display; el.style.display = 'block'; }
   });
   if (GAS_URL) {
-      // ⚠️ v1.2.88: 예전에는 GAS가 거부해도 '저장 완료'라고 알렸다.
+      // ⚠️ v1.2.89: 예전에는 GAS가 거부해도 '저장 완료'라고 알렸다.
       //   질문지가 같은 이유로 몇 주간 조용히 안 저장됐다(2026.08.01).
       try {
       const _r = await fetch(GAS_URL, {
@@ -11311,7 +11320,7 @@ async function generateAiReport(round, forceRegenerate = false) {
         const _dd = await _rr.json();
         if (!_dd.success) toast('AI 보고서 시트 저장 실패: ' + (_dd.message||'') + ' (화면에는 표시됨)', 'err');
       } catch(e) {
-        // v1.2.88: 콘솔에만 적으면 쓰는 사람은 모른다 — 다음에 캐시가 비어 재생성 비용이 또 든다
+        // v1.2.89: 콘솔에만 적으면 쓰는 사람은 모른다 — 다음에 캐시가 비어 재생성 비용이 또 든다
         toast('AI 보고서 시트 저장 실패 — ' + e.message + ' (화면에는 표시됨)', 'err');
       }
     }
