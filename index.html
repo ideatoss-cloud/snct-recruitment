@@ -570,7 +570,7 @@ hr.dv{border:none;border-top:1px solid var(--bd);margin:13px 0;}
     📋 현재 회차: <span id="ivRoundBannerText"></span>
   </div>
   <div id="ivDateBannerIv" style="display:none;background:linear-gradient(135deg,rgba(0,201,122,0.12),rgba(0,201,122,0.06));border:1px solid rgba(0,201,122,0.3);border-radius:10px;padding:10px 16px;margin-bottom:12px;font-size:15px;font-weight:700;color:var(--green);text-align:center"></div>
-  <!-- ⚠️ v1.2.94: 진단 버튼을 **화면 맨 위 전체 폭**으로 옮겼다.
+  <!-- ⚠️ v1.2.95: 진단 버튼을 **화면 맨 위 전체 폭**으로 옮겼다.
        v1.2.84에서 왼쪽 사이드바에만 넣었는데, 질문지를 중앙으로 옮긴 뒤로는
        쓰는 사람이 중앙만 보기 때문에 "버튼이 없다"는 말을 계속 들었다. -->
   <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
@@ -650,7 +650,7 @@ hr.dv{border:none;border-top:1px solid var(--bd);margin:13px 0;}
       </div>
     </div>
     <div class="iv-main">
-      <!-- ⚠️ v1.2.94: 순위 입력표를 사이드바 → **중앙**으로 옮겼다.
+      <!-- ⚠️ v1.2.95: 순위 입력표를 사이드바 → **중앙**으로 옮겼다.
            좌측 좌패에서는 면접관 4명만 돼도 가로 스크롤이 생겨 입력이 불편했다. -->
       <div class="card" id="ivRankCard" style="display:none;margin-bottom:14px">
         <div class="ct">🗳️ 면접관 순위 일괄 입력 <span style="font-size:11px;color:var(--tx2);font-weight:normal">(관리자)</span></div>
@@ -1103,6 +1103,48 @@ kim@gmail.com"
 <!-- ✅ v1.2.59: 투표 결과 공유 메일 본문 생성 (관리자 전용).
      면접관들에게 "이 투표 결과로 상위 N명을 면접 대상자로 하려는데 동의하시는지" 묻는 메일.
      실제 발송은 그룹웨어에서 하므로 여기서는 본문만 만들어 복사한다. -->
+<!-- v1.2.95: 면접 결과 종합 — 메일 본문 + 첨부자료.
+     발송은 작업자가 그룹웨어에서 직접 한다. 여기서는 붙여넣을 본문과 첨부용 A4만 만든다. -->
+<div class="ov" id="ivMailModal">
+  <div class="modal" style="width:96vw;max-width:900px;max-height:92vh;display:flex;flex-direction:column">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-shrink:0">
+      <div>
+        <h2 style="font-size:16px;margin:0">✉️ 면접 결과 종합 (최종 판단 요청)</h2>
+        <div id="ivMailSubtitle" style="font-size:12px;color:var(--tx2);margin-top:3px"></div>
+      </div>
+      <button class="btn btn-o" style="padding:5px 11px;font-size:14px" onclick="closeIvMailModal()">✕</button>
+    </div>
+    <div id="ivMailReady" style="margin-bottom:10px;flex-shrink:0"></div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px;flex-shrink:0">
+      <div style="flex:1;min-width:200px">
+        <div style="font-size:13px;color:var(--tx2);margin-bottom:4px">회신 기한 (선택)</div>
+        <input type="text" id="imDeadline" placeholder="예) 8월 6일(목) 오전" oninput="renderIvMailPreview()"
+          style="width:100%;padding:7px 10px;background:var(--bg2);border:1px solid var(--bd);border-radius:7px;color:var(--tx);font-size:14px;box-sizing:border-box">
+      </div>
+      <div style="flex:2;min-width:240px">
+        <div style="font-size:13px;color:var(--tx2);margin-bottom:4px">덧붙일 말 (선택)</div>
+        <input type="text" id="imNote" placeholder="예) 채용 예정 인원은 2명입니다" oninput="renderIvMailPreview()"
+          style="width:100%;padding:7px 10px;background:var(--bg2);border:1px solid var(--bd);border-radius:7px;color:var(--tx);font-size:14px;box-sizing:border-box">
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-shrink:0;background:var(--bg2);border:1px solid var(--bd);border-radius:8px;padding:8px 12px">
+      <span style="font-size:12px;color:var(--tx2);flex-shrink:0">메일 제목</span>
+      <span id="imSubject" style="flex:1;font-size:13.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+      <button class="btn btn-o" style="font-size:12px;padding:5px 10px;flex-shrink:0" onclick="copyIvMail('subject')">📋 복사</button>
+    </div>
+    <div id="ivMailPreview" style="flex:1;overflow-y:auto;background:#f1f5f9;border-radius:8px;padding:4px"></div>
+    <div style="display:flex;justify-content:space-between;gap:8px;margin-top:12px;flex-shrink:0;flex-wrap:wrap">
+      <button class="btn btn-o" onclick="closeIvMailModal()">닫기</button>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <button class="btn btn-o" onclick="copyIvMail('text')">📋 텍스트</button>
+        <button class="btn btn-o" onclick="copyIvMail('source')" style="border-color:var(--gold);color:var(--gold)">&lt;/&gt; HTML 소스</button>
+        <button class="btn btn-p" id="imCopyBtn" onclick="copyIvMail('html')">📋 본문 복사</button>
+        <button class="btn btn-g" id="imAttachBtn" onclick="printIvBrief()">📄 첨부자료 만들기 (PDF)</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="ov" id="voteMailModal">
   <div class="modal" style="width:96vw;max-width:900px;max-height:92vh;display:flex;flex-direction:column">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-shrink:0">
@@ -1372,7 +1414,7 @@ kim@gmail.com"
   }
   localStorage.setItem('migration_v1_0_3_done', '1');
 })();
-// ⚠️ v1.2.94: 모델명은 localStorage에 남는다. 위 마이그레이션은 gpt-4o·gpt-4o-mini만
+// ⚠️ v1.2.95: 모델명은 localStorage에 남는다. 위 마이그레이션은 gpt-4o·gpt-4o-mini만
 //   고치고 1회만 돌기 때문에, 그 밖의 옛 모델명이 박힌 기기는 **강력 새로고침으로도
 //   안 나아서** 그 사용자만 계속 AI 호출이 실패한다. 유효 목록 밖이면 되돌린다.
 const VALID_MODELS = ['gpt-5.4-mini', 'gpt-5.4', 'gpt-5.5', 'gpt-4o-mini'];
@@ -1691,7 +1733,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.2.94';
+const APP_VERSION = 'v1.2.95';
 const APP_VERSION_DATE = '2026.07.29';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -1795,7 +1837,7 @@ function effectiveResult(r) {
   return f || r.result || '';
 }
 
-// ✅ v1.2.94 (2026.08.03 작업자 지시): 최종 순위는 **인적성과 면접만**으로 따진다.
+// ✅ v1.2.95 (2026.08.03 작업자 지시): 최종 순위는 **인적성과 면접만**으로 따진다.
 //   서류점수·투표점수는 면접 대상자를 고르는 단계까지의 지표라 총점에서 뺀다.
 //   둘 다 100점 만점으로 받아 **각각 50점으로 환산해 합산**(= 가중평균과 같은 값).
 //   doc:0이면 calcWeightedTotal이 서류점수를 분모에서도 제외한다.
@@ -2288,7 +2330,7 @@ function sendActivityLog(actType, detail, round) {
 
 // ── 앱 공통 로그인 완료 처리 ──
 function finishLogin() {
-  // ⚠️ v1.2.94: 설정을 로그인 후 다시 불러온다.
+  // ⚠️ v1.2.95: 설정을 로그인 후 다시 불러온다.
   //   loadSettings()는 window.onload에서 돌아 **새 기기 첫 로그인 때는 이메일이 비어있다.**
   //   GAS가 미등록 호출에게는 담당자 휴대전화·회신주소를 빈 값으로 주므로,
   //   다시 불러오지 않으면 메일 서명에 연락처가 빠진다.
@@ -5121,7 +5163,7 @@ async function callOpenAI(prompt, isJson=true, opts={}) {
       }
       return parsed;
     }
-    // v1.2.94: 원인을 알 수 있게 응답 앞부분을 함께 싣는다
+    // v1.2.95: 원인을 알 수 있게 응답 앞부분을 함께 싣는다
     throw new Error('JSON 파싱 실패 — 응답: ' + String(text).slice(0, 200));
   }
 }
@@ -7327,7 +7369,7 @@ async function refreshIvApplicants() {
   if (!confirmedList.length && GAS_URL && currentRound) {
     await checkConfirmed();
   }
-  // ✅ v1.2.94: 인적성도 시트에서 불러온다.
+  // ✅ v1.2.95: 인적성도 시트에서 불러온다.
   //   예전엔 업로드한 사람(관리자)의 메모리에만 있어서 **면접관 화면엔 인적성이 안 보였다.**
   //   검사지 원본 링크(file)도 여기서 함께 받아 [검사지 원본 보기] 버튼에 쓴다.
   if (!aptitudeResults.length && GAS_URL && currentRound) {
@@ -7429,7 +7471,7 @@ async function onIvAppChange() {
   try {
     const res = await fetch(GAS_URL + '?action=getIvQuestions&userEmail='+encodeURIComponent(currentUserEmail||'')+'&round=' + encodeURIComponent(currentRound) + '&appId=' + encodeURIComponent(aId));
     const data = await res.json();
-    // ✅ v1.2.94: 조회 실패 사유를 화면에 드러낸다.
+    // ✅ v1.2.95: 조회 실패 사유를 화면에 드러낸다.
     //   지금까지는 조용히 생성 버튼으로 떨어져서
     //   "저장본이 없다"와 "권한이 없다"를 구분할 수 없었다.
     if (!data.success || !data.questions) {
@@ -7572,7 +7614,7 @@ ${a.pdfText.slice(0,3000)}` : '';
       if (results[i].status === 'fulfilled') {
         const r2 = results[i].value;
         list = Array.isArray(r2) ? r2 : (r2 && (r2.questions || r2.data || r2.items) || []);
-        // ⚠️ v1.2.94: 응답은 왔는데 questions 키가 없으면 예전엔 조용히 빈 배열이 됐다.
+        // ⚠️ v1.2.95: 응답은 왔는데 questions 키가 없으면 예전엔 조용히 빈 배열이 됐다.
         //   무슨 모양으로 왔는지 남겨야 원인을 안다.
         if (!list.length) console.warn('[질문지 ' + type + '] 응답에 questions 없음. 받은 키:',
           r2 && typeof r2 === 'object' ? Object.keys(r2) : typeof r2, r2);
@@ -7891,13 +7933,13 @@ function switchQType(type) {
   // 평가표는 그대로 유지 (renderIvPanel 호출 안 함)
 }
 
-// ✅ v1.2.94: 자가진단 — 면접관 화면에서 무엇이 비었거나 거부됐는지 한 번에 보여준다.
+// ✅ v1.2.95: 자가진단 — 면접관 화면에서 무엇이 비었거나 거부됐는지 한 번에 보여준다.
 //   관리자 기기에서는 재현이 안 되는 증상이라, 쓰는 사람이 직접 찍어 보낼 수 있어야 한다.
 async function ivSelfDiag() {
   const aId = document.getElementById('ivApp') ? document.getElementById('ivApp').value : '';
   const L = [];
   L.push('■ 채용 에이전트 상태 진단');
-  L.push('앱 버전: v1.2.94');
+  L.push('앱 버전: v1.2.95');
   L.push('로그인: ' + (currentUserEmail || '(비어있음 ← 문제)'));
   L.push('관리자: ' + (isAdmin ? '예' : '아니오'));
   L.push('선택된 회차: ' + (currentRound || '(비어있음 ← 문제)'));
@@ -7940,7 +7982,7 @@ async function regenQType(type) {
   try {
     const r2 = await callOpenAI(_buildQPrompt(a, type), true, {purpose:'ivQuestions'});
     const qs = Array.isArray(r2) ? r2 : (r2 && (r2.questions || r2.data || r2.items) || []);
-    // ⚠️ v1.2.94: 무엇을 받았는지 메시지에 담는다. 예전엔 '못 만들었습니다'로만 끝나 원인을 못 찾았다.
+    // ⚠️ v1.2.95: 무엇을 받았는지 메시지에 담는다. 예전엔 '못 만들었습니다'로만 끝나 원인을 못 찾았다.
     if (!qs.length) {
       const shape = (r2 && typeof r2 === 'object') ? ('키: ' + Object.keys(r2).join(', ')) : ('타입: ' + typeof r2);
       throw new Error('응답에 질문이 없습니다 (' + shape + ') ' + String(JSON.stringify(r2)).slice(0, 200));
@@ -8610,7 +8652,7 @@ ${pdfText.slice(0, 8000)}`;
     } else if (!currentRound) {
       toast('⚠️ 회차가 선택되지 않아 저장되지 않았습니다. 회차 선택 후 다시 업로드해주세요.', 'err');
     } else {
-      // ✅ v1.2.94: 원본 PDF를 함께 올리되(면접관이 검사지를 보려면 필요),
+      // ✅ v1.2.95: 원본 PDF를 함께 올리되(면접관이 검사지를 보려면 필요),
       //   **점수 저장이 원본 때문에 실패해서는 안 된다.** 파일이 크면 전송이 통째로 실패할 수 있어
       //   실패 시 원본을 빼고 점수만 한 번 더 보낸다. 점수가 먼저고 원본은 부가다.
       (async function saveApt() {
@@ -9968,7 +10010,7 @@ async function saveIvDate() {
   showIvDateBanner(round);
   // GAS에도 저장 (다른 PC에서 조회 가능)
   if (GAS_URL) {
-      // ⚠️ v1.2.94: 예전에는 GAS가 거부해도 '저장 완료'라고 알렸다.
+      // ⚠️ v1.2.95: 예전에는 GAS가 거부해도 '저장 완료'라고 알렸다.
       //   질문지가 같은 이유로 몇 주간 조용히 안 저장됐다(2026.08.01).
       try {
       const _r = await fetch(GAS_URL, {
@@ -10020,7 +10062,7 @@ async function saveIvDateManual() {
     if (el) { el.textContent = display; el.style.display = 'block'; }
   });
   if (GAS_URL) {
-      // ⚠️ v1.2.94: 예전에는 GAS가 거부해도 '저장 완료'라고 알렸다.
+      // ⚠️ v1.2.95: 예전에는 GAS가 거부해도 '저장 완료'라고 알렸다.
       //   질문지가 같은 이유로 몇 주간 조용히 안 저장됐다(2026.08.01).
       try {
       const _r = await fetch(GAS_URL, {
@@ -10205,7 +10247,7 @@ async function loadResultDetail() {
       const aptRes = await fetch(GAS_URL+'?action=getAptitude&userEmail='+encodeURIComponent(currentUserEmail||'')+'&round='+encodeURIComponent(round));
       const aptData = await aptRes.json();
       (aptData.records || []).forEach(r => { aptMap[r.name] = r; });
-      window.__aptFile = aptData.file || null;   // v1.2.94: 검사지 원본 링크
+      window.__aptFile = aptData.file || null;   // v1.2.95: 검사지 원본 링크
     } catch(e) {}
     // ✅ v1.2.58: 투표 점수(면접 대상자 선발 투표)를 표·인쇄·엑셀에 함께 보여주기 위해 조회.
     //   실패해도 빈 맵이라 나머지 화면은 그대로 뜬다.
@@ -10218,7 +10260,7 @@ async function loadResultDetail() {
     // ✅ v1.0.49: 이메일 발송 모달도 confirmedNames/absentNames 필요 — 같이 캐시
     window.__currentRoundApps = apps;
     window.__currentRoundIvResults = ivResults2;
-    // v1.2.94: 면접 평가지 출력용 — 면접관별 상세(항목별 점수 포함)와 인적성 점수
+    // v1.2.95: 면접 평가지 출력용 — 면접관별 상세(항목별 점수 포함)와 인적성 점수
     window.__currentRoundIvDetails = ivDetails;
     window.__currentRoundAptMap = aptMap;
     window.__currentRoundId = round;
@@ -10434,6 +10476,7 @@ function renderDocResultTable(apps, confirmedNames, ivMap, aptMap = {}, absentNa
         <button onclick="printDocResult()" style="font-size:12px;padding:6px 12px;border-radius:6px;cursor:pointer;background:transparent;color:var(--gold);border:1px solid var(--gold);font-weight:600">📄 PDF 출력</button>
         <button onclick="printIvEval(false)" style="font-size:12px;padding:6px 12px;border-radius:6px;cursor:pointer;background:transparent;color:var(--green);border:1px solid var(--green);font-weight:600">📝 면접 평가지 출력</button>
         <button onclick="printIvEval(true)" style="font-size:12px;padding:6px 12px;border-radius:6px;cursor:pointer;background:transparent;color:var(--tx2);border:1px solid var(--bd);font-weight:600">🗒️ 빈 평가지</button>
+        <button id="ivMailBtn" onclick="openIvMailModal()" style="font-size:12px;padding:6px 12px;border-radius:6px;cursor:pointer;background:var(--ac);color:#fff;border:1px solid var(--ac);font-weight:600">✉️ 면접결과 메일·첨부</button>
       </div>
     </div>
     <div style="overflow-x:auto"><table class="ctbl" style="width:100%;min-width:520px">
@@ -10465,7 +10508,7 @@ function renderDocResultTable(apps, confirmedNames, ivMap, aptMap = {}, absentNa
         return `<tr class="${rowClass}" style="${initHide}${disq?'opacity:0.5':''}">
           <td style="font-weight:700">${r.name||'-'}</td>
           <td style="font-size:13px">${a.empType} ${a.job}</td>
-          <!-- v1.2.94 (작업자 지시): 지원서점수·투표점수·득표 열 제거.
+          <!-- v1.2.95 (작업자 지시): 지원서점수·투표점수·득표 열 제거.
                면접 대상자를 고르는 단계까지의 지표라 최종 순위와 무관하다.
                필요하면 [지원서 검토] 탭과 엑셀 내보내기에 그대로 남아 있다. -->
           <td style="font-family:'DM Mono',monospace;color:${aptColor};font-size:13px">${aptStr}</td>
@@ -10500,9 +10543,278 @@ function filterDocResult(mode) {
 }
 
 // ✅ v1.0.29: 전체 지원자 현황 PDF 출력 (현재 토글 필터 반영)
-// 2026.08.04 v1.2.94: 면접 평가지 출력 — 면접관 요청(8/3 면접 당일 접수, 회차 종료 후 착수).
+// 2026.08.04 v1.2.95: 면접 평가지 출력 — 면접관 요청(8/3 면접 당일 접수, 회차 종료 후 착수).
 //   blank=true 면 점수·의견을 비운 **수기용 양식**, false면 저장된 평가를 채운 **결과 보관본**.
 //   지원자 1명당 A4 1장. 항목별 점수는 GAS getIvResults의 details.scores에서 온다(@93부터 제공).
+// ══════════════════════════════════════════
+// 면접 결과 종합 — 메일 본문 + 첨부자료 (v1.2.95, 2026.08.04 작업자 요청)
+//   면접관이 프로그램에 들어와 보지 않을 것을 전제로, 최종 판단에 필요한 네 가지를
+//   ①프로필 ②면접평가 ③인적성 ④최종점수 로 묶는다. 발송은 작업자가 그룹웨어에서 직접 한다.
+//   네 요소가 모두 있어야 [본문 복사]·[첨부자료]가 활성화된다 — 반쪽짜리를 돌리면 판단이 안 된다.
+// ══════════════════════════════════════════
+function _ivMailData() {
+  const round = window.__currentRoundId || currentRound;
+  const apps = window.__currentRoundApps || [];
+  const details = window.__currentRoundIvDetails || [];
+  const aptMap = window.__currentRoundAptMap || {};
+  const confirmedNames = window.__currentRoundConfirmedNames || [];
+  const absentNames = window.__currentRoundAbsentNames || [];
+  const targets = confirmedNames.filter(n => !absentNames.includes(n));
+
+  const rows = targets.map(name => {
+    const app = apps.find(a => ((a.result && a.result.name) || '') === name);
+    const r = (app && app.result) || {};
+    const mine = details.filter(d => d.applicant === name && d.interviewer !== '시스템');
+    const gotScores = mine.map(d => Number(d.ivScore || 0)).filter(v => v);
+    const ivScore = gotScores.length ? Math.round(gotScores.reduce((a, b) => a + b, 0) / gotScores.length) : null;
+    const apt = aptMap[name];
+    const aptScore = apt && apt.score ? Number(apt.score) : null;
+    let total = null;
+    if (aptScore != null && ivScore != null) total = Math.round(aptScore * 0.5 + ivScore * 0.5);
+    const lic = Array.isArray(r.licenses) ? r.licenses.join(', ') : (r.licenses || '');
+    return {
+      name: name,
+      job: app ? (app.empType + ' ' + app.job) : '',
+      age: (typeof fmtAge === 'function') ? fmtAge(r.age, r.birth) : (r.age || ''),
+      education: r.education || '',
+      gpa: r.gpa ? (r.gpa + (r.gpa_scale ? '/' + r.gpa_scale : '')) : '',
+      career: r.career_years || '',
+      licenses: lic,
+      summary: r.summary || '',
+      docScore: Number(r.fit_score) || 0,
+      ivScore: ivScore, ivCount: mine.length, ivDetails: mine,
+      apt: apt || null, aptScore: aptScore,
+      total: total
+    };
+  });
+  rows.sort((a, b) => (b.total == null ? -1 : b.total) - (a.total == null ? -1 : a.total));
+  rows.forEach((x, i) => { x.rank = i + 1; });
+
+  const missIv = rows.filter(x => x.ivScore == null).map(x => x.name);
+  const missApt = rows.filter(x => x.aptScore == null).map(x => x.name);
+  const missProfile = rows.filter(x => !x.education && !x.summary).map(x => x.name);
+  return { round: round, rows: rows, missIv: missIv, missApt: missApt, missProfile: missProfile,
+           ready: rows.length > 0 && !missIv.length && !missApt.length };
+}
+
+function openIvMailModal() {
+  if (!isAdmin) { toast('관리자만 사용할 수 있습니다', 'err'); return; }
+  const d = _ivMailData();
+  if (!d.rows.length) { toast('면접 확정자가 없습니다 — 회차를 먼저 불러와 주세요', 'err'); return; }
+  window.__ivMailD = d;
+  document.getElementById('ivMailModal').classList.add('on');
+  renderIvMailPreview();
+}
+function closeIvMailModal() { document.getElementById('ivMailModal').classList.remove('on'); }
+
+function renderIvMailPreview() {
+  const d = window.__ivMailD; if (!d) return;
+  d.deadline = (document.getElementById('imDeadline') || {}).value || '';
+  d.note = (document.getElementById('imNote') || {}).value || '';
+
+  // 준비 상태 — 무엇이 없어서 못 만드는지 이름까지 보여준다
+  const chip = (ok, label, names) => `<div style="display:flex;align-items:center;gap:7px;padding:5px 0;font-size:13px">
+      <span style="color:${ok ? 'var(--green)' : 'var(--red)'};font-weight:700">${ok ? '✔' : '✖'}</span>
+      <span style="color:${ok ? 'var(--tx)' : 'var(--red)'}">${label}</span>
+      ${names && names.length ? `<span style="color:var(--tx2);font-size:12px">— 빠짐: ${_escapeHtml(names.join(', '))}</span>` : ''}
+    </div>`;
+  const readyEl = document.getElementById('ivMailReady');
+  readyEl.innerHTML = `<div style="background:${d.ready ? 'rgba(0,201,122,0.07)' : 'rgba(255,82,82,0.07)'};border:1px solid ${d.ready ? 'rgba(0,201,122,0.3)' : 'rgba(255,82,82,0.3)'};border-radius:8px;padding:9px 13px">
+      ${chip(true, `면접 대상자 ${d.rows.length}명`)}
+      ${chip(!d.missProfile.length, '지원자 프로필', d.missProfile)}
+      ${chip(!d.missIv.length, '면접 평가 결과', d.missIv)}
+      ${chip(!d.missApt.length, '인적성 결과', d.missApt)}
+      ${d.ready ? '' : '<div style="font-size:12px;color:var(--red);margin-top:5px">빠진 자료를 채워야 본문과 첨부자료를 만들 수 있습니다.</div>'}
+    </div>`;
+
+  const sub = document.getElementById('ivMailSubtitle');
+  if (sub) sub.textContent = `${_roundLabel(d.round)} · 면접 응시 ${d.rows.length}명`;
+  const subject = _ivMailSubject(d);
+  document.getElementById('imSubject').textContent = subject;
+
+  const html = _buildIvMailHtml(d);
+  const text = _buildIvMailText(d);
+  window.__ivMailCache = { html: html, text: text, subject: subject };
+  document.getElementById('ivMailPreview').innerHTML =
+    `<div style="background:#fff;padding:22px 26px;border-radius:6px">${html}</div>`;
+
+  // 자료가 다 없으면 본문·첨부 생성을 막는다
+  ['imCopyBtn', 'imAttachBtn'].forEach(id => {
+    const b = document.getElementById(id); if (!b) return;
+    b.disabled = !d.ready;
+    b.style.opacity = d.ready ? '1' : '0.45';
+    b.style.cursor = d.ready ? 'pointer' : 'not-allowed';
+    b.title = d.ready ? '' : '면접 평가와 인적성 결과가 모두 등록되어야 만들 수 있습니다';
+  });
+}
+
+function _ivMailSubject(d) {
+  return `[면접 결과 및 최종 의견 요청] ${_roundShort(d.round)}`;
+}
+
+function _ivMailRows(d) {
+  const BD = '1px solid rgb(190, 195, 204)';
+  const td = (t, extra) => `<td style="border:${BD};padding:7px 9px;text-align:center;${extra || ''}">${t}</td>`;
+  return d.rows.map(x => {
+    const strong = x.rank <= 2 ? 'font-weight:bold;' : '';
+    return `<tr>`
+      + td(x.rank, strong)
+      + td(_escapeHtml(x.name), strong + 'text-align:left;')
+      + td(x.aptScore != null ? x.aptScore : '-')
+      + td(x.ivScore != null ? x.ivScore : '-')
+      + td(x.total != null ? '<b>' + x.total + '</b>' : '-', 'background-color:rgb(244, 247, 252);')
+      + `</tr>`;
+  }).join('');
+}
+
+function _buildIvMailHtml(d) {
+  const NAVY = 'rgb(31, 56, 100)';
+  const th = (t, w) => `<td style="border:1px solid ${NAVY};padding:8px 10px;text-align:center;`
+    + `background-color:${NAVY};color:rgb(255, 255, 255);font-weight:bold;${w ? 'width:' + w + ';' : ''}">${t}</td>`;
+  const who = String(SENDER_INFO.senderName || '').replace(/\s*(차장|과장|대리|부장|팀장|사원|주임)\s*$/, '').trim();
+  const P = [];
+
+  P.push(`<p style="${GW_FONT.replace('10pt', '13pt')}margin:0px;line-height:1.5;font-weight:bold;color:${NAVY};">`
+    + `${_escapeHtml(_roundShort(d.round))} 면접 결과 — 최종 의견 요청</p>`);
+  P.push(`<p style="${GW_FONT.replace('10pt', '9pt').replace('rgb(0, 0, 0)', 'rgb(120, 125, 133)')}margin:2px 0px 0px 0px;line-height:1.5;">`
+    + `${_escapeHtml(_roundLabel(d.round))}</p>`);
+  P.push(`<p style="margin:10px 0px;line-height:0;"><span style="display:inline-block;width:100%;max-width:620px;border-top:2px solid ${NAVY};"></span></p>`);
+
+  P.push(_gwP(`안녕하십니까. ${_escapeHtml(SENDER_INFO.team)} ${_escapeHtml(who)}입니다.`));
+  P.push(_gwP('면접에 참여해 주셔서 감사합니다. 면접 평가와 인적성 검사 결과를 종합하여 아래와 같이 정리해 드립니다.'));
+  P.push(_gwBlank());
+
+  P.push(`<table style="border-collapse:collapse;${GW_FONT}width:100%;max-width:620px;">`
+    + `<tbody><tr>${th('순위', '48px')}${th('이름')}${th('인적성', '72px')}${th('면접', '72px')}${th('최종', '72px')}</tr>`
+    + _ivMailRows(d) + `</tbody></table>`);
+  P.push(_gwSmall('※ 최종 점수 = 인적성 × 0.5 + 면접 × 0.5 (각 100점 만점)'));
+  P.push(_gwBlank());
+
+  P.push(_gwBox(
+    `<p style="${GW_P}font-weight:bold;color:${NAVY};">첨부한 자료에 지원자별 프로필·면접 평가·인적성 결과가 정리되어 있습니다.</p>`
+    + `<p style="${GW_P}margin-top:7px;">검토하신 뒤 최종 의견을 `
+    + `${d.deadline ? '<b>' + _escapeHtml(d.deadline) + '</b>까지 ' : ''}회신해 주시기 바랍니다.</p>`
+    + (d.note ? `<p style="${GW_P}margin-top:7px;">${_escapeHtml(d.note)}</p>` : ''),
+    'rgb(244, 247, 252)', 'rgb(180, 195, 220)'));
+  P.push(_gwBlank());
+
+  P.push(_gwP('감사합니다.'));
+  P.push(_gwBlank());
+  P.push(`<p style="${GW_FONT.replace('rgb(0, 0, 0)', 'rgb(90, 96, 105)')}margin:0px;line-height:1.6;">`
+    + `${_escapeHtml(SENDER_INFO.companyFull)} ${_escapeHtml(SENDER_INFO.team)} `
+    + `<b style="color:rgb(0, 0, 0);">${_escapeHtml(SENDER_INFO.senderName)}</b></p>`);
+  return P.join('\n');
+}
+
+function _buildIvMailText(d) {
+  const L = [];
+  L.push(`${_roundShort(d.round)} 면접 결과 — 최종 의견 요청`);
+  L.push(`${_roundLabel(d.round)}`);
+  L.push('');
+  L.push(`안녕하십니까. ${SENDER_INFO.team} ${String(SENDER_INFO.senderName || '').replace(/\s*(차장|과장|대리|부장|팀장|사원|주임)\s*$/, '').trim()}입니다.`);
+  L.push('면접에 참여해 주셔서 감사합니다. 면접 평가와 인적성 검사 결과를 종합하여 아래와 같이 정리해 드립니다.');
+  L.push('');
+  L.push('순위  이름        인적성   면접   최종');
+  d.rows.forEach(x => {
+    L.push(String(x.rank).padEnd(4) + '  ' + String(x.name).padEnd(10)
+      + String(x.aptScore != null ? x.aptScore : '-').padStart(5)
+      + String(x.ivScore != null ? x.ivScore : '-').padStart(7)
+      + String(x.total != null ? x.total : '-').padStart(7));
+  });
+  L.push('');
+  L.push('※ 최종 점수 = 인적성 x 0.5 + 면접 x 0.5 (각 100점 만점)');
+  L.push('');
+  L.push('첨부한 자료에 지원자별 프로필/면접 평가/인적성 결과가 정리되어 있습니다.');
+  L.push('검토하신 뒤 최종 의견을' + (d.deadline ? ' ' + d.deadline + '까지' : '') + ' 회신해 주시기 바랍니다.');
+  if (d.note) L.push(d.note);
+  L.push('');
+  L.push('감사합니다.');
+  L.push('');
+  L.push(`${SENDER_INFO.companyFull} ${SENDER_INFO.team} ${SENDER_INFO.senderName}`);
+  return L.join('\n');
+}
+
+function copyIvMail(kind) {
+  const c = window.__ivMailCache;
+  if (!c) { toast('본문이 아직 만들어지지 않았습니다', 'err'); return; }
+  if (kind === 'source') { _openHtmlSourceWindow(c.html); return; }
+  if (kind === 'subject') { _fallbackCopy(c.subject || ''); return; }
+  if (kind === 'text') {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(c.text).then(() => toast('텍스트 복사됨 📋', 'ok'))
+        .catch(() => _fallbackCopy(c.text));
+    } else _fallbackCopy(c.text);
+    return;
+  }
+  if (_copyRichHtml(c.html)) toast('본문 복사됨 📋 — 그룹웨어에 붙여넣으세요', 'ok');
+  else _openHtmlSourceWindow(c.html);
+}
+
+// ── 첨부자료: 지원자별 A4 1장 (프로필 + 면접평가 + 인적성 + 최종점수) ──
+function printIvBrief() {
+  const d = window.__ivMailD || _ivMailData();
+  if (!d.ready) { toast('면접 평가와 인적성 결과가 모두 있어야 만들 수 있습니다', 'err'); return; }
+  const esc = t => String(t == null ? '' : t).replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const row = (k, v) => v ? '<tr><th>' + k + '</th><td>' + esc(v) + '</td></tr>' : '';
+
+  const pages = d.rows.map(x => {
+    const ivRows = x.ivDetails.map(iv =>
+      '<tr><td class="c">' + esc(iv.interviewer) + '</td><td class="c">' + (iv.ivScore || '-') + '</td>'
+      + '<td class="c">' + esc(iv.verdict || '-') + '</td><td class="op">' + (esc(iv.opinion) || '-') + '</td></tr>').join('');
+    const apt = x.apt || {};
+    return '<div class="page">'
+      + '<div class="hd"><div class="t">면접자 종합 자료</div>'
+      + '<div class="sub">' + esc(_roundLabel(d.round)) + '</div></div>'
+      + '<div class="rank">' + x.rank + '위</div>'
+      + '<div class="nm">' + esc(x.name) + '<span class="jb">' + esc(x.job) + '</span></div>'
+      + '<div class="ttl">1. 프로필</div>'
+      + '<table class="kv">' + row('나이', x.age) + row('최종학력', x.education + (x.gpa ? ' (학점 ' + x.gpa + ')' : ''))
+      + row('경력', x.career) + row('자격증', x.licenses) + row('지원서 평가', x.docScore + '점')
+      + (x.summary ? '<tr><th>요약</th><td class="sm">' + esc(x.summary) + '</td></tr>' : '') + '</table>'
+      + '<div class="ttl">2. 면접 평가 (' + x.ivCount + '명)</div>'
+      + '<table class="ev"><thead><tr><th>면접관</th><th>점수</th><th>판정</th><th>의견</th></tr></thead>'
+      + '<tbody>' + ivRows + '</tbody></table>'
+      + '<div class="ttl">3. 인적성 검사</div>'
+      + '<table class="kv">' + row('등급 / 점수', (apt.grade || '-') + ' / ' + (x.aptScore != null ? x.aptScore + '점' : '-'))
+      + row('평가', apt.eval) + row('제1 적성', apt.field1) + row('제2 적성', apt.field2) + '</table>'
+      + '<div class="ttl">4. 최종 점수</div>'
+      + '<table class="fin"><tr><th>인적성 (100)</th><td>' + (x.aptScore != null ? x.aptScore : '-') + '</td>'
+      + '<th>면접 (100)</th><td>' + (x.ivScore != null ? x.ivScore : '-') + '</td>'
+      + '<th>최종 (50+50)</th><td class="tot">' + (x.total != null ? x.total + '점' : '-') + '</td></tr></table>'
+      + '<div class="note">최종 점수 = 인적성 × 0.5 + 면접 × 0.5 · 지원서 점수와 투표 점수는 최종 순위에 반영하지 않습니다.</div>'
+      + '</div>';
+  }).join('');
+
+  const w = window.open('', '_blank');
+  if (!w) { toast('팝업이 차단되었습니다 — 허용 후 다시 시도해주세요', 'err'); return; }
+  const css = 'body{font-family:"Malgun Gothic",sans-serif;margin:0;color:#111}'
+    + '.page{padding:24px 30px;page-break-after:always}'
+    + '.page:last-child{page-break-after:auto}'
+    + '.hd{border-bottom:2px solid #111;padding-bottom:7px}'
+    + '.t{font-size:20px;font-weight:800;letter-spacing:2px}'
+    + '.sub{font-size:11px;color:#555;margin-top:2px}'
+    + '.rank{display:inline-block;background:#1f3864;color:#fff;font-size:12px;font-weight:700;padding:2px 10px;border-radius:10px;margin-top:12px}'
+    + '.nm{font-size:22px;font-weight:800;margin:5px 0 12px}'
+    + '.jb{font-size:12px;font-weight:500;color:#555;margin-left:9px}'
+    + '.ttl{font-size:13px;font-weight:700;border-left:3px solid #1f3864;padding-left:7px;margin:14px 0 6px}'
+    + 'table{width:100%;border-collapse:collapse;margin-bottom:4px}'
+    + 'th,td{border:1px solid #999;padding:5px 8px;font-size:12px;vertical-align:top}'
+    + '.kv th{background:#f2f2f2;width:96px;text-align:center;font-size:11px}'
+    + '.kv .sm{font-size:11px;line-height:1.6;color:#333}'
+    + '.ev thead th{background:#e8eef5;text-align:center;font-size:11px}'
+    + '.ev .c{text-align:center;white-space:nowrap}'
+    + '.ev .op{font-size:11px;line-height:1.55}'
+    + '.fin th{background:#f2f2f2;width:88px;text-align:center;font-size:11px}'
+    + '.fin td{text-align:center;font-size:14px;font-weight:700}'
+    + '.fin .tot{background:#f2f6fa;font-size:16px}'
+    + '.note{font-size:10px;color:#666;margin-top:6px}'
+    + '@media print{@page{size:A4;margin:11mm}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}';
+  w.document.write('<html><head><meta charset="UTF-8"><title>면접자 종합 자료</title><style>'
+    + css + '</style></head><body>' + pages + '</body></html>');
+  w.document.close();
+  setTimeout(function () { w.print(); }, 400);
+}
+
 function printIvEval(blank) {
   const round = window.__currentRoundId || currentRound;
   if (!round) { toast('회차를 먼저 선택해주세요', 'err'); return; }
@@ -11503,7 +11815,7 @@ async function generateAiReport(round, forceRegenerate = false) {
         const _dd = await _rr.json();
         if (!_dd.success) toast('AI 보고서 시트 저장 실패: ' + (_dd.message||'') + ' (화면에는 표시됨)', 'err');
       } catch(e) {
-        // v1.2.94: 콘솔에만 적으면 쓰는 사람은 모른다 — 다음에 캐시가 비어 재생성 비용이 또 든다
+        // v1.2.95: 콘솔에만 적으면 쓰는 사람은 모른다 — 다음에 캐시가 비어 재생성 비용이 또 든다
         toast('AI 보고서 시트 저장 실패 — ' + e.message + ' (화면에는 표시됨)', 'err');
       }
     }
