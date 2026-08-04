@@ -3,7 +3,7 @@
 //   (실제로 그때 겪은 증상은 캐시가 아니라 버튼이 흐려서 못 찾은 것이었지만,
 //    캐시 가능성을 배제하느라 시간을 많이 썼다. 앞으로는 그 변수를 지운다.)
 //   이 앱은 GAS 서버 없이는 어차피 못 쓰므로 HTML 오프라인 캐시의 실익이 없다.
-const CACHE_NAME = 'snct-recruitment-v1.2.99';
+const CACHE_NAME = 'snct-recruitment-v1.3.0';
 const STATIC_ASSETS = [];
 
 // 설치: 핵심 파일 캐시
