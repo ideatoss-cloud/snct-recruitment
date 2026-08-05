@@ -574,7 +574,7 @@ hr.dv{border:none;border-top:1px solid var(--bd);margin:13px 0;}
     📋 현재 회차: <span id="ivRoundBannerText"></span>
   </div>
   <div id="ivDateBannerIv" style="display:none;background:linear-gradient(135deg,rgba(0,201,122,0.12),rgba(0,201,122,0.06));border:1px solid rgba(0,201,122,0.3);border-radius:10px;padding:10px 16px;margin-bottom:12px;font-size:15px;font-weight:700;color:var(--green);text-align:center"></div>
-  <!-- v1.3.10: 화면 맨 위 진단 버튼은 뺐다(작업자 지시). 늘 떠 있을 이유가 없다.
+  <!-- v1.3.11: 화면 맨 위 진단 버튼은 뺐다(작업자 지시). 늘 떠 있을 이유가 없다.
        진단은 ①좌측 [면접 설정] 카드 ②질문지 카드 아래 ③질문 생성 실패 화면에 남아 있고,
        관리자는 [👁️ 면접관 시점으로 보기]로 직접 확인할 수 있다. -->
   <div class="il">
@@ -651,12 +651,12 @@ hr.dv{border:none;border-top:1px solid var(--bd);margin:13px 0;}
       </div>
     </div>
     <div class="iv-main">
-      <!-- ⚠️ v1.3.10: 순위 입력표를 사이드바 → **중앙**으로 옮겼다.
+      <!-- ⚠️ v1.3.11: 순위 입력표를 사이드바 → **중앙**으로 옮겼다.
            좌측 좌패에서는 면접관 4명만 돼도 가로 스크롤이 생겨 입력이 불편했다. -->
-      <!-- v1.3.10: 면접관이 **자기 순위**를 직접 넣는다.
+      <!-- v1.3.11: 면접관이 **자기 순위**를 직접 넣는다.
            별점 평가표(5항목 x 5점)는 실제로 아무도 쓰지 않아 숨겼다(작업자 확인 2026.08.04).
            저장은 saveMyRanking — 본인 행만 갈아끼우므로 다른 면접관 순위를 건드리지 않는다. -->
-      <!-- v1.3.10: 행동 관찰 기록 — 관리자(작업자)가 대기실에서 전원을 같은 눈으로 보고 남긴다.
+      <!-- v1.3.11: 행동 관찰 기록 — 관리자(작업자)가 대기실에서 전원을 같은 눈으로 보고 남긴다.
            ⚠️ **점수가 아니다.** 최종 점수 계산에 넣지 말 것. 축적해서 근속·성과와 대조하는 게 목적.
            ⚠️ 관찰자가 한 사람이라 회차 간 기준이 일정한 것이 이 데이터의 유일한 강점이다.
               여러 사람이 입력하게 바꾸면 값어치가 사라진다.
@@ -1145,7 +1145,7 @@ kim@gmail.com"
 <!-- ✅ v1.2.59: 투표 결과 공유 메일 본문 생성 (관리자 전용).
      면접관들에게 "이 투표 결과로 상위 N명을 면접 대상자로 하려는데 동의하시는지" 묻는 메일.
      실제 발송은 그룹웨어에서 하므로 여기서는 본문만 만들어 복사한다. -->
-<!-- v1.3.10: 면접 결과 종합 — 메일 본문 + 첨부자료.
+<!-- v1.3.11: 면접 결과 종합 — 메일 본문 + 첨부자료.
      발송은 작업자가 그룹웨어에서 직접 한다. 여기서는 붙여넣을 본문과 첨부용 A4만 만든다. -->
 <div class="ov" id="ivMailModal">
   <div class="modal" style="width:96vw;max-width:900px;max-height:92vh;display:flex;flex-direction:column">
@@ -1456,7 +1456,7 @@ kim@gmail.com"
   }
   localStorage.setItem('migration_v1_0_3_done', '1');
 })();
-// ⚠️ v1.3.10: 모델명은 localStorage에 남는다. 위 마이그레이션은 gpt-4o·gpt-4o-mini만
+// ⚠️ v1.3.11: 모델명은 localStorage에 남는다. 위 마이그레이션은 gpt-4o·gpt-4o-mini만
 //   고치고 1회만 돌기 때문에, 그 밖의 옛 모델명이 박힌 기기는 **강력 새로고침으로도
 //   안 나아서** 그 사용자만 계속 AI 호출이 실패한다. 유효 목록 밖이면 되돌린다.
 const VALID_MODELS = ['gpt-5.4-mini', 'gpt-5.4', 'gpt-5.5', 'gpt-4o-mini'];
@@ -1775,7 +1775,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.3.10';
+const APP_VERSION = 'v1.3.11';
 const APP_VERSION_DATE = '2026.07.29';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -1838,7 +1838,7 @@ const BONUS_ITEMS = [{label:'계열사 직원',score:5},{label:'관계사 직원
 const EDU_RANKS = ['고졸','전문대졸','대졸','대학원졸'];
 const EDU_LABELS = {'고졸':'고졸','전문대졸':'전문대졸','대졸':'대졸(4년제)','대학원졸':'대학원졸'};
 const DEFAULT_MIN_EDU = {크레인기사:'고졸',전기정비기사:'전문대졸',기계정비기사:'전문대졸',인사노무:'대졸',총무:'대졸',법무:'대졸',재무회계:'대졸',영업관리:'대졸',정비관리:'대졸',플레너:'대졸',경리:'고졸',정산:'전문대졸',온독:'전문대졸',센터:'전문대졸',변전:'전문대졸',시설관리:'전문대졸',포맨:'고졸',세관:'대졸',CFS:'고졸',안전보안:'전문대졸'};
-// ⚠️ v1.3.10 (2026.08.04): **별점 평가표를 숨긴다.**
+// ⚠️ v1.3.11 (2026.08.04): **별점 평가표를 숨긴다.**
 //   5항목 x 5점 별점은 만들어 뒀지만 면접관들이 실제로 쓰지 않았다(작업자 확인).
 //   면접 직후에 항목별 별점을 매기는 것보다 순위를 적는 쪽이 현실적이라, 순위 입력으로 일원화한다.
 //   되살리려면 이 값을 true로 바꾸면 된다 — 코드는 그대로 남겨 뒀다.
@@ -1884,7 +1884,7 @@ function effectiveResult(r) {
   return f || r.result || '';
 }
 
-// ✅ v1.3.10 (2026.08.03 작업자 지시): 최종 순위는 **인적성과 면접만**으로 따진다.
+// ✅ v1.3.11 (2026.08.03 작업자 지시): 최종 순위는 **인적성과 면접만**으로 따진다.
 //   서류점수·투표점수는 면접 대상자를 고르는 단계까지의 지표라 총점에서 뺀다.
 //   둘 다 100점 만점으로 받아 **각각 50점으로 환산해 합산**(= 가중평균과 같은 값).
 //   doc:0이면 calcWeightedTotal이 서류점수를 분모에서도 제외한다.
@@ -1927,10 +1927,10 @@ let _savedSession = {};
 try { _savedSession = JSON.parse(sessionStorage.getItem('snct_session')||'{}'); } catch(e){}
 let currentUser = _savedSession.user || '';
 let isAdmin = _savedSession.admin || false;
-// v1.3.10: 관리자가 '면접관 시점'을 켜두면 이 세션 동안 일반 사용자로 동작한다.
+// v1.3.11: 관리자가 '면접관 시점'을 켜두면 이 세션 동안 일반 사용자로 동작한다.
 //   화면·버튼·카드가 면접관에게 실제로 어떻게 보이는지 그대로 확인하기 위한 것.
 const VIEW_AS_USER = (function () { try { return localStorage.getItem('snct_view_as_user') === '1'; } catch (e) { return false; } })();
-// ⚠️ v1.3.10: **세션에는 진짜 권한을 저장해야 한다.**
+// ⚠️ v1.3.11: **세션에는 진짜 권한을 저장해야 한다.**
 //   v1.3.1~5는 면접관 시점의 낮아진 isAdmin을 그대로 세션에 적어, 시점을 꺼도
 //   'admin:false'가 남아 관리자로 돌아오지 못했다(2026.08.04 실제 발생 — 작업자가 갇혔다).
 //   isAdmin은 화면 표시용, REAL_IS_ADMIN은 실제 권한. 저장은 항상 후자로 한다.
@@ -2056,7 +2056,7 @@ window.onload = () => {
   updateJobSel();
   // ✅ v1.2.3: 회사 정보 설정 로드 (GAS _설정 시트)
   loadSettings();
-  renderViewAsBanner();   // v1.3.10: 면접관 시점이면 하단에 알림 띠를 띄운다
+  renderViewAsBanner();   // v1.3.11: 면접관 시점이면 하단에 알림 띠를 띄운다
   // 세션 복원
   if (currentUser) {
     restoreSession();
@@ -2386,7 +2386,7 @@ function sendActivityLog(actType, detail, round) {
 
 // ── 앱 공통 로그인 완료 처리 ──
 function finishLogin() {
-  // ⚠️ v1.3.10: 설정을 로그인 후 다시 불러온다.
+  // ⚠️ v1.3.11: 설정을 로그인 후 다시 불러온다.
   //   loadSettings()는 window.onload에서 돌아 **새 기기 첫 로그인 때는 이메일이 비어있다.**
   //   GAS가 미등록 호출에게는 담당자 휴대전화·회신주소를 빈 값으로 주므로,
   //   다시 불러오지 않으면 메일 서명에 연락처가 빠진다.
@@ -2421,7 +2421,7 @@ function finishLogin() {
     if (sb) sb.disabled = (applicants.length === 0);
   }
   try {
-    const sessionData = {user:currentUser, admin: REAL_IS_ADMIN, email:currentUserEmail};   // v1.3.10: 시점 미리보기 중에도 진짜 권한을 남긴다
+    const sessionData = {user:currentUser, admin: REAL_IS_ADMIN, email:currentUserEmail};   // v1.3.11: 시점 미리보기 중에도 진짜 권한을 남긴다
     sessionStorage.setItem('snct_session', JSON.stringify(sessionData));
     // ✅ localStorage도 갱신 — 새로고침 후 tryRestoreGoogleSession에서 isAdmin 정상 복원
     localStorage.setItem('snct_session', JSON.stringify(sessionData));
@@ -2457,8 +2457,8 @@ function tryRestoreGoogleSession() {
       currentUser = session.user;
       currentUserEmail = session.email;
       isAdmin = session.admin || false;
-      REAL_IS_ADMIN = isAdmin;              // v1.3.10
-      if (VIEW_AS_USER) isAdmin = false;   // v1.3.10: 면접관 시점 미리보기
+      REAL_IS_ADMIN = isAdmin;              // v1.3.11
+      if (VIEW_AS_USER) isAdmin = false;   // v1.3.11: 면접관 시점 미리보기
       return true;
     } catch(e) { return false; }
   }
@@ -2542,8 +2542,8 @@ async function checkAndProceedLogin(name, email) {
         isAdmin = data.isAdmin || isAdmin;
         if (data.name) currentUser = data.name;
       }
-      REAL_IS_ADMIN = isAdmin;              // v1.3.10: 저장·복구는 이 값을 쓴다
-      if (VIEW_AS_USER) isAdmin = false;    // 화면 표시만 낮춘다   // v1.3.10: 면접관 시점 미리보기
+      REAL_IS_ADMIN = isAdmin;              // v1.3.11: 저장·복구는 이 값을 쓴다
+      if (VIEW_AS_USER) isAdmin = false;    // 화면 표시만 낮춘다   // v1.3.11: 면접관 시점 미리보기
     } catch(e) { /* GAS 오류 시 로컬 판단 fallback */ }
   }
   finishLogin();
@@ -2552,14 +2552,14 @@ async function checkAndProceedLogin(name, email) {
 // ── 사용자 관리 ──
 var _userList = [];
 
-// ✅ v1.3.10: 면접관 시점 미리보기 — 켜고 끌 때마다 새로고침해 초기화부터 다시 탄다
+// ✅ v1.3.11: 면접관 시점 미리보기 — 켜고 끌 때마다 새로고침해 초기화부터 다시 탄다
 function toggleViewAsUser() {
   let on = false;
   try { on = localStorage.getItem('snct_view_as_user') === '1'; } catch (e) {}
   try {
     if (on) {
       localStorage.removeItem('snct_view_as_user');
-      // v1.3.10: 예전 버전에서 admin:false로 굳어버린 세션을 여기서 되살린다.
+      // v1.3.11: 예전 버전에서 admin:false로 굳어버린 세션을 여기서 되살린다.
       //   복구할 값이 없으면 세션을 지워 재로그인으로 다시 판정받게 한다.
       ['localStorage', 'sessionStorage'].forEach(function (st) {
         try {
@@ -2591,11 +2591,11 @@ function renderViewAsBanner() {
   if (document.body) document.body.style.paddingBottom = '44px';
 }
 
-// v1.3.10: 배너가 어떤 이유로든 안 뜨는 경우를 대비한 안전장치.
+// v1.3.11: 배너가 어떤 이유로든 안 뜨는 경우를 대비한 안전장치.
 //   면접관 시점을 켜 두고 되돌아오지 못하면 관리자가 아무것도 못 한다.
 //   ① 로드 직후 한 번 더 시도 ② 어디서든 Alt+A 로 즉시 복귀
 if (VIEW_AS_USER) {
-  // ⚠️ v1.3.10: 배너가 **사라지는 일이 실제로 있었다**(2026.08.04). 화면을 다시 그리는 코드가
+  // ⚠️ v1.3.11: 배너가 **사라지는 일이 실제로 있었다**(2026.08.04). 화면을 다시 그리는 코드가
   //   붙여둔 요소를 날린 것으로 보인다. 되돌아오지 못하면 관리자가 아무것도 못 하므로
   //   1초마다 살아 있는지 보고 없으면 다시 붙인다. 비용이 거의 없는 안전장치다.
   setInterval(function () { try { renderViewAsBanner(); } catch (e) {} }, 1000);
@@ -5276,7 +5276,7 @@ async function callOpenAI(prompt, isJson=true, opts={}) {
       }
       return parsed;
     }
-    // v1.3.10: 원인을 알 수 있게 응답 앞부분을 함께 싣는다
+    // v1.3.11: 원인을 알 수 있게 응답 앞부분을 함께 싣는다
     throw new Error('JSON 파싱 실패 — 응답: ' + String(text).slice(0, 200));
   }
 }
@@ -5710,7 +5710,7 @@ ${reqLic?`⚠️필수자격증: ${reqLic} — 최종취득 여부만 licenses�
   ⚠️분기 점수는 위 점수 기준표에 실제로 적힌 값만 사용할 것. 표에 없는 값을 만들어내지 말 것
 
 출력JSON:
-{"name":"이름","age":"만나이(숫자만, 예:30). ⚠️지원서에 적힌 나이를 그대로 옮기지 말 것 — 연나이로 적거나 잘못 적은 경우가 있다. 반드시 birth(생년월일)를 기준으로 오늘 날짜에 맞춰 계산한 만 나이를 넣을 것. 생년월일을 못 읽으면 기재된 나이를 넣되 그때만 허용","birth":"생년월일(YYYY.MM.DD 형식, 예:1996.05.14). 일자를 알 수 없으면 생년월까지만 YYYY.MM. 형식으로","gender":"성별 '남' 또는 '여'. ⚠️지원서 양식에는 '군필/면제/미해당' 같은 선택지가 모두 인쇄되어 있다. 글자가 보인다는 이유로 판단하지 말고, 체크 표시(☑ ■ ✓ ●)가 된 항목 또는 실제로 값이 채워진 칸만 근거로 삼을 것. 판단 순서: ①이력서에 성별이 명시 → 그대로 ①-2 출신 학교가 여자대학교·여자고등학교(여대·여고·여상 포함, 학부/고교 기준. 여대 '대학원'은 남성도 가능하므로 제외) → 여 ②병역란의 군별·계급·복무기간 칸에 실제 내용이 채워져 있음(예: 육군/병장/2016.03~2018.01) → 남 ③'군필'에 체크 표시가 되어 있음 → 남 ④자기소개서·경력 본문에 군 복무 이행이 서술됨(예: '군 복무 중', '전역 후', '병장 만기제대', 보직 언급) → 남 ⑤'미해당' 또는 '면제'에 체크 표시 → 여(면제는 남성일 수도 있으므로 '미해당'일 때만 여로 판단) ⑥위 근거가 없거나, 스캔·OCR 등으로 체크 표시를 구분할 수 없으면 반드시 빈 문자열. 이름·한자·영문표기로 추측하는 것은 절대 금지","gender_basis":"성별 판단 근거 — ①이면 '기재', ②③④⑤면 '병역', 근거 없거나 체크 구분 불가면 '없음'","contact":"연락처","email":"이메일주소(없으면 빈문자열)","residence":"거주지 — 시/군/구 + 도로명까지만 (예: '인천시 서구 봉오대로', '서울시 강남구 테헤란로'). 상세주소(동/호수)는 넣지 말 것. 지원서에 주소가 없으면 빈 문자열","education":"최종학력 — 학교명+전공+졸업여부를 반드시 함께 (예: '인하대학교 금융투자학과 재학', '홍익대학교 경영학과 졸업예정', '경희대학교 경영학과 졸업')","education_status":"위 최종학력의 상태. 졸업/졸업예정/재학/휴학/수료/중퇴/불명 중 정확히 하나만. ⚠️학력사항 표의 '구분(졸업 등)' 칸을 그대로 따를 것. 재학기간 종료일이 비어 있거나 미래 날짜면 '재학'","education_all":"학력사항 표의 모든 학교를 '학교명 전공 상태' 형식으로 최신순 나열 (예: '인하대학교 금융투자학과 재학, 안산국제비즈니스고등학교 졸업')","gpa":"학점(숫자만, 예:3.8. 없으면 null)","gpa_scale":"만점기준(4.5만 인정. 없으면 null)","career_years":"총경력","last_company":"최근직장","licenses":["최종취득 자격증명만 한 개씩 배열 원소로. 필기합격·응시중·취득예정은 제외하고 최종합격·취득만. 쉼표로 이어붙인 한 개의 문자열로 반환 금지"],"career_history":[{"company":"회사명","position":"직책","period":"재직기간","duration":"재직연수","tasks":"담당업무","relevance":"직무관련성(높음/보통/낮음/없음)"}],"score_breakdown":{"항목명":{"score":점수,"max":최대점수,"reason":"산정근거"}},"fit_score":score_breakdown의 모든 항목 score를 그대로 더한 단순합계(학점가산 등 위 기준표의 가산 항목도 score_breakdown에 항목으로 넣고 이 합계에 포함할 것. score_breakdown에 없는 임의 가점을 따로 더하는 것만 금지),"fit_comment":"항목별근거포함 종합의견 3~4문장","strengths":["강점1","강점2","강점3"],"concerns":["우려1","우려2"],"interview_points":["포인트1","포인트2","포인트3","포인트4"],"loyalty_risk":true또는false,"summary":"한줄요약"}
+{"name":"이름","age":"만나이(숫자만, 예:30). ⚠️지원서에 적힌 나이를 그대로 옮기지 말 것 — 연나이로 적거나 잘못 적은 경우가 있다. 반드시 birth(생년월일)를 기준으로 오늘 날짜에 맞춰 계산한 만 나이를 넣을 것. 생년월일을 못 읽으면 기재된 나이를 넣되 그때만 허용","birth":"생년월일 — **반드시 일자까지** YYYY.MM.DD (예:1994.07.13). ⚠지원서 상단 인적사항표의 '생년월일' 칸을 그대로 옮겨 적을 것. 일자를 임의로 빼지 말 것 — 채용검진 명단에 쓰이므로 일자가 빠지면 쓸 수 없다. 지원서 어디에도 일자가 없을 때만 예외적으로 YYYY.MM. 형식 허용","gender":"성별 '남' 또는 '여'. ⚠️지원서 양식에는 '군필/면제/미해당' 같은 선택지가 모두 인쇄되어 있다. 글자가 보인다는 이유로 판단하지 말고, 체크 표시(☑ ■ ✓ ●)가 된 항목 또는 실제로 값이 채워진 칸만 근거로 삼을 것. 판단 순서: ①이력서에 성별이 명시 → 그대로 ①-2 출신 학교가 여자대학교·여자고등학교(여대·여고·여상 포함, 학부/고교 기준. 여대 '대학원'은 남성도 가능하므로 제외) → 여 ②병역란의 군별·계급·복무기간 칸에 실제 내용이 채워져 있음(예: 육군/병장/2016.03~2018.01) → 남 ③'군필'에 체크 표시가 되어 있음 → 남 ④자기소개서·경력 본문에 군 복무 이행이 서술됨(예: '군 복무 중', '전역 후', '병장 만기제대', 보직 언급) → 남 ⑤'미해당' 또는 '면제'에 체크 표시 → 여(면제는 남성일 수도 있으므로 '미해당'일 때만 여로 판단) ⑥위 근거가 없거나, 스캔·OCR 등으로 체크 표시를 구분할 수 없으면 반드시 빈 문자열. 이름·한자·영문표기로 추측하는 것은 절대 금지","gender_basis":"성별 판단 근거 — ①이면 '기재', ②③④⑤면 '병역', 근거 없거나 체크 구분 불가면 '없음'","contact":"연락처","email":"이메일주소(없으면 빈문자열)","residence":"거주지 — 시/군/구 + 도로명까지만 (예: '인천시 서구 봉오대로', '서울시 강남구 테헤란로'). 상세주소(동/호수)는 넣지 말 것. 지원서에 주소가 없으면 빈 문자열","education":"최종학력 — 학교명+전공+졸업여부를 반드시 함께 (예: '인하대학교 금융투자학과 재학', '홍익대학교 경영학과 졸업예정', '경희대학교 경영학과 졸업')","education_status":"위 최종학력의 상태. 졸업/졸업예정/재학/휴학/수료/중퇴/불명 중 정확히 하나만. ⚠️학력사항 표의 '구분(졸업 등)' 칸을 그대로 따를 것. 재학기간 종료일이 비어 있거나 미래 날짜면 '재학'","education_all":"학력사항 표의 모든 학교를 '학교명 전공 상태' 형식으로 최신순 나열 (예: '인하대학교 금융투자학과 재학, 안산국제비즈니스고등학교 졸업')","gpa":"학점(숫자만, 예:3.8. 없으면 null)","gpa_scale":"만점기준(4.5만 인정. 없으면 null)","career_years":"총경력","last_company":"최근직장","licenses":["최종취득 자격증명만 한 개씩 배열 원소로. 필기합격·응시중·취득예정은 제외하고 최종합격·취득만. 쉼표로 이어붙인 한 개의 문자열로 반환 금지"],"career_history":[{"company":"회사명","position":"직책","period":"재직기간","duration":"재직연수","tasks":"담당업무","relevance":"직무관련성(높음/보통/낮음/없음)"}],"score_breakdown":{"항목명":{"score":점수,"max":최대점수,"reason":"산정근거"}},"fit_score":score_breakdown의 모든 항목 score를 그대로 더한 단순합계(학점가산 등 위 기준표의 가산 항목도 score_breakdown에 항목으로 넣고 이 합계에 포함할 것. score_breakdown에 없는 임의 가점을 따로 더하는 것만 금지),"fit_comment":"항목별근거포함 종합의견 3~4문장","strengths":["강점1","강점2","강점3"],"concerns":["우려1","우려2"],"interview_points":["포인트1","포인트2","포인트3","포인트4"],"loyalty_risk":true또는false,"summary":"한줄요약"}
 
 ⚠️중요: 이력서 원문에 실제로 기재된 내용만 사용. 없는 정보는 절대 추측·창작 금지. 불명확한 항목은 "-"로 표기.
 
@@ -7482,7 +7482,7 @@ async function refreshIvApplicants() {
   if (!confirmedList.length && GAS_URL && currentRound) {
     await checkConfirmed();
   }
-  // ✅ v1.3.10: 인적성도 시트에서 불러온다.
+  // ✅ v1.3.11: 인적성도 시트에서 불러온다.
   //   예전엔 업로드한 사람(관리자)의 메모리에만 있어서 **면접관 화면엔 인적성이 안 보였다.**
   //   검사지 원본 링크(file)도 여기서 함께 받아 [검사지 원본 보기] 버튼에 쓴다.
   if (!aptitudeResults.length && GAS_URL && currentRound) {
@@ -7536,7 +7536,7 @@ async function refreshIvApplicants() {
   const ivInput = document.getElementById('ivIv');
   if (ivInput && currentUser && !ivInput.value) ivInput.value = currentUser;
 
-  // v1.3.10: 내 순위 입력 카드 — 확정자가 있으면 띄우고, 저장분이 있으면 채워준다
+  // v1.3.11: 내 순위 입력 카드 — 확정자가 있으면 띄우고, 저장분이 있으면 채워준다
   try {
     if (!Object.keys(myRankData).length && GAS_URL && currentRound && myRankTargets().length) {
       const _r = await fetch(GAS_URL + '?action=getIvRanking&userEmail=' + encodeURIComponent(currentUserEmail || '')
@@ -7547,7 +7547,7 @@ async function refreshIvApplicants() {
     }
   } catch (e) {}
   renderMyRanking();
-  // v1.3.10: 행동 관찰 — 저장분을 불러와 채운 뒤 그린다
+  // v1.3.11: 행동 관찰 — 저장분을 불러와 채운 뒤 그린다
   if (isAdmin && !Object.keys(obsData).length) { try { await loadObservations(); } catch (e) {} }
   renderObservation();
 
@@ -7599,7 +7599,7 @@ async function onIvAppChange() {
   try {
     const res = await fetch(GAS_URL + '?action=getIvQuestions&userEmail='+encodeURIComponent(currentUserEmail||'')+'&round=' + encodeURIComponent(currentRound) + '&appId=' + encodeURIComponent(aId));
     const data = await res.json();
-    // ✅ v1.3.10: 조회 실패 사유를 화면에 드러낸다.
+    // ✅ v1.3.11: 조회 실패 사유를 화면에 드러낸다.
     //   지금까지는 조용히 생성 버튼으로 떨어져서
     //   "저장본이 없다"와 "권한이 없다"를 구분할 수 없었다.
     if (!data.success || !data.questions) {
@@ -7742,7 +7742,7 @@ ${a.pdfText.slice(0,3000)}` : '';
       if (results[i].status === 'fulfilled') {
         const r2 = results[i].value;
         list = Array.isArray(r2) ? r2 : (r2 && (r2.questions || r2.data || r2.items) || []);
-        // ⚠️ v1.3.10: 응답은 왔는데 questions 키가 없으면 예전엔 조용히 빈 배열이 됐다.
+        // ⚠️ v1.3.11: 응답은 왔는데 questions 키가 없으면 예전엔 조용히 빈 배열이 됐다.
         //   무슨 모양으로 왔는지 남겨야 원인을 안다.
         if (!list.length) console.warn('[질문지 ' + type + '] 응답에 questions 없음. 받은 키:',
           r2 && typeof r2 === 'object' ? Object.keys(r2) : typeof r2, r2);
@@ -8061,13 +8061,13 @@ function switchQType(type) {
   // 평가표는 그대로 유지 (renderIvPanel 호출 안 함)
 }
 
-// ✅ v1.3.10: 자가진단 — 면접관 화면에서 무엇이 비었거나 거부됐는지 한 번에 보여준다.
+// ✅ v1.3.11: 자가진단 — 면접관 화면에서 무엇이 비었거나 거부됐는지 한 번에 보여준다.
 //   관리자 기기에서는 재현이 안 되는 증상이라, 쓰는 사람이 직접 찍어 보낼 수 있어야 한다.
 async function ivSelfDiag() {
   const aId = document.getElementById('ivApp') ? document.getElementById('ivApp').value : '';
   const L = [];
   L.push('■ 채용 에이전트 상태 진단');
-  L.push('앱 버전: v1.3.10');
+  L.push('앱 버전: v1.3.11');
   L.push('로그인: ' + (currentUserEmail || '(비어있음 ← 문제)'));
   L.push('관리자: ' + (isAdmin ? '예' : '아니오'));
   L.push('선택된 회차: ' + (currentRound || '(비어있음 ← 문제)'));
@@ -8110,7 +8110,7 @@ async function regenQType(type) {
   try {
     const r2 = await callOpenAI(_buildQPrompt(a, type), true, {purpose:'ivQuestions'});
     const qs = Array.isArray(r2) ? r2 : (r2 && (r2.questions || r2.data || r2.items) || []);
-    // ⚠️ v1.3.10: 무엇을 받았는지 메시지에 담는다. 예전엔 '못 만들었습니다'로만 끝나 원인을 못 찾았다.
+    // ⚠️ v1.3.11: 무엇을 받았는지 메시지에 담는다. 예전엔 '못 만들었습니다'로만 끝나 원인을 못 찾았다.
     if (!qs.length) {
       const shape = (r2 && typeof r2 === 'object') ? ('키: ' + Object.keys(r2).join(', ')) : ('타입: ' + typeof r2);
       throw new Error('응답에 질문이 없습니다 (' + shape + ') ' + String(JSON.stringify(r2)).slice(0, 200));
@@ -8783,7 +8783,7 @@ ${pdfText.slice(0, 8000)}`;
     } else if (!currentRound) {
       toast('⚠️ 회차가 선택되지 않아 저장되지 않았습니다. 회차 선택 후 다시 업로드해주세요.', 'err');
     } else {
-      // ✅ v1.3.10: 원본 PDF를 함께 올리되(면접관이 검사지를 보려면 필요),
+      // ✅ v1.3.11: 원본 PDF를 함께 올리되(면접관이 검사지를 보려면 필요),
       //   **점수 저장이 원본 때문에 실패해서는 안 된다.** 파일이 크면 전송이 통째로 실패할 수 있어
       //   실패 시 원본을 빼고 점수만 한 번 더 보낸다. 점수가 먼저고 원본은 부가다.
       (async function saveApt() {
@@ -10141,7 +10141,7 @@ async function saveIvDate() {
   showIvDateBanner(round);
   // GAS에도 저장 (다른 PC에서 조회 가능)
   if (GAS_URL) {
-      // ⚠️ v1.3.10: 예전에는 GAS가 거부해도 '저장 완료'라고 알렸다.
+      // ⚠️ v1.3.11: 예전에는 GAS가 거부해도 '저장 완료'라고 알렸다.
       //   질문지가 같은 이유로 몇 주간 조용히 안 저장됐다(2026.08.01).
       try {
       const _r = await fetch(GAS_URL, {
@@ -10193,7 +10193,7 @@ async function saveIvDateManual() {
     if (el) { el.textContent = display; el.style.display = 'block'; }
   });
   if (GAS_URL) {
-      // ⚠️ v1.3.10: 예전에는 GAS가 거부해도 '저장 완료'라고 알렸다.
+      // ⚠️ v1.3.11: 예전에는 GAS가 거부해도 '저장 완료'라고 알렸다.
       //   질문지가 같은 이유로 몇 주간 조용히 안 저장됐다(2026.08.01).
       try {
       const _r = await fetch(GAS_URL, {
@@ -10380,12 +10380,12 @@ async function loadResultDetail() {
       (aptData.records || []).forEach(r => { aptMap[r.name] = r; });
       window.__aptFile = aptData.file || null;
     } catch(e) {}
-    // ✅ v1.3.10: 면접관별 **순위 원본**도 가져온다 — 첨부자료에 누가 몇 위를 줬는지 싣기 위해.
+    // ✅ v1.3.11: 면접관별 **순위 원본**도 가져온다 — 첨부자료에 누가 몇 위를 줬는지 싣기 위해.
     //   집계(_면접집계)에는 평균 환산 점수만 남아 개별 면접관 판단이 보이지 않는다.
     try {
       const rkRes = await fetch(GAS_URL+'?action=getIvRanking&userEmail='+encodeURIComponent(currentUserEmail||'')+'&round='+encodeURIComponent(round));
       const rkData = await rkRes.json();
-      if (rkData.success) window.__currentRoundRanking = rkData;   // v1.3.10: 검사지 원본 링크
+      if (rkData.success) window.__currentRoundRanking = rkData;   // v1.3.11: 검사지 원본 링크
     } catch(e) {}
     // ✅ v1.2.58: 투표 점수(면접 대상자 선발 투표)를 표·인쇄·엑셀에 함께 보여주기 위해 조회.
     //   실패해도 빈 맵이라 나머지 화면은 그대로 뜬다.
@@ -10398,7 +10398,7 @@ async function loadResultDetail() {
     // ✅ v1.0.49: 이메일 발송 모달도 confirmedNames/absentNames 필요 — 같이 캐시
     window.__currentRoundApps = apps;
     window.__currentRoundIvResults = ivResults2;
-    // v1.3.10: 면접 평가지 출력용 — 면접관별 상세(항목별 점수 포함)와 인적성 점수
+    // v1.3.11: 면접 평가지 출력용 — 면접관별 상세(항목별 점수 포함)와 인적성 점수
     window.__currentRoundIvDetails = ivDetails;
     window.__currentRoundAptMap = aptMap;
     window.__currentRoundId = round;
@@ -10644,7 +10644,7 @@ function renderDocResultTable(apps, confirmedNames, ivMap, aptMap = {}, absentNa
         return `<tr class="${rowClass}" style="${initHide}${disq?'opacity:0.5':''}">
           <td style="font-weight:700">${r.name||'-'}</td>
           <td style="font-size:13px">${a.empType} ${a.job}</td>
-          <!-- v1.3.10 (작업자 지시): 지원서점수·투표점수·득표 열 제거.
+          <!-- v1.3.11 (작업자 지시): 지원서점수·투표점수·득표 열 제거.
                면접 대상자를 고르는 단계까지의 지표라 최종 순위와 무관하다.
                필요하면 [지원서 검토] 탭과 엑셀 내보내기에 그대로 남아 있다. -->
           <td style="font-family:'DM Mono',monospace;color:${aptColor};font-size:13px">${aptStr}</td>
@@ -10679,22 +10679,22 @@ function filterDocResult(mode) {
 }
 
 // ✅ v1.0.29: 전체 지원자 현황 PDF 출력 (현재 토글 필터 반영)
-// 2026.08.04 v1.3.10: 면접 평가지 출력 — 면접관 요청(8/3 면접 당일 접수, 회차 종료 후 착수).
+// 2026.08.04 v1.3.11: 면접 평가지 출력 — 면접관 요청(8/3 면접 당일 접수, 회차 종료 후 착수).
 //   blank=true 면 점수·의견을 비운 **수기용 양식**, false면 저장된 평가를 채운 **결과 보관본**.
 //   지원자 1명당 A4 1장. 항목별 점수는 GAS getIvResults의 details.scores에서 온다(@93부터 제공).
 // ══════════════════════════════════════════
-// 면접 결과 종합 — 메일 본문 + 첨부자료 (v1.3.10, 2026.08.04 작업자 요청)
+// 면접 결과 종합 — 메일 본문 + 첨부자료 (v1.3.11, 2026.08.04 작업자 요청)
 //   면접관이 프로그램에 들어와 보지 않을 것을 전제로, 최종 판단에 필요한 네 가지를
 //   ①프로필 ②면접평가 ③인적성 ④최종점수 로 묶는다. 발송은 작업자가 그룹웨어에서 직접 한다.
 //   네 요소가 모두 있어야 [본문 복사]·[첨부자료]가 활성화된다 — 반쪽짜리를 돌리면 판단이 안 된다.
 // ══════════════════════════════════════════
 // ══════════════════════════════════════════
-// 내 면접 순위 입력 (v1.3.10, 2026.08.04)
+// 내 면접 순위 입력 (v1.3.11, 2026.08.04)
 //   면접관들이 별점 평가표를 쓰지 않아 순위 입력으로 일원화했다.
 //   관리자용 일괄 입력(ivRankCard)과 달리 **본인 행만** 저장한다(GAS saveMyRanking).
 // ══════════════════════════════════════════
 // ══════════════════════════════════════════
-// 행동 관찰 기록 (v1.3.10, 2026.08.04 작업자 요청)
+// 행동 관찰 기록 (v1.3.11, 2026.08.04 작업자 요청)
 //   "대기실에서 2시간 같이 있는데 그때 본 걸 점수 말고 참고 데이터로 남길 수 없나"
 //   작업자가 제3의 관찰자로서 전원을 같은 조건에서 본다 → 회차 간 비교가 되는 유일한 기록.
 //   ⚠️ 점수 계산에 절대 넣지 말 것. 면접관 배포 자료에도 넣지 않는다(판단이 관찰에 끌려간다).
@@ -10958,7 +10958,7 @@ function _ivMailData() {
     const r = (app && app.result) || {};
     const mine = details.filter(d => d.applicant === name && d.interviewer !== '시스템');
     const gotScores = mine.map(d => Number(d.ivScore || 0)).filter(v => v);
-    // ⚠️ v1.3.10: 면접 평가를 **순위 입력**으로 하면 _면접결과(details)가 비고 _순위 시트에만 남는다.
+    // ⚠️ v1.3.11: 면접 평가를 **순위 입력**으로 하면 _면접결과(details)가 비고 _순위 시트에만 남는다.
     //   집계 시트(_면접집계)는 두 방식을 통합해 두므로, details가 없으면 거기서 가져온다.
     //   (2026.08.04: 집계 화면엔 점수가 멀쩡히 뜨는데 메일에선 "면접 평가 없음"으로 나왔다)
     const agg = (window.__currentRoundIvResults || []).find(g => (g.name || '') === name);
@@ -10972,7 +10972,7 @@ function _ivMailData() {
     const lic = Array.isArray(r.licenses) ? r.licenses.join(', ') : (r.licenses || '');
     return {
       name: name,
-      id: app ? app.id : null,          // v1.3.10: 순위 시트는 appId 기준이라 필요
+      id: app ? app.id : null,          // v1.3.11: 순위 시트는 appId 기준이라 필요
       job: app ? (app.empType + ' ' + app.job) : '',
       age: (typeof fmtAge === 'function') ? fmtAge(r.age, r.birth) : (r.age || ''),
       education: r.education || '',
@@ -11156,7 +11156,7 @@ function copyIvMail(kind) {
 async function printIvBrief() {
   const d = window.__ivMailD || _ivMailData();
   if (!d.ready) { toast('면접 평가와 인적성 결과가 모두 있어야 만들 수 있습니다', 'err'); return; }
-  // ⚠️ v1.3.10: 순위 원본은 회차를 새로 불러올 때만 받아왔다. 이미 열어둔 화면에는 없어서
+  // ⚠️ v1.3.11: 순위 원본은 회차를 새로 불러올 때만 받아왔다. 이미 열어둔 화면에는 없어서
   //   면접관별 순위 칸이 통째로 비었다(2026.08.04 지적). 없으면 여기서 바로 가져온다.
   let rankErrMsg = '';
   if (!window.__currentRoundRanking && GAS_URL && d.round) {
@@ -11172,18 +11172,18 @@ async function printIvBrief() {
   const row = (k, v) => v ? '<tr><th>' + k + '</th><td>' + esc(v) + '</td></tr>' : '';
 
   const pages = d.rows.map(x => {
-    // v1.3.10: 순위 입력으로 평가한 경우 면접관별 의견이 없다 — 집계값으로 한 줄 표시한다
+    // v1.3.11: 순위 입력으로 평가한 경우 면접관별 의견이 없다 — 집계값으로 한 줄 표시한다
     const ivRows = x.ivDetails.length
       ? x.ivDetails.map(iv =>
           '<tr><td class="c">' + esc(iv.interviewer) + '</td><td class="c">' + (iv.ivScore || '-') + '</td>'
           + '<td class="c">' + esc(iv.verdict || '-') + '</td><td class="op">' + (esc(iv.opinion) || '-') + '</td></tr>').join('')
       : (function () {
-          // v1.3.10: 순위 평가는 면접관마다 **몇 위를 줬는지**가 판단 근거다. 그걸 그대로 싣는다.
+          // v1.3.11: 순위 평가는 면접관마다 **몇 위를 줬는지**가 판단 근거다. 그걸 그대로 싣는다.
           const rk = window.__currentRoundRanking || {};
           const rankings = rk.rankings || {};
           const ivs = (rk.interviewers && rk.interviewers.length ? rk.interviewers
                        : (x.ivPanel ? x.ivPanel.split(',').map(t => t.trim()).filter(Boolean) : []));
-          // v1.3.10: 지원자ID가 어긋나도 이름으로 찾을 수 있게 역색인을 만든다.
+          // v1.3.11: 지원자ID가 어긋나도 이름으로 찾을 수 있게 역색인을 만든다.
           //   (분석 데이터를 다시 저장하면 id가 바뀌는 경우가 있다)
           const nameIdx = {};
           Object.keys(rankings).forEach(iv2 => {
@@ -11266,7 +11266,7 @@ async function printIvBrief() {
     + '.fin .tot{background:#f2f6fa;font-size:16px}'
     + '.note{font-size:10px;color:#666;margin-top:6px}'
     + '@media print{@page{size:A4;margin:11mm}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}';
-  // v1.3.10: PDF로 저장할 때 이 제목이 기본 파일명이 된다 — 회차·면접일자를 담아 구분되게 한다
+  // v1.3.11: PDF로 저장할 때 이 제목이 기본 파일명이 된다 — 회차·면접일자를 담아 구분되게 한다
   let _ivd = '';
   try {
     const _st = JSON.parse(localStorage.getItem(LS_IV_DATE) || '{}');
@@ -11869,10 +11869,10 @@ async function openHealthCheckListModal(round) {
     if (iv && !absentNames.includes(r.name)) {
       const eff = effectiveResult(iv) || '';
       if (eff === '합격') {
-        // ⚠️ v1.3.10: AI 추출 스키마의 연락처 키는 **contact**다. 여기만 r.phone을 보고 있어
+        // ⚠️ v1.3.11: AI 추출 스키마의 연락처 키는 **contact**다. 여기만 r.phone을 보고 있어
         //   검진 명단의 연락처가 늘 비어 있었다(2026.08.04 작업자 지적). 다른 12곳은 전부 contact를 쓴다.
         passers.push({ name: r.name, phone: r.contact || r.phone || '', email: r.email, job: a.job || '',
-                       birth: r.birth || '', gender: r.gender || '' });   // v1.3.10: 주민번호 앞자리 자동 채움용
+                       birth: r.birth || '', gender: r.gender || '' });   // v1.3.11: 주민번호 앞자리 자동 채움용
       }
     }
   });
@@ -11905,12 +11905,12 @@ async function openHealthCheckListModal(round) {
   _renderHealthCheckList(passers, saved);
 }
 
-// v1.3.10: 생년월일 + 성별 → 주민등록번호 앞자리 (뒤 6자리는 x로 가린다)
+// v1.3.11: 생년월일 + 성별 → 주민등록번호 앞자리 (뒤 6자리는 x로 가린다)
 //   예) 1996.05.14 · 남 → 960514-1xxxxxx
 //   ⚠️ 일자까지 있어야 만든다. 'YYYY.MM.'처럼 일자가 없으면 만들지 않는다(추측 금지).
 //   ⚠️ 성별을 못 읽었으면 그 자리만 x로 둔다.
 function _rrnPrefix(birth, gender) {
-  // ⚠️ v1.3.10: 이번 회차 5명 전원이 'YYYY.MM.'까지만 저장돼 있었다(AI가 일자를 못 뽑음).
+  // ⚠️ v1.3.11: 이번 회차 5명 전원이 'YYYY.MM.'까지만 저장돼 있었다(AI가 일자를 못 뽑음).
   //   그래서 아무것도 안 채우면 매번 전부 손으로 쓰게 된다. **아는 데까지는 채우고**
   //   모르는 일자만 xx로 남겨 이력서 보고 두 글자만 고치게 한다.
   const full = String(birth || '').match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/);
@@ -11973,6 +11973,7 @@ function _renderHealthCheckList(passers, saved) {
   document.getElementById('healthCheckListBody').innerHTML = `
     <div style="background:rgba(14,165,233,0.06);border-left:3px solid #0ea5e9;padding:10px 14px;border-radius:4px;font-size:12px;color:#0ea5e9;margin-bottom:12px;line-height:1.7">
       💡 <b>주민등록번호 앞자리는 이력서의 생년월일·성별로 자동 채웠습니다</b>(예: 960514-1xxxxxx).<br>
+      일반검진 명단에는 <b>주민번호가 나가지 않습니다</b>(성명·연락처만) — 화면 확인용입니다.<br>
       <b>특수검진</b>은 뒷자리까지 병원에 필요하니, 대상자가 메일로 회신한 번호로 채워 주세요.
       입력 후 [💾 저장] → [📋 명단 복사]로 병원에 전달하시면 됩니다.
     </div>
@@ -12100,6 +12101,14 @@ function copyHealthCheckList() {
   }
 
   const text = sections.join('\n\n');
+
+  // ⚠️ v1.3.11: 특수검진은 **완전한 주민번호**가 병원에 필요하다.
+  //   자동 채움이 남긴 x가 그대로 나가면 병원에서 되돌아온다. 복사는 하되 반드시 알린다.
+  const incomplete = special.filter(x => !x.rrn || /x/i.test(x.rrn) || x.rrn.replace(/[^0-9]/g, '').length < 13);
+  if (incomplete.length) {
+    toast('⚠️ 특수검진 ' + incomplete.length + '명의 주민번호가 아직 완성되지 않았습니다: '
+      + incomplete.map(x => x.name).join(', '), 'err');
+  }
 
   // 클립보드 복사
   if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -12309,7 +12318,7 @@ async function generateAiReport(round, forceRegenerate = false) {
         const _dd = await _rr.json();
         if (!_dd.success) toast('AI 보고서 시트 저장 실패: ' + (_dd.message||'') + ' (화면에는 표시됨)', 'err');
       } catch(e) {
-        // v1.3.10: 콘솔에만 적으면 쓰는 사람은 모른다 — 다음에 캐시가 비어 재생성 비용이 또 든다
+        // v1.3.11: 콘솔에만 적으면 쓰는 사람은 모른다 — 다음에 캐시가 비어 재생성 비용이 또 든다
         toast('AI 보고서 시트 저장 실패 — ' + e.message + ' (화면에는 표시됨)', 'err');
       }
     }
@@ -13590,11 +13599,11 @@ let _notifications = [];
 let _notifTimer = null;
 const NOTIF_POLL_MS = 5 * 60 * 1000; // 5분
 
-let _notifLog = [];   // v1.3.10: 관리자용 — 회차 알림 발송 이력
+let _notifLog = [];   // v1.3.11: 관리자용 — 회차 알림 발송 이력
 
 async function fetchNotifications() {
   if (!GAS_URL || !currentUserEmail) return;
-  // ⚠️ v1.3.10 (작업자 지적 2026.08.04): 알림은 **면접관용**이라 관리자는 회차종결만 받는다.
+  // ⚠️ v1.3.11 (작업자 지적 2026.08.04): 알림은 **면접관용**이라 관리자는 회차종결만 받는다.
   //   그래서 관리자 알림함에는 몇 달 전 것만 남아 "이 알림의 존재이유가 뭐지?"가 됐다.
   //   관리자에게는 내 알림 대신 **누구에게 무엇이 갔고 읽었는지**를 보여준다.
   if (isAdmin) {
@@ -13665,7 +13674,7 @@ function renderNotifList() {
   }).join('');
 }
 
-// v1.3.10: 관리자용 목록 — 한 건씩(수신자별 중복 없이), 받은 사람과 읽음 수를 함께 보여준다
+// v1.3.11: 관리자용 목록 — 한 건씩(수신자별 중복 없이), 받은 사람과 읽음 수를 함께 보여준다
 function renderNotifLogList(list) {
   if (!_notifLog.length) {
     list.innerHTML = '<div class="notif-empty">발송된 알림이 없습니다'
