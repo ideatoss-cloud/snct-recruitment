@@ -1841,8 +1841,8 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.8';
-const APP_VERSION_DATE = '2026.08.11';
+const APP_VERSION = 'v1.4.9';
+const APP_VERSION_DATE = '2026.09.02';
 let currentRound = ''; // 현재 선택된 회차
 
 const JOBS = {
@@ -11131,11 +11131,27 @@ function renderEmployees() {
         : (x.joinDate ? '<span style="font-size:11px;background:rgba(0,201,122,0.14);color:var(--green);border-radius:10px;padding:2px 8px">재직</span>'
                       : '<span style="font-size:11px;background:rgba(244,168,0,0.14);color:var(--gold);border-radius:10px;padding:2px 8px">입사일 미입력</span>');
       const sug = _jobTeam(x.job) || {};
+      // v1.4.9: 관찰 사실에서 바로 읽히는 값을 배지로 띄운다.
+      //   「왜 그만뒀나」를 물어보면 「개인 사정」밖에 안 나온다.
+      //   근속일수와 야간 투입 후 일수가 훨씬 정확하고, 거짓이 없다.
+      const _dd = (a, b) => { const d1 = new Date(a), d2 = new Date(b);
+        return (isNaN(d1) || isNaN(d2)) ? null : Math.round((d2 - d1) / 86400000); };
+      const stayD = (x.joinDate && x.leaveDate) ? _dd(x.joinDate, x.leaveDate) : null;
+      const nightD = (x.nightStart && x.leaveDate) ? _dd(x.nightStart, x.leaveDate) : null;
+      const pill = (t, c) => '<span style="font-size:11px;background:' + c
+        + ';border-radius:10px;padding:2px 8px;font-weight:700">' + t + '</span>';
+      const badges =
+        (stayD !== null ? pill('근속 ' + stayD + '일',
+          stayD < 31 ? 'rgba(255,90,90,0.18);color:#ff8080'
+          : (stayD < 366 ? 'rgba(244,168,0,0.16);color:var(--gold)'
+                         : 'rgba(255,255,255,0.07);color:var(--tx2)')) : '')
+      + (nightD !== null && nightD >= 0
+          ? pill('야간 ' + nightD + '일차 퇴사', 'rgba(120,140,255,0.16);color:#9db0ff') : '');
       const fld = (label, cls, val, ph, wide) =>
         '<div style="' + (wide ? 'flex:1;min-width:170px' : 'width:140px') + '">'
         + '<div style="font-size:11px;color:var(--tx2);margin-bottom:3px">' + label + '</div>'
         // v1.4.8: 입사일·퇴사일은 달력이 떠야 한다(검증에서 잡힌 버그)
-        + '<input type="' + ((cls === 'join' || cls === 'leave') ? 'date' : 'text') + '" data-k="' + k + '" class="empf-' + cls + '"'
+        + '<input type="' + ((cls === 'join' || cls === 'leave' || cls === 'night') ? 'date' : 'text') + '" data-k="' + k + '" class="empf-' + cls + '"'
         + ' value="' + _escapeHtml(val || '') + '"' + (ph ? ' placeholder="' + ph + '"' : '')
         + (cls === 'team' ? ' list="empTeamList"' : (cls === 'part' ? ' list="empPartList"' : ''))
         + ' oninput="empChanged(this)" onchange="empChanged(this)"'
@@ -11145,6 +11161,7 @@ function renderEmployees() {
         + '<div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:9px">'
         + '<span style="font-size:16px;font-weight:800">' + _escapeHtml(x.name) + '</span>' + badge
         + '<span style="font-size:12px;color:var(--tx2)">' + _escapeHtml((x.empType || '') + ' ' + (x.job || '')) + '</span>'
+        + badges
         + '<span style="font-size:11px;color:var(--tx2);opacity:.7">' + _escapeHtml(x.round) + '</span>'
         + '</div>'
         + '<div style="display:flex;gap:9px;flex-wrap:wrap">'
@@ -11153,6 +11170,19 @@ function renderEmployees() {
         + fld('팀', 'team', x.team, sug.team ? sug.team + ' (직종 기준)' : '예) 관리팀')
         + fld('파트', 'part', x.part, sug.part ? sug.part + ' (직종 기준)' : '예) 전기')
         + fld('특이사항', 'note', x.note, '예) 개인사정 퇴사', true)
+        + '</div>'
+        // ── v1.4.9: 퇴사 원인 추적용 관찰 기록 ────────────────────────
+        //   퇴사자에게 사유를 물으면 「개인 사정」밖에 안 나온다. 사실만 남긴다.
+        + '<div style="display:flex;gap:9px;flex-wrap:wrap;margin-top:9px;padding-top:9px;border-top:1px dashed var(--bd)">'
+        + '<div style="width:140px"><div style="font-size:11px;color:var(--tx2);margin-bottom:3px">퇴사 통보</div>'
+        + '<select data-k="' + k + '" class="empf-notice" onchange="empChanged(this)"'
+        + ' style="width:100%;box-sizing:border-box;padding:7px 9px;font-size:13px;background:var(--bg2);border:1px solid var(--bd);border-radius:7px;color:var(--tx)">'
+        + ['', '사전 협의', '당일 통보', '무단결근', '기타'].map(function (o) {
+            return '<option value="' + o + '"' + ((x.leaveNotice || '') === o ? ' selected' : '')
+              + '>' + (o || '\u2014') + '</option>'; }).join('')
+        + '</select></div>'
+        + fld('야간 시작일', 'night', x.nightStart, '')
+        + fld('조장 소견 (같이 일한 사람이 본 것)', 'lnote', x.leaderNote, '예) 야간 들어가고 나서 눈에 띄게 처짐', true)
         + '</div></div>';
     }).join('');
     return '<div class="card" style="margin-bottom:14px">'
@@ -11171,6 +11201,9 @@ function empChanged(el) {
   else if (el.classList.contains('empf-team')) row.team = el.value;
   else if (el.classList.contains('empf-part')) row.part = el.value;
   else if (el.classList.contains('empf-note')) row.note = el.value;
+  else if (el.classList.contains('empf-notice')) row.leaveNotice = el.value;
+  else if (el.classList.contains('empf-night')) row.nightStart = el.value;
+  else if (el.classList.contains('empf-lnote')) row.leaderNote = el.value;
   _empDirty[key] = true;
   const st = document.getElementById('empStatus');
   if (st) { st.textContent = '입력 중...'; st.style.color = 'var(--tx2)'; }
@@ -11193,7 +11226,9 @@ async function empSaveDirty() {
           action: 'saveEmployment', userEmail: currentUserEmail,
           round: row.round, name: row.name,
           joinDate: row.joinDate || '', leaveDate: row.leaveDate || '',
-          team: row.team || '', part: row.part || '', note: row.note || ''
+          team: row.team || '', part: row.part || '', note: row.note || '',
+          leaveNotice: row.leaveNotice || '', nightStart: row.nightStart || '',
+          leaderNote: row.leaderNote || ''
         })
       });
       const j = await r.json();
@@ -11233,12 +11268,17 @@ function empFillTeams() {
 function exportEmployees() {
   const rows = _empFiltered();
   if (!rows.length) { toast('복사할 명단이 없습니다', 'err'); return; }
-  const L = [['이름', '직종', '회차', '입사일', '퇴사일', '재직상태', '팀', '파트', '특이사항'].join('\t')];
+  const L = [['이름', '직종', '회차', '입사일', '퇴사일', '근속일수', '재직상태', '팀', '파트',
+              '퇴사통보', '야간시작일', '야간N일차', '조장소견', '특이사항'].join('\t')];
+  const _d2 = (a, b) => { const d1 = new Date(a), d2 = new Date(b);
+    return (!a || !b || isNaN(d1) || isNaN(d2)) ? '' : Math.round((d2 - d1) / 86400000); };
   rows.forEach(x => L.push([
     x.name, (x.empType || '') + ' ' + (x.job || ''), x.round,
-    x.joinDate || '', x.leaveDate || '',
+    x.joinDate || '', x.leaveDate || '', _d2(x.joinDate, x.leaveDate),
     x.leaveDate ? '퇴사' : (x.joinDate ? '재직' : '미입력'),
-    x.team || '', x.part || '', x.note || ''
+    x.team || '', x.part || '',
+    x.leaveNotice || '', x.nightStart || '', _d2(x.nightStart, x.leaveDate),
+    x.leaderNote || '', x.note || ''
   ].join('\t')));
   const text = L.join('\n');
   if (navigator.clipboard && navigator.clipboard.writeText) {
