@@ -1841,8 +1841,8 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.9';
-const APP_VERSION_DATE = '2026.09.02';
+const APP_VERSION = 'v1.4.10';
+const APP_VERSION_DATE = '2026.09.03';
 let currentRound = ''; // 현재 선택된 회차
 
 const JOBS = {
@@ -1988,6 +1988,60 @@ try {
   }
 } catch(e) {}
 let GAS_URL = localStorage.getItem('gas_url') || 'https://script.google.com/macros/s/AKfycbwIf6z1b--0C_vczG4mhl-YeQMZAptW6b-GBM-hvAAgsNORl9UoZ55VoKt5PYdCLWFl/exec'; // ✅ 기본 GAS URL 하드코딩 — 일반사용자 기기에서도 자동 연결
+
+// ═══ v1.4.10 (2026.09.03): GAS 호출에 세션 토큰 자동 첨부 ═══
+//   GAS 권한 판정이 클라가 보낸 이메일 문자열만 믿던 구멍을 막는다(전반 점검에서 실측).
+//   원시 fetch 100곳을 고치지 않고 여기서 한 번에 처리한다.
+//   GAS는 커스텀 헤더를 못 읽으므로 GET은 쿼리, POST는 JSON 본문에 sess를 넣는다.
+//   서버가 authRequired를 돌려주면(세션 12시간 만료) 재로그인 화면으로 보낸다.
+(function _gasFetchWrap() {
+  const _orig = window.fetch.bind(window);
+  const _sess = function () { try { return localStorage.getItem('snct_sess') || ''; } catch (e) { return ''; } };
+  const _isGas = function (u) { return typeof u === 'string' && !!GAS_URL && u.indexOf(GAS_URL) === 0; };
+  let _kicked = false;
+  window.fetch = function (input, init) {
+    try {
+      if (_isGas(input)) {
+        const sv = _sess();
+        if (sv) {
+          const m = ((init && init.method) || 'GET').toUpperCase();
+          if (m === 'POST' && init && typeof init.body === 'string' && init.body.charAt(0) === '{') {
+            try { const b = JSON.parse(init.body); if (!b.sess) b.sess = sv; init = Object.assign({}, init, { body: JSON.stringify(b) }); } catch (e) {}
+          } else if (input.indexOf('sess=') < 0) {
+            input += (input.indexOf('?') >= 0 ? '&' : '?') + 'sess=' + encodeURIComponent(sv);
+          }
+        }
+        return _orig(input, init).then(function (res) {
+          try {
+            if ((res.headers.get('content-type') || '').indexOf('json') >= 0) {
+              res.clone().json().then(function (j) {
+                if (j && j.authRequired && !_kicked) {
+                  _kicked = true;
+                  try { localStorage.removeItem('snct_sess'); localStorage.removeItem('snct_sess_at'); } catch (e) {}
+                  if (typeof toast === 'function') toast('세션이 만료되었습니다. 다시 로그인해 주세요', 'err');
+                  if (typeof doLogout === 'function') setTimeout(doLogout, 600);
+                }
+              }).catch(function () {});
+            }
+          } catch (e) {}
+          return res;
+        });
+      }
+    } catch (e) {}
+    return _orig(input, init);
+  };
+})();
+
+// ═══ v1.4.10: 스크롤 대상은 「스크롤 가능한가」로 고른다 (CLAUDE.md §2-5-1) ═══
+//   종전 FAB은 `#content || scrollingElement` 패턴이었다. #content가 없어 우연히 동작했지만
+//   누가 그 id를 붙이는 순간 두 버튼이 소리 없이 죽는다. 표준 함수로 바꾼다.
+function scrollHost() {
+  const c = document.getElementById('content');
+  if (c && c.scrollHeight - c.clientHeight > 1) return c;
+  return document.scrollingElement || document.documentElement || document.body;
+}
+function fabTop() { const el = scrollHost(); try { el.scrollTo({ top: 0, behavior: 'smooth' }); } catch (e) { el.scrollTop = 0; } }
+function fabBottom() { const el = scrollHost(); try { el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }); } catch (e) { el.scrollTop = el.scrollHeight; } }
 // 세션 복원
 let _savedSession = {};
 try { _savedSession = JSON.parse(sessionStorage.getItem('snct_session')||'{}'); } catch(e){}
@@ -2507,32 +2561,23 @@ function finishLogin() {
 
 // ── Google OAuth 초기화 ──
 function tryRestoreGoogleSession() {
-  var saved = localStorage.getItem('snct_google_credential');
+  // v1.4.10: 복원 기준을 Google JWT(1시간)에서 GAS 세션 토큰(12시간)으로 바꿨다.
+  //   덕분에 새로고침마다 1시간 뒤 재로그인하던 불편도 사라진다. 서버가 authRequired를 주면 래퍼가 로그아웃시킨다.
   var session = {};
-  try { session = JSON.parse(localStorage.getItem('snct_session') || '{}'); } catch(e) {}
-  if (saved && session.user && session.email) {
-    try {
-      var parts = saved.split('.');
-      var base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-      var pad = base64.length % 4;
-      if (pad) base64 += '===='.slice(pad);
-      var payload = JSON.parse(decodeURIComponent(atob(base64).split('').map(function(c){
-        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-      }).join('')));
-      var now = Math.floor(Date.now() / 1000);
-      if (payload.exp && payload.exp < now) {
-        localStorage.removeItem('snct_google_credential');
-        return false;
-      }
-      currentUser = session.user;
-      currentUserEmail = session.email;
-      isAdmin = session.admin || false;
-      REAL_IS_ADMIN = isAdmin;              // v1.4.8
-      if (VIEW_AS_USER) isAdmin = false;   // v1.4.8: 면접관 시점 미리보기
-      return true;
-    } catch(e) { return false; }
+  try { session = JSON.parse(localStorage.getItem('snct_session') || '{}'); } catch (e) {}
+  var sess = '', at = 0;
+  try { sess = localStorage.getItem('snct_sess') || ''; at = Number(localStorage.getItem('snct_sess_at') || 0); } catch (e) {}
+  if (!sess || !session.user || !session.email) return false;
+  if (!at || Date.now() - at > 12 * 3600 * 1000) {
+    try { localStorage.removeItem('snct_sess'); localStorage.removeItem('snct_sess_at'); } catch (e) {}
+    return false;
   }
-  return false;
+  currentUser = session.user;
+  currentUserEmail = session.email;
+  isAdmin = session.admin || false;
+  REAL_IS_ADMIN = isAdmin;              // v1.4.8
+  if (VIEW_AS_USER) isAdmin = false;   // v1.4.8: 면접관 시점 미리보기
+  return true;
 }
 
 function initGoogleLogin() {
@@ -2598,23 +2643,35 @@ async function checkAndProceedLogin(name, email) {
   currentUserEmail = email;
   var adminEmails = JSON.parse(localStorage.getItem('admin_emails') || '[]');
   isAdmin = adminEmails.indexOf(email) !== -1;
-  if (GAS_URL) {
-    try {
-      var res = await fetch(GAS_URL + '?action=checkUserRole&email=' + encodeURIComponent(email));
-      var data = await res.json();
-      if (data.success && data.allowed === false) {
-        var statusEl = document.getElementById('googleLoginStatus');
-        if (statusEl) statusEl.innerHTML = '<span style="color:var(--red)">⛔ 접근 권한이 없습니다 (' + email + ')</span>';
-        toast('접근 권한 없음: ' + email, 'err');
-        return;
-      }
-      if (data.success) {
-        isAdmin = data.isAdmin || isAdmin;
-        if (data.name) currentUser = data.name;
-      }
-      REAL_IS_ADMIN = isAdmin;              // v1.4.8: 저장·복구는 이 값을 쓴다
-      if (VIEW_AS_USER) isAdmin = false;    // 화면 표시만 낮춘다   // v1.4.8: 면접관 시점 미리보기
-    } catch(e) { /* GAS 오류 시 로컬 판단 fallback */ }
+  if (!GAS_URL) { toast('GAS URL이 없어 로그인할 수 없습니다', 'err'); return; }
+  // v1.4.10: Google id_token을 GAS가 검증하고 세션 토큰을 발급한다. 세션 없이는 어떤 호출도 통과하지 않는다.
+  //   종전에는 GAS 오류 시 '로컬 판단'으로 넘어갔지만, 그 경로가 곧 구멍이었다. 실패하면 멈춘다.
+  var statusEl = document.getElementById('googleLoginStatus');
+  try {
+    var idt = localStorage.getItem('snct_google_credential') || '';
+    var res = await fetch(GAS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain' },
+                                     body: JSON.stringify({ action: 'login', idt: idt }) });
+    var data = await res.json();
+    if (!data.success) {
+      if (statusEl) statusEl.innerHTML = '<span style="color:var(--red)">⛔ ' + (data.message || '인증 실패') + '</span>';
+      toast(data.message || 'Google 인증 실패', 'err');
+      return;
+    }
+    if (data.allowed === false) {
+      if (statusEl) statusEl.innerHTML = '<span style="color:var(--red)">⛔ 접근 권한이 없습니다 (' + email + ')</span>';
+      toast('접근 권한 없음: ' + email, 'err');
+      return;
+    }
+    localStorage.setItem('snct_sess', data.sess);
+    localStorage.setItem('snct_sess_at', String(Date.now()));
+    isAdmin = !!data.isAdmin;
+    if (data.name) currentUser = data.name;
+    REAL_IS_ADMIN = isAdmin;              // v1.4.8: 저장·복구는 이 값을 쓴다
+    if (VIEW_AS_USER) isAdmin = false;    // 화면 표시만 낮춘다   // v1.4.8: 면접관 시점 미리보기
+  } catch (e) {
+    if (statusEl) statusEl.innerHTML = '<span style="color:var(--red)">⛔ 서버 연결 실패: ' + e.message + '</span>';
+    toast('로그인 서버 연결 실패: ' + e.message, 'err');
+    return;
   }
   finishLogin();
 }
@@ -2909,6 +2966,7 @@ function clearApplicants() {
 
 function doLogout() {
   try { sessionStorage.removeItem('snct_session'); } catch(e){}
+  try { localStorage.removeItem('snct_sess'); localStorage.removeItem('snct_sess_at'); } catch(e){}   // v1.4.10
   currentUser = ''; isAdmin = false;
   // 상태 초기화
   applicants = []; bonusScores = {}; ivVotes = {}; voteSubmitted = false;
@@ -3037,6 +3095,7 @@ function goTab(t) {
     document.getElementById('pg-'+x).classList.toggle('on', x===t);
     document.getElementById('t'+(i+1)).classList.toggle('on', x===t);
   });
+  try { scrollHost().scrollTo({ top: 0 }); } catch (e) {}   // v1.4.10: 탭을 바꾸면 위에서부터
   // ✅ v1.2.30: 면접 대상자 확정 배너는 면접 프로세스 탭(검토/집계/면접)에서만 — 결과·분석·인재풀 및 종결 회차에선 숨김
   (function(){
     const cb = document.getElementById('confirmedBanner');
@@ -14446,7 +14505,7 @@ if ('serviceWorker' in navigator) {
   });
 }
 </script>
-<button class="scroll-fab" style="bottom:124px;" onclick="(document.getElementById('content')||document.scrollingElement).scrollTo({top:0,behavior:'smooth'})" title="최상단">▲</button>
-<button class="scroll-fab" style="bottom:80px;" onclick="var el=document.getElementById('content')||document.scrollingElement;el.scrollTo({top:el.scrollHeight,behavior:'smooth'})" title="최하단">▼</button>
+<button class="scroll-fab" style="bottom:124px;" onclick="fabTop()" title="최상단">▲</button>
+<button class="scroll-fab" style="bottom:80px;" onclick="fabBottom()" title="최하단">▼</button>
 </body>
 </html>
