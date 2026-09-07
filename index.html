@@ -1846,7 +1846,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.13';
+const APP_VERSION = 'v1.4.14';
 const APP_VERSION_DATE = '2026.09.07';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -3392,7 +3392,10 @@ async function analyzeAll(skipConfirm) {
         const eduCheck = checkEduDisqualify(a.result.education||'', job, a.result.education_status, a.result.education_all);
         // ✅ v1.2.41: 미기재는 자동탈락 대신 경고로 남겨 사람이 확인하게 한다
         a.result._edu_warn = eduCheck.warn ? eduCheck.reason : '';
-        if (eduCheck.fail) { a.result._disqualified=true; a.result._disqualify_reason=eduCheck.reason; a.result.fit_score=0; }
+        // ✅ v1.4.14: 탈락 시 0점으로 덮어쓰기 전에 **원점수를 보존**한다.
+        //   판정이 뒤집혔을 때(v1.4.13 폴리텍 건) 재분석 없이 점수를 되돌리기 위함.
+        if (eduCheck.fail) { a.result._fit_score_raw = a.result.fit_score; a.result._disqualified=true; a.result._disqualify_reason=eduCheck.reason; a.result.fit_score=0;
+                             a.result._eduMismatch = eduJudgeMismatch(a.result, a.job || job); }
         else {
           a.result = recalcLicenseScore(a.result, RELATED_LICENSES[a.job]||[]);
           // ✅ 학점 점수 코드 직접 계산으로 덮어쓰기 (AI 계산 오류 방지)
@@ -3716,7 +3719,10 @@ async function reanalyzeOne(id) {
       const eduCheck = checkEduDisqualify(a.result.education||'', job, a.result.education_status, a.result.education_all);
       // ✅ v1.2.41: 일괄분석과 동일하게 미기재 경고 전달
       a.result._edu_warn = eduCheck.warn ? eduCheck.reason : '';
-      if (eduCheck.fail) { a.result._disqualified=true; a.result._disqualify_reason=eduCheck.reason; a.result.fit_score=0; }
+      // ✅ v1.4.14: 탈락 시 0점으로 덮어쓰기 전에 **원점수를 보존**한다.
+      //   판정이 뒤집혔을 때(v1.4.13 폴리텍 건) 재분석 없이 점수를 되돌리기 위함.
+      if (eduCheck.fail) { a.result._fit_score_raw = a.result.fit_score; a.result._disqualified=true; a.result._disqualify_reason=eduCheck.reason; a.result.fit_score=0;
+                           a.result._eduMismatch = eduJudgeMismatch(a.result, a.job || job); }
       else {
         a.result = recalcLicenseScore(a.result, RELATED_LICENSES[a.job]||[]);
         // ✅ 학점 점수 코드 직접 계산으로 덮어쓰기 (AI 계산 오류 방지)
@@ -3983,6 +3989,7 @@ async function loadFromSheet() {
           else if(!bonusScores[a.id]) bonusScores[a.id]={};
           if(a.result?.name) a.result.name=a.result.name.replace(/\s+/g,'');
           if(a.result && a.status !== 'done') a.status = 'done';
+          reapplyEduJudgment(a);   // ✅ v1.4.14 캐시 경로에서도 동일하게 재판정
         });
         renderAlist(); updateBadge();
         const last = applicants.find(a=>a.status==='done');
@@ -4023,6 +4030,7 @@ async function loadFromSheet() {
       //   ⚠️pdfText는 저장 대상이 아니라 불러온 회차엔 없다 → 정성필드(강점·우려·총평)만으로 판정.
       applyServiceGender(a.result, '');
       applySchoolGender(a.result);
+      reapplyEduJudgment(a);   // ✅ v1.4.14 학력 판정 재계산 (재분석 없음 = API 비용 0)
     });
     // LS 저장
     try { localStorage.setItem(lsKey, JSON.stringify({t:Date.now(), d:applicants})); } catch(e){}
@@ -5969,13 +5977,23 @@ function checkEduDisqualify(eduStr, job, status, eduAll){
   //   → 축약 패턴에서 '학'을 허용한다('대문'만 제외). 고교 오인은 !hasHigh 조건이 이미 막는다.
   //   → **폴리텍은 전문대로 분류**한다(작업자 확인 2026.09.07). 학위전공심화과정은 '학사' 표기가
   //     있으면 위 4년제 조건에서 먼저 잡힌다.
+  //   ⚠️ v1.4.14 (2026.09.07) 추가 수정 — v1.4.13이 「대학교」를 4년제 근거로 삼는 바람에
+  //     **「명지전문대학교」가 대졸로 올라갔다**(41명 일괄 대조에서 발견). 「대학교」는 학교 이름일
+  //     뿐 학위 수준의 근거가 아니다. 그래서 근거를 두 층으로 갈랐다.
+  //       · 학위 근거(isBachelorExplicit) = 4년제·대졸·학사·학위전공심화  ← 이것만 전문대를 이긴다
+  //       · 이름 근거(대학교)             = 전문대 표기가 없을 때만 대졸로 본다
+  //     그리고 **「…대학」으로 끝나는 학교(대학교 아님)는 전문대로 본다.** 폴리텍대학·김포대학·
+  //     농협대학 등 국내에서 「대학」으로 끝나는 학교는 사실상 전문대다. 축약 표기(서울대·연세대)는
+  //     「대학」이 아니므로 여기 걸리지 않는다.
+  const juniorRe   = /전문대|전문학사|2년제|3년제|폴리텍|기능대학|대학(?!교)/;
+  const bachelorRe = /4년제|대졸|학사|학위전공심화/;
   const rankOf = t => {
     if (gradSchoolRe.test(t)) return 3;
     const hasHigh = /고등학교|고교|고졸|검정고시/.test(t);
-    // 폴리텍 학위전공심화과정처럼 «폴리텍 + 학사» 인 경우는 4년제로 본다 — 학사 표기가 우선한다.
-    const isBachelor = /4년제|대학교|대졸|학사|학위전공심화/.test(t);
-    const isJunior = /전문대|전문학사|2년제|3년제|폴리텍|기능대학/.test(t) && !isBachelor;
-    const isUni = (isBachelor || (!hasHigh && /[가-힣]{2,}대(?![문])/.test(t))) && !isJunior;
+    const isBachelor = bachelorRe.test(t);
+    const isJunior = juniorRe.test(t) && !isBachelor;
+    const isUni = (isBachelor || /대학교/.test(t) || (!hasHigh && /[가-힣]{2,}대(?![문])/.test(t)))
+                  && !isJunior;
     if (isUni) return 2;
     if (isJunior) return 1;
     if (hasHigh) return 0;
@@ -6018,6 +6036,64 @@ function checkEduDisqualify(eduStr, job, status, eduAll){
       reason:`⚠️ 졸업 여부 표기 없음 ("${s.slice(0,40)}") — 재학중이면 최저학력 미달일 수 있어 원본 확인 필요`};
   }
   return {fail:false,reason:'충족'};
+}
+
+// ══════════════════════════════════════════
+// ✅ v1.4.14 (2026.09.07) — **AI 총평 ↔ 탈락사유 교차검증** (작업자 지시)
+//   v1.4.13 버그가 늦게 발견된 이유는 **두 판정이 서로를 보지 않았기** 때문이다.
+//   AI 총평에는 "전문대 졸업 및 3.34/4.5 학점이 확인됩니다"라고 적혀 있는데
+//   자동탈락 사유는 "고졸 < 기준 전문대졸"이었다. **화면에 나란히 떠 있었는데도**
+//   둘을 대조하는 장치가 없어 사람이 눈으로 발견할 때까지 갔다.
+//   → 이제 탈락 처리할 때마다 **AI가 쓴 서술문에서 학력 수준을 뽑아 필터 판정과 대조**한다.
+//     어긋나면 탈락 배너 위에 불일치 경고를 띄운다. 자동으로 되살리지는 않는다 —
+//     어느 쪽이 맞는지는 원본을 봐야 알고, 조용히 되살리면 그것대로 사고다.
+function _eduRankFromNarrative(r) {
+  const txt = [r.education, r.education_all, r.education_status, r.fit_comment, r.summary,
+               Array.isArray(r.strengths) ? r.strengths.join(' ') : r.strengths,
+               Array.isArray(r.concerns)  ? r.concerns.join(' ')  : r.concerns]
+              .filter(Boolean).join(' ');
+  if (!txt) return -1;
+  // 서술문에서는 **명시적 학위 표현만** 신뢰한다. 학교 이름 추측은 하지 않는다.
+  if (/대학원\s*(졸업|수료)|석사|박사/.test(txt)) return 3;
+  if (/전문대\s*(졸업|재학|졸업예정)|전문학사|초대졸/.test(txt)) return 1;
+  if (/4년제|대졸|학사\s*학위|대학교\s*졸업/.test(txt)) return 2;
+  if (/고졸|고등학교\s*졸업/.test(txt)) return 0;
+  return -1;
+}
+// 탈락 판정과 AI 서술이 어긋나면 사유 문자열을 돌려준다(일치하거나 판단 불가면 '').
+function eduJudgeMismatch(r, job) {
+  if (!r || !r._disqualified) return '';
+  if (!/최저학력 미달/.test(String(r._disqualify_reason || ''))) return '';
+  const minIdx = EDU_RANKS.indexOf(minEduSettings[job] || '고졸');
+  const nar = _eduRankFromNarrative(r);
+  if (nar < 0 || nar < minIdx) return '';
+  return 'AI 총평은 «' + EDU_LABELS[EDU_RANKS[nar]] + '» 로 기재했는데 필터는 «'
+       + String(r._disqualify_reason || '').replace(/^최저학력 미달 \(/, '').replace(/\).*$/, '')
+       + '» 로 판정했습니다.';
+}
+
+// ✅ v1.4.14 — **저장된 회차를 불러올 때 학력 판정을 다시 계산한다.**
+//   학력 판정은 문자열 규칙이라 재분석(=API 비용) 없이 다시 매길 수 있는데,
+//   v1.4.13까지는 불러오기 경로에 재판정이 없어 **잘못된 탈락이 시트에 그대로 굳었다.**
+//   성별 보정(applyServiceGender·applySchoolGender)이 이미 같은 방식으로 붙어 있다.
+//   ⚠️ 탈락→통과로 바뀌어도 **점수는 되살리지 않는다.** 탈락 시 fit_score를 0으로 덮어썼기 때문에
+//     v1.4.14 이전 데이터엔 원점수가 없다(v1.4.14부터 _fit_score_raw에 보존한다).
+//     원점수가 없으면 _needReanalyze를 세워 «재분석 필요»로 표시한다.
+function reapplyEduJudgment(a) {
+  const r = a && a.result; if (!r) return;
+  const jobA = a.job || '';
+  const chk = checkEduDisqualify(r.education || '', jobA, r.education_status, r.education_all);
+  r._edu_warn = chk.warn ? chk.reason : '';
+  if (chk.fail) {
+    r._disqualified = true; r._disqualify_reason = chk.reason;
+    if (r._fit_score_raw == null && r.fit_score) r._fit_score_raw = r.fit_score;
+    r.fit_score = 0; r._needReanalyze = false;
+  } else if (r._disqualified) {
+    r._disqualified = false; r._disqualify_reason = '';
+    if (r._fit_score_raw != null) { r.fit_score = r._fit_score_raw; r._needReanalyze = false; }
+    else { r._needReanalyze = true; }   // 원점수 소실 — 개별 재분석해야 점수가 돌아온다
+  }
+  r._eduMismatch = eduJudgeMismatch(r, jobA);
 }
 
 // ══════════════════════════════════════════
@@ -6198,10 +6274,12 @@ ${intro}` : '',
     // ✅ v1.2.41: 수동 등록 경로에도 미기재 경고 전달
     result._edu_warn = eduCheck.warn ? eduCheck.reason : '';
     if (eduCheck.fail) {
+      result._fit_score_raw = result.fit_score;   // ✅ v1.4.14 원점수 보존
       result._disqualified = true;
       result._disqualify_reason = eduCheck.reason;
       result.fit_score = 0;
     }
+    result._eduMismatch = eduJudgeMismatch(result, jobF);
 
     a.result   = result;
     a.status   = 'done';
@@ -6437,6 +6515,8 @@ function showResult(id) {
     </div>
     <div id="pastHistoryCard_${id}" style="display:none;margin-bottom:12px"></div>
     ${r._disqualified?`<div style="background:rgba(255,82,82,0.1);border:2px solid var(--red);border-radius:10px;padding:15px;margin-bottom:12px;display:flex;align-items:center;gap:12px"><div style="font-size:26px">🚫</div><div><div style="font-size:14px;font-weight:700;color:var(--red)">자동 탈락</div><div style="font-size:14px;color:var(--tx2);margin-top:3px">${r._disqualify_reason||''}</div></div></div>`:''}
+    ${r._eduMismatch?`<div style="background:rgba(244,168,0,0.12);border:2px solid var(--gold);border-radius:10px;padding:13px 15px;margin-bottom:12px;display:flex;align-items:flex-start;gap:10px"><div style="font-size:22px">⚖️</div><div style="font-size:14px;color:var(--tx2);line-height:1.6"><b style="color:var(--gold)">판정 불일치 — 원본 확인 필요</b><br>${_escapeHtml(r._eduMismatch)}<br><span style="font-size:13px">둘 중 하나가 틀렸습니다. 원본 PDF의 학력란을 보고 맞는 쪽으로 처리해 주세요.</span></div></div>`:''}
+    ${r._needReanalyze?`<div style="background:rgba(43,138,255,0.10);border:1px solid var(--bl,#2b8aff);border-radius:10px;padding:12px 15px;margin-bottom:12px;font-size:14px;color:var(--tx2);line-height:1.6"><b>학력 탈락이 해제되었습니다</b> — 다만 탈락 처리될 때 서류점수가 0점으로 덮어써져 <b>원점수가 남아 있지 않습니다.</b> 이 지원자만 <b>[🔄 재분석]</b>을 눌러 점수를 되살려 주세요.</div>`:''}
     ${(!r._disqualified && r._edu_warn)?`<div style="background:rgba(244,168,0,0.1);border:1px solid var(--gold);border-radius:10px;padding:12px 15px;margin-bottom:12px;display:flex;align-items:center;gap:10px"><div style="font-size:20px">⚠️</div><div style="font-size:14px;color:var(--tx2)"><b style="color:var(--gold)">학력 확인 필요</b> — ${_escapeHtml(r._edu_warn)}<br><span style="font-size:13px">최저학력 판정을 할 수 없어 통과 처리했습니다. 원본 PDF를 확인해 주세요.</span></div></div>`:''}
     <div class="score-card">
       <div class="score-big ${sc}">${total}</div>
