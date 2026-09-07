@@ -1846,7 +1846,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.18';
+const APP_VERSION = 'v1.4.19';
 const APP_VERSION_DATE = '2026.09.07';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -11458,6 +11458,20 @@ function _empFiltered() {
   });
 }
 
+// ✅ v1.4.19 (2026.09.07) — **퇴사사유 코드.**
+//   자유서술('특이사항')은 사람마다 다르게 써서 집계가 안 된다. 2년 뒤 「통근 때문에 몇 명이
+//   나갔나」에 답하려면 **고정된 갈래**여야 한다. 관찰 기록 3종(v1.4.9)이 「무엇이 있었나」라면
+//   이건 「어느 갈래인가」다 — 둘 다 남긴다.
+//   자발/비자발을 앞에 붙인 이유: 조기퇴사 대책이 완전히 달라진다.
+//   자발은 채용 단계에서 거를 수 있는 것(통근·교대·처우 기대), 비자발은 못 거른다.
+//   ⚠️ 갈래를 늘리거나 이름을 바꾸면 과거 기록과 집계가 어긋난다. 바꾸려면 작업자 확인 후에.
+const LEAVE_REASONS = [
+  '자발-통근', '자발-급여·처우', '자발-교대·야간', '자발-직무 불일치',
+  '자발-타사 이직', '자발-개인사정', '자발-건강',
+  '비자발-수습 미통과', '비자발-징계·권고', '비자발-계약만료',
+  '기타·미상'
+];
+
 function renderEmployees() {
   const box = document.getElementById('empList');
   if (!box) return;
@@ -11505,7 +11519,14 @@ function renderEmployees() {
           : (stayD < 366 ? 'rgba(244,168,0,0.16);color:var(--gold)'
                          : 'rgba(255,255,255,0.07);color:var(--tx2)')) : '')
       + (nightD !== null && nightD >= 0
-          ? pill('야간 ' + nightD + '일차 퇴사', 'rgba(120,140,255,0.16);color:#9db0ff') : '');
+          ? pill('야간 ' + nightD + '일차 퇴사', 'rgba(120,140,255,0.16);color:#9db0ff') : '')
+      // ✅ v1.4.19: **채용 당시 점수를 여기서 보여준다.** 여태 서버에서 받아오기만 하고 화면에 없었다.
+      //   원점수는 모델이 바뀌면 회차 간 비교가 안 되므로 **회차 내 백분위**를 함께 띄운다.
+      //   지금은 표시뿐이다 — n이 작아 「점수 높은 사람이 오래 남는다」를 말할 단계가 아니다.
+      //   이 값이 화면과 엑셀에 남아야 3년 뒤에 물어볼 수 있다.
+      + (x.docScore ? pill('서류 ' + x.docScore + (x.docPct ? ' · 상위 ' + x.docPct + '%' : ''),
+          'rgba(0,180,216,0.14);color:var(--ac)') : '')
+      + (x.ivScore ? pill('면접 ' + x.ivScore, 'rgba(255,255,255,0.06);color:var(--tx2)') : '');
       const fld = (label, cls, val, ph, wide) =>
         '<div style="' + (wide ? 'flex:1;min-width:170px' : 'width:140px') + '">'
         + '<div style="font-size:11px;color:var(--tx2);margin-bottom:3px">' + label + '</div>'
@@ -11542,6 +11563,18 @@ function renderEmployees() {
         + '</select></div>'
         + fld('야간 시작일', 'night', x.nightStart, '')
         + fld('조장 소견 (같이 일한 사람이 본 것)', 'lnote', x.leaderNote, '예) 야간 들어가고 나서 눈에 띄게 처짐', true)
+        + '</div>'
+        // ── v1.4.19: 집계 가능한 퇴사사유 + 통근 검증용 거주지 ──────────
+        + '<div style="display:flex;gap:9px;flex-wrap:wrap;margin-top:9px">'
+        + '<div style="width:170px"><div style="font-size:11px;color:var(--tx2);margin-bottom:3px">퇴사사유 <span style="opacity:.7">(집계용)</span></div>'
+        + '<select data-k="' + k + '" class="empf-reason" onchange="empChanged(this)"'
+        + ' style="width:100%;box-sizing:border-box;padding:7px 9px;font-size:13px;background:var(--bg2);border:1px solid var(--bd);border-radius:7px;color:var(--tx)">'
+        + [''].concat(LEAVE_REASONS).map(function (o) {
+            return '<option value="' + o + '"' + ((x.leaveReason || '') === o ? ' selected' : '')
+              + '>' + (o || '\u2014') + '</option>'; }).join('')
+        + '</select></div>'
+        + fld('거주지 (입사 시 시·군·구)', 'resi', x.residence, '예) 인천 서구')
+        + (x.scoringVer ? '<div style="flex:1;min-width:180px;align-self:flex-end;font-size:11px;color:var(--tx2);opacity:.7;font-family:\'DM Mono\',monospace;padding-bottom:8px" title="채용 당시 채점기준. 회차마다 다르면 서류점수를 원점수로 비교하면 안 됩니다.">🏷 ' + _escapeHtml(x.scoringVer) + '</div>' : '')
         + '</div></div>';
     }).join('');
     return '<div class="card" style="margin-bottom:14px">'
@@ -11563,6 +11596,8 @@ function empChanged(el) {
   else if (el.classList.contains('empf-notice')) row.leaveNotice = el.value;
   else if (el.classList.contains('empf-night')) row.nightStart = el.value;
   else if (el.classList.contains('empf-lnote')) row.leaderNote = el.value;
+  else if (el.classList.contains('empf-reason')) row.leaveReason = el.value;
+  else if (el.classList.contains('empf-resi')) row.residence = el.value;
   _empDirty[key] = true;
   const st = document.getElementById('empStatus');
   if (st) { st.textContent = '입력 중...'; st.style.color = 'var(--tx2)'; }
@@ -11587,7 +11622,8 @@ async function empSaveDirty() {
           joinDate: row.joinDate || '', leaveDate: row.leaveDate || '',
           team: row.team || '', part: row.part || '', note: row.note || '',
           leaveNotice: row.leaveNotice || '', nightStart: row.nightStart || '',
-          leaderNote: row.leaderNote || ''
+          leaderNote: row.leaderNote || '',
+          leaveReason: row.leaveReason || '', residence: row.residence || ''
         })
       });
       const j = await r.json();
@@ -11627,7 +11663,11 @@ function empFillTeams() {
 function exportEmployees() {
   const rows = _empFiltered();
   if (!rows.length) { toast('복사할 명단이 없습니다', 'err'); return; }
+  // ✅ v1.4.19: 채용 당시 점수·백분위·채점기준과 퇴사사유·거주지를 함께 내보낸다.
+  //   이 표 한 장이 3년 뒤 「통근 1시간 초과자의 1년 잔존율」 같은 질문의 원자료가 된다.
   const L = [['이름', '직종', '회차', '입사일', '퇴사일', '근속일수', '재직상태', '팀', '파트',
+              '퇴사사유', '거주지',
+              '서류점수', '서류백분위', '면접점수', '총점', '채점기준',
               '퇴사통보', '야간시작일', '야간N일차', '조장소견', '특이사항'].join('\t')];
   const _d2 = (a, b) => { const d1 = new Date(a), d2 = new Date(b);
     return (!a || !b || isNaN(d1) || isNaN(d2)) ? '' : Math.round((d2 - d1) / 86400000); };
@@ -11636,6 +11676,8 @@ function exportEmployees() {
     x.joinDate || '', x.leaveDate || '', _d2(x.joinDate, x.leaveDate),
     x.leaveDate ? '퇴사' : (x.joinDate ? '재직' : '미입력'),
     x.team || '', x.part || '',
+    x.leaveReason || '', x.residence || '',
+    x.docScore || '', x.docPct ? x.docPct + '%' : '', x.ivScore || '', x.total || '', x.scoringVer || '',
     x.leaveNotice || '', x.nightStart || '', _d2(x.nightStart, x.leaveDate),
     x.leaderNote || '', x.note || ''
   ].join('\t')));
