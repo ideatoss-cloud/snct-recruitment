@@ -1846,7 +1846,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.16';
+const APP_VERSION = 'v1.4.17';
 const APP_VERSION_DATE = '2026.09.07';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -7026,13 +7026,22 @@ async function loadAdminResults() {
           <button onclick="setVoteRankMode(true)" style="font-size:12px;padding:6px 12px;border-radius:6px;cursor:pointer;font-weight:600;background:${voteRankByDoc?'var(--gold)':'transparent'};color:${voteRankByDoc?'#000':'var(--tx)'};border:1px solid ${voteRankByDoc?'var(--gold)':'var(--bd)'}">📄 서류점수순</button>
         </div>
       </div>`;
-    document.getElementById('adminResultBody').innerHTML=closedBanner+dupBanner+rankBar+results.map((r,i)=>`
+    // ✅ v1.4.17: 재지원 이력 일괄 조회 (요청 1회). 실패해도 집계는 그대로 그린다.
+    await _fetchPastBulk(results.map(function(r){ return r.name; }), round);
+    const _reCnt = results.filter(function(r){ const h=_pastOf(r.name); return h && h.length; }).length;
+    const reBanner = _reCnt ? `
+      <div style="background:rgba(230,81,0,0.10);border:1px solid #e65100;border-radius:9px;padding:10px 14px;margin-bottom:12px;font-size:13.5px;line-height:1.6;color:#e65100">
+        <b>⚠️ 재지원자 ${_reCnt}명</b>
+        <span style="color:var(--tx2)">— 과거 회차에 지원한 이력이 있습니다. 아래 각 행에서 회차와 결과를 확인하세요.</span>
+      </div>` : '';
+    document.getElementById('adminResultBody').innerHTML=closedBanner+dupBanner+reBanner+rankBar+results.map((r,i)=>`
       <div class="rank-row ${r.confirmed?'':''}${i===0?'r1':i===1?'r2':i===2?'r3':''}" style="${r.confirmed?'border-color:var(--green);background:rgba(0,201,122,0.08)':''}">
         <div class="rank-medal">${r.confirmed?'✅':(medals[i]||i+1)}</div>
         <div style="flex:1;min-width:0">
           <div style="font-size:14px;font-weight:700">${r.name} <span style="font-size:13px;color:var(--tx2);font-weight:400">${r.age||''}</span>${r.confirmed?'<span style="background:var(--green);color:#000;font-size:12px;padding:2px 7px;border-radius:9px;margin-left:7px;font-weight:700">면접확정</span>':''}</div>
           <div style="font-size:13px;color:var(--tx2);margin-top:2px">${r.empType||''} · ${r.job||''}</div>
           <div style="font-size:13px;color:var(--tx2);margin-top:3px;font-style:italic;line-height:1.5">${r.summary||''}</div>
+          ${_pastBadgeHtml(r.name)}
           ${r.voters?`<div style="font-size:13px;color:var(--tx2);margin-top:4px">추천: ${r.voters}</div>`:''}
         </div>
         <div style="text-align:right;flex-shrink:0">
@@ -7054,6 +7063,47 @@ async function loadAdminResults() {
     if (ivDateArea) ivDateArea.style.display = isAdmin ? 'block' : 'none';
     showIvDateBanner(round);
   } catch(e){document.getElementById('adminResultBody').innerHTML=`<div style="color:var(--red);font-size:14px;padding:20px">${e.message}</div>`;}
+}
+
+// ✅ v1.4.17 (2026.09.07) — **[지원서 집계]에도 재지원 이력을 띄운다** (작업자 지시)
+//   [지원서 검토] 목록에만 있어서, 확정을 실제로 고르는 집계 화면에서는 안 보였다.
+//   ⚠️ 여기서 이름마다 getPastHistory를 부르면 안 된다 — 그건 이름 하나당 과거 회차 시트를
+//     전부 다시 읽어서, 41명이면 시트를 수백 번 읽는다. 그래서 GAS에 한 번에 훑는
+//     getPastHistoryBulk(@107)를 새로 만들고 여기서는 **요청 1회**로 끝낸다.
+//   ⚠️ 집계 결과(getResults)에는 연락처가 없다. getPastHistory·Bulk 모두 **이름으로만** 대조하므로
+//     연락처 없이도 같은 값이 나온다. _pastCache 키는 '이름_연락처'라 집계에서 만든 항목은
+//     연락처를 빈 값으로 넣는다(검토 탭이 채운 항목이 있으면 그쪽을 먼저 쓴다).
+function _pastOf(name) {
+  if (!name) return null;
+  const nm = String(name).replace(/\s+/g, '');
+  const k = Object.keys(_pastCache).find(function(key){
+    return key.slice(0, key.lastIndexOf('_')).replace(/\s+/g,'') === nm;
+  });
+  return k ? _pastCache[k] : null;
+}
+// 집계 행에 넣을 재지원 뱃지 HTML. 이력이 없으면 빈 문자열.
+function _pastBadgeHtml(name) {
+  const h = _pastOf(name);
+  if (!h || !h.length) return '';
+  const last = h[0];
+  const full = h.map(function(x){ return x.round + ' ' + (x.status||''); }).join(' / ');
+  return '<div style="font-size:13px;color:#e65100;font-weight:700;margin-top:4px" title="' + _escapeHtml(full) + '">'
+       + '⚠️ 재지원 ' + h.length + '회 — 최근 ' + _escapeHtml(last.round||'') + ' '
+       + _escapeHtml(last.status||'') + (h.length > 1 ? ' 외 ' + (h.length-1) + '건' : '') + '</div>';
+}
+// 집계용 일괄 조회 — 이미 캐시에 있는 이름은 빼고 묻는다
+async function _fetchPastBulk(names, round) {
+  const need = (names||[]).filter(function(n){ return n && _pastOf(n) === null; });
+  if (!need.length || !GAS_URL) return;
+  try {
+    const res = await fetch(GAS_URL + '?action=getPastHistoryBulk&userEmail=' + encodeURIComponent(currentUserEmail||'')
+      + '&currentRound=' + encodeURIComponent(round||'')
+      + '&names=' + encodeURIComponent(JSON.stringify(need)));
+    const d = await res.json();
+    if (d && d.success && d.map) {
+      Object.keys(d.map).forEach(function(nm){ _pastCache[nm + '_'] = d.map[nm] || []; });
+    }
+  } catch(e) { /* 뱃지용이라 실패해도 집계는 그대로 보여준다 */ }
 }
 
 // ══════════════════════════════════════════
