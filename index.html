@@ -1846,7 +1846,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.15';
+const APP_VERSION = 'v1.4.16';
 const APP_VERSION_DATE = '2026.09.07';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -3769,7 +3769,15 @@ async function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
 // ══════════════════════════════════════════
 // 구글 시트 저장/불러오기
 // ══════════════════════════════════════════
+// ✅ v1.4.16 (2026.09.07) — **저장 중복 클릭 방지.**
+//   ⚠️ 2026.09.07 실제 사고: 저장이 41명·수십 초 걸리는 동안 버튼이 그대로 눌리는 상태라
+//     한 번 더 눌렸고, **같은 회차 저장이 두 번 동시에 돌면서** 서로의 임시 시트를 지웠다.
+//     화면에는 「저장 중 오류 (기존 데이터 보존됨): 3795096 시트가 없습니다」가 떴다.
+//   → GAS 쪽에도 스크립트 락을 걸었지만(2026.09.07 @106), **누르지 못하게 막는 게 먼저**다.
+//     락은 두 번째 호출을 거절할 뿐 사용자에겐 여전히 실패로 보인다.
+let _saving = false;
 async function saveToSheet() {
+  if (_saving) { toast('이미 저장 중입니다 — 끝날 때까지 기다려 주세요','err'); return; }
   if (!GAS_URL) { toast('GAS URL을 먼저 설정해주세요','err'); openApi(); return; }
   const done = applicants.filter(a=>a.status==='done');
   if (!done.length) { toast('분석 완료된 지원자가 없습니다','err'); return; }
@@ -3788,6 +3796,11 @@ async function saveToSheet() {
     toast(`⚠️ PDF 총 용량 ${totalB64MB.toFixed(1)}MB — 고용량 스캔 PDF가 포함되어 저장이 느리거나 실패할 수 있습니다`, 'err');
   }
   toast(currentRound + ' 저장 중...','ok');
+  // 버튼을 실제로 잠근다 — 진행 중임이 보여야 두 번 누르지 않는다
+  _saving = true;
+  const _sbLock = document.getElementById('saveBtn');
+  const _sbText = _sbLock ? _sbLock.textContent : '';
+  if (_sbLock) { _sbLock.disabled = true; _sbLock.textContent = '⏳ 저장 중… (' + done.length + '명)'; _sbLock.style.animation = ''; }
   try {
     const res = await fetch(GAS_URL, {method:'POST', headers:{'Content-Type':'text/plain'}, body:JSON.stringify({action:'saveAnalysis', userEmail: currentUserEmail, round:currentRound, empType, job,
       // pdfText 제외, b64는 GAS에서 Drive에 저장하기 위해 포함
@@ -3836,6 +3849,14 @@ async function saveToSheet() {
     const isNetErr = e.message.includes('fetch') || e.message.includes('network') || e.message.includes('Failed');
     if (isNetErr) toast('네트워크 오류 — GAS URL을 확인하거나 잠시 후 다시 저장하세요', 'err');
     else toast('저장 실패: '+e.message, 'err');
+  } finally {
+    // ✅ v1.4.16: 성공하면 위에서 '✅ 저장 완료'로 바꾸고 잠근 상태 그대로 두고,
+    //   실패했으면 **다시 누를 수 있게 풀어준다.** 안 풀면 실패 후 영영 저장을 못 한다.
+    _saving = false;
+    if (_sbLock && !analysisSaved) {
+      _sbLock.disabled = false;
+      _sbLock.textContent = _sbText || '☁️ 구글 시트에 저장';
+    }
   }
 }
 
