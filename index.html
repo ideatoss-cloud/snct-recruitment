@@ -1846,7 +1846,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.12';
+const APP_VERSION = 'v1.4.13';
 const APP_VERSION_DATE = '2026.09.07';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -5959,13 +5959,25 @@ function checkEduDisqualify(eduStr, job, status, eduAll){
   // ✅ v1.2.49: '○○대사대부속고등학교'처럼 고교명에 '대'가 들어가면 축약 패턴([가-힣]{2,}대)이
   //   대학으로 오인해 고졸 지원자가 대졸 필터를 통과했다(서울대사대부고·대전대신고 등).
   //   → 고교 표기가 있으면 축약 패턴을 쓰지 않고 명시적 대학 표기(대학교·대졸·4년제)만 인정.
+  // ✅ v1.4.13 (2026.09.07): **「…대학」으로 끝나는 학교를 통째로 놓치던 버그.**
+  //   v1.2.49가 '○○대사대부속고등학교' 오인을 막으려 축약 패턴에 (?![학문])을 걸었는데,
+  //   그 바람에 **한국폴리텍대학·방송통신대학처럼 「대학교」가 아니라 「대학」으로 끝나는 학교**가
+  //   전부 판별불가(-1)가 됐다. 판별불가면 그 항목이 건너뛰어져 **고교 항목만 남아 「고졸」로 판정**된다.
+  //   실사용 발견(2026.09.07 전기정비 회차) — 곽서훈: 파싱은 '한국폴리텍대학 … 졸업예정'인데
+  //   자동탈락 사유가 '최저학력 미달 (고졸 < 기준 전문대졸)'. AI 총평은 '전문대 졸업'이라 쓰는데
+  //   필터만 고졸로 보는 불일치였다.
+  //   → 축약 패턴에서 '학'을 허용한다('대문'만 제외). 고교 오인은 !hasHigh 조건이 이미 막는다.
+  //   → **폴리텍은 전문대로 분류**한다(작업자 확인 2026.09.07). 학위전공심화과정은 '학사' 표기가
+  //     있으면 위 4년제 조건에서 먼저 잡힌다.
   const rankOf = t => {
     if (gradSchoolRe.test(t)) return 3;
     const hasHigh = /고등학교|고교|고졸|검정고시/.test(t);
-    const isUni = (/4년제|대학교|대졸/.test(t) || (!hasHigh && /[가-힣]{2,}대(?![학문])/.test(t)))
-                  && !/전문대/.test(t);
+    // 폴리텍 학위전공심화과정처럼 «폴리텍 + 학사» 인 경우는 4년제로 본다 — 학사 표기가 우선한다.
+    const isBachelor = /4년제|대학교|대졸|학사|학위전공심화/.test(t);
+    const isJunior = /전문대|전문학사|2년제|3년제|폴리텍|기능대학/.test(t) && !isBachelor;
+    const isUni = (isBachelor || (!hasHigh && /[가-힣]{2,}대(?![문])/.test(t))) && !isJunior;
     if (isUni) return 2;
-    if (/전문대|2년제|3년제/.test(t)) return 1;
+    if (isJunior) return 1;
     if (hasHigh) return 0;
     return -1;
   };
