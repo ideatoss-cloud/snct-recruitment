@@ -1846,7 +1846,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.17';
+const APP_VERSION = 'v1.4.18';
 const APP_VERSION_DATE = '2026.09.07';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -1863,6 +1863,33 @@ const REQUIRED_LICENSES = {
   '크레인기사': '컨테이너크레인운전기능사',
   '변전': '전기기사',
 };
+
+// ══════════════════════════════════════════
+// ✅ v1.4.18 (2026.09.07) — **채점기준 버전(scoring_version).**
+//   서류점수는 「모델 × 프롬프트 × 자격증 관련표 × 루브릭」 네 가지의 결과다. 넷 중 하나만 바뀌어도
+//   같은 지원서의 점수가 달라진다. 지금까지는 어느 회차가 어느 기준으로 채점됐는지 **어디에도 남지
+//   않았다.** 2년 뒤 「이 점수는 무슨 기준이었나」에 답하지 못하면 점수 순서 자체를 방어할 수 없다.
+//   → 분석할 때마다 결과에 _scoring_version을 박고, 시트 '채점기준' 열과 회차목록에도 남긴다.
+//   형식: gpt-5.5 / P-a3f9c1 / L-7b2e04 / R1 / v1.4.18
+//     P- : 프롬프트 본문 해시(지원서 텍스트 제외). 프롬프트를 한 글자라도 고치면 자동으로 바뀐다.
+//     L- : RELATED_LICENSES 표 해시. 자격증 하나 추가해도 바뀐다 — 회차 중 수정 금지의 근거.
+//     R  : 루브릭 판. 자격증·학점·학력 계산식(recalcLicenseScore·applyGpaScore·checkEduDisqualify)을
+//          손댈 때 **사람이 올린다.** 자동 계산 대상이 아니라 잊기 쉬우니 함수 주석에 함께 적어둔다.
+//   ⚠️ 이 값은 **비교용 꼬리표**다. 다르다고 점수가 틀렸다는 뜻이 아니라 「같은 저울이 아니다」는 뜻이다.
+const SCORING_RUBRIC_VER = 'R1';   // 2026.09.07 기준 — 자격증(recalcLicenseScore)·학점(applyGpaScore)·학력(checkEduDisqualify v1.4.14)
+function _hash6(str) {
+  let h = 5381; str = String(str || '');
+  for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(16).padStart(8, '0').slice(0, 6);
+}
+function scoringVersion(empType, job) {
+  let pHash = '------';
+  try { pHash = _hash6(makePrompt(empType || '', job || '', '')); } catch (e) {}
+  let lHash = '------';
+  try { lHash = _hash6(JSON.stringify(RELATED_LICENSES)); } catch (e) {}
+  return (typeof MODEL !== 'undefined' ? MODEL : '?') + ' / P-' + pHash + ' / L-' + lHash
+       + ' / ' + SCORING_RUBRIC_VER + ' / ' + APP_VERSION;
+}
 
 const RELATED_LICENSES = {
   크레인기사:['크레인운전기능사','천장크레인운전기능사','기중기운전기능사','컨테이너크레인운전기능사','항만크레인운전기능사'],
@@ -3275,7 +3302,10 @@ function renderAlist() {
                      + '|' + ((a.result && a.result.contact) || '').replace(/[^0-9]/g,'');
   const _dupCnt = {};
   applicants.forEach(a => { const k=_dupKey(a); if(k.charAt(0)!=='|') _dupCnt[k]=(_dupCnt[k]||0)+1; });
-  el.innerHTML = applicants.map(a=>{
+  // ✅ v1.4.18: 원본 미확인 자동탈락이 있으면 목록 맨 위에 알린다 — 확정 전에 반드시 지워야 하는 항목
+  const _unrev = _disqUnreviewed();
+  const _unrevBar = _unrev.length ? `<div style="background:rgba(244,168,0,0.10);border:1px solid var(--gold);border-radius:8px;padding:8px 11px;margin-bottom:8px;font-size:13px;line-height:1.5;color:var(--gold)"><b>⚠️ 원본 미확인 자동탈락 ${_unrev.length}명</b> — ${_escapeHtml(_unrev.map(a=>a.result.name||a.name).join(', '))}<br><span style="color:var(--tx2)">각 지원자를 열어 PDF 학력란을 보고 <b>[✔ 원본 PDF 확인함]</b>을 눌러 주세요. 확정 전에 0명이어야 합니다.</span></div>` : '';
+  el.innerHTML = _unrevBar + applicants.map(a=>{
     const isViewed = _viewed.has(String(a.id));
     return `
     <div class="aitem ${a.analysisError?'aitem-err':''}" style="${isViewed?'opacity:0.65;':''}" onclick="showResult('${a.id}')" ondblclick="showPdfModal('${a.id}')" ontouchstart="_touchStart('${a.id}', event)" ontouchend="_touchEnd()" title="더블클릭(PC) / 길게누르기(모바일): 원본 PDF 보기">
@@ -3288,7 +3318,7 @@ function renderAlist() {
       </div>
       <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0">
         <span class="stag ${a.status==='wait'||a.status==='error'?'s-w':a.status==='ing'?'s-i':(a.result?._disqualified?'s-x':a._manual?'s-m':'s-d')}">
-          ${a.status==='wait'?'대기':a.status==='error'?'실패':a.status==='ing'?'분석중':(a.result?._disqualified?'탈락':a._manual?'수동입력':'완료')}
+          ${a.status==='wait'?'대기':a.status==='error'?'실패':a.status==='ing'?'분석중':(a.result?._disqualified?(a.result._disq_review?'탈락 ✔':'탈락 ⚠'):a._manual?'수동입력':'완료')}
         </span>
         ${a.analysisError?`<button class="btn btn-r" style="font-size:11px;padding:2px 6px;margin:0" onclick="event.stopPropagation();reanalyzeOne('${a.id}')">🔄 재분석</button>`:''}
         ${isAdmin?`<button title="이 지원자를 목록에서 삭제" style="font-size:12px;line-height:1;padding:2px 6px;margin:0;background:transparent;border:1px solid var(--bd);border-radius:5px;color:var(--tx2);cursor:pointer" onclick="event.stopPropagation();removeApplicant('${a.id}')">🗑️</button>`:''}
@@ -3397,6 +3427,7 @@ async function analyzeAll(skipConfirm) {
         }
         a.pdfText = pdfText; // 면접 질문 생성에 재사용
         a.result = await callOpenAIConsensus(makePrompt(empType, job, pdfText), 3);
+        a.result._scoring_version = scoringVersion(empType, job);   // ✅ v1.4.18 채점기준 꼬리표
         // 이름 공백 제거 (이 상 구 → 이상구)
         if (a.result?.name) a.result.name = a.result.name.replace(/\s+/g, '');
         const eduCheck = checkEduDisqualify(a.result.education||'', job, a.result.education_status, a.result.education_all);
@@ -3725,6 +3756,7 @@ async function reanalyzeOne(id) {
       }
       a.pdfText = pdfText;
       a.result  = await callOpenAIConsensus(makePrompt(empType, job, pdfText), 3);
+      a.result._scoring_version = scoringVersion(empType, job);   // ✅ v1.4.18 채점기준 꼬리표
       if (a.result && a.result.name) a.result.name = a.result.name.replace(/\s+/g, '');
       const eduCheck = checkEduDisqualify(a.result.education||'', job, a.result.education_status, a.result.education_all);
       // ✅ v1.2.41: 일괄분석과 동일하게 미기재 경고 전달
@@ -6312,6 +6344,7 @@ ${intro}` : '',
     }
     result._eduMismatch = eduJudgeMismatch(result, jobF);
 
+    result._scoring_version = '수동입력 / ' + SCORING_RUBRIC_VER + ' / ' + APP_VERSION;   // ✅ v1.4.18
     a.result   = result;
     a.status   = 'done';
     a.empType  = empTypeF;
@@ -6545,7 +6578,13 @@ function showResult(id) {
       ${r.loyalty_risk?`<div style="margin-top:8px;font-size:14px;color:var(--red);background:rgba(255,82,82,0.08);padding:7px 10px;border-radius:6px">⚠️ 잦은 이직 이력 — 평균 재직기간 1년 미만</div>`:''}
     </div>
     <div id="pastHistoryCard_${id}" style="display:none;margin-bottom:12px"></div>
-    ${r._disqualified?`<div style="background:rgba(255,82,82,0.1);border:2px solid var(--red);border-radius:10px;padding:15px;margin-bottom:12px;display:flex;align-items:center;gap:12px"><div style="font-size:26px">🚫</div><div><div style="font-size:14px;font-weight:700;color:var(--red)">자동 탈락</div><div style="font-size:14px;color:var(--tx2);margin-top:3px">${r._disqualify_reason||''}</div></div></div>`:''}
+    ${r._disqualified?`<div style="background:rgba(255,82,82,0.1);border:2px solid var(--red);border-radius:10px;padding:15px;margin-bottom:12px;display:flex;align-items:center;gap:12px"><div style="font-size:26px">🚫</div><div style="flex:1"><div style="font-size:14px;font-weight:700;color:var(--red)">자동 탈락</div><div style="font-size:14px;color:var(--tx2);margin-top:3px">${r._disqualify_reason||''}</div>
+      ${r._disq_review
+        ? `<div style="font-size:13px;color:var(--green);margin-top:6px">✔ 원본 확인 — ${_escapeHtml(r._disq_review.by||'')} · ${_escapeHtml(r._disq_review.at||'')}${isAdmin?` <a href="#" onclick="event.preventDefault();markDisqReviewed('${id}',true)" style="color:var(--tx2);font-size:12px;margin-left:6px">취소</a>`:''}</div>`
+        : (isAdmin
+            ? `<div style="margin-top:8px"><button class="btn btn-o" style="font-size:13px;padding:5px 12px;margin:0" onclick="markDisqReviewed('${id}')">✔ 원본 PDF 확인함 — 판정 맞음</button><span style="font-size:12px;color:var(--tx2);margin-left:8px">판정이 틀렸으면 누르지 말고 재분석·수동입력으로 바로잡으세요</span></div>`
+            : `<div style="font-size:13px;color:var(--gold);margin-top:6px">⚠️ 원본 미확인</div>`)}
+    </div></div>`:''}
     ${r._eduMismatch?`<div style="background:rgba(244,168,0,0.12);border:2px solid var(--gold);border-radius:10px;padding:13px 15px;margin-bottom:12px;display:flex;align-items:flex-start;gap:10px"><div style="font-size:22px">⚖️</div><div style="font-size:14px;color:var(--tx2);line-height:1.6"><b style="color:var(--gold)">판정 불일치 — 원본 확인 필요</b><br>${_escapeHtml(r._eduMismatch)}<br><span style="font-size:13px">둘 중 하나가 틀렸습니다. 원본 PDF의 학력란을 보고 맞는 쪽으로 처리해 주세요.</span></div></div>`:''}
     ${r._needReanalyze?`<div style="background:rgba(43,138,255,0.10);border:1px solid var(--bl,#2b8aff);border-radius:10px;padding:12px 15px;margin-bottom:12px;font-size:14px;color:var(--tx2);line-height:1.6"><b>학력 탈락이 해제되었습니다</b> — 다만 탈락 처리될 때 서류점수가 0점으로 덮어써져 <b>원점수가 남아 있지 않습니다.</b> 이 지원자만 <b>[🔄 재분석]</b>을 눌러 점수를 되살려 주세요.</div>`:''}
     ${(!r._disqualified && r._edu_warn)?`<div style="background:rgba(244,168,0,0.1);border:1px solid var(--gold);border-radius:10px;padding:12px 15px;margin-bottom:12px;display:flex;align-items:center;gap:10px"><div style="font-size:20px">⚠️</div><div style="font-size:14px;color:var(--tx2)"><b style="color:var(--gold)">학력 확인 필요</b> — ${_escapeHtml(r._edu_warn)}<br><span style="font-size:13px">최저학력 판정을 할 수 없어 통과 처리했습니다. 원본 PDF를 확인해 주세요.</span></div></div>`:''}
@@ -6555,6 +6594,7 @@ function showResult(id) {
         <div class="score-track"><div class="score-fill ${fc}" id="sf" style="width:0%"></div></div>
         <div style="font-size:14px;color:var(--tx2)">${r.fit_comment||''}</div>
         ${bonus>0?`<div style="font-size:13px;color:var(--gold);margin-top:4px">기본 ${r.fit_score}점 + 가산점 ${bonus}점</div>`:''}
+        ${r._scoring_version?`<div style="font-size:11px;color:var(--tx2);opacity:.7;margin-top:5px;font-family:'DM Mono',monospace" title="채점기준 = 모델 / 프롬프트 해시 / 자격증표 해시 / 루브릭 판 / 앱 버전. 다른 회차와 이 값이 다르면 같은 저울이 아닙니다.">🏷 ${_escapeHtml(r._scoring_version)}</div>`:''}
         ${(r._fit_sd!=null && !r._disqualified)?(()=>{const sig=_fitSignal(r._fit_sd);return sig?`<div style="font-size:12px;margin-top:6px;color:var(--tx2)">🎯 AI 채점 신뢰도 <span style="color:${sig.color};font-weight:700">${sig.dot} ${sig.label}</span> <span style="opacity:0.65">(${r._fit_n||3}회 채점 ±${r._fit_sd})</span></div>`:'';})():''}
       </div>
     </div>
@@ -6614,6 +6654,34 @@ function toggleBonus(id,label,score){
 //   (2026.09.07 — 김대훈 0점짜리와 재작성본이 2건으로 남은 건이 계기)
 //   ⚠️ 시트는 saveAnalysis가 **회차 전체를 다시 쓰는 방식**이라, 지운 뒤 [☁️ 구글 시트에 저장]을
 //     눌러야 시트에서도 사라진다. 그래서 삭제 직후 저장 버튼을 켜고 안내한다.
+// ✅ v1.4.18 (2026.09.07) — **자동탈락은 사람이 원본을 봤다는 기록이 있어야 한다.**
+//   최저학력 필터는 문자열 규칙이라 틀릴 수 있고(2026.09.07 폴리텍 4명 오탈락), 오탈락 1건은
+//   채용 절차에서 가장 방어가 안 되는 사고다. 40명을 다 읽으라는 규칙은 지켜지지 않지만
+//   **탈락자 0~5명은 읽을 수 있다.** 확인했으면 누가·언제를 남긴다 — 「봤다」가 아니라
+//   「누가 언제 봤다」가 시트 열(탈락검토자·탈락검토일시)에 남아야 감사 기록이다.
+//   확인은 「판정이 맞다」는 승인이다. 판정이 틀렸으면 확인하지 말고 원본대로 처리(수동입력·재분석)한다.
+function markDisqReviewed(id, undo){
+  if(!isAdmin){toast('관리자만 확인 처리할 수 있습니다','err');return;}
+  const a = applicants.find(x=>String(x.id)===String(id));
+  if(!a || !a.result || !a.result._disqualified){toast('자동탈락 상태가 아닙니다','err');return;}
+  if(undo){ delete a.result._disq_review; }
+  else {
+    const nm = a.result.name || a.name || '';
+    if(!confirm(nm + ' — 원본 PDF의 학력란을 확인했고 자동탈락 판정이 맞습니까?\n\n사유: ' + (a.result._disqualify_reason||''))) return;
+    a.result._disq_review = { by: currentUserEmail || '', at: (function(d){const p=n=>String(n).padStart(2,'0');return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes());})(new Date()) };   // 현지시각 (toISOString은 UTC라 9시간 어긋난다)
+  }
+  analysisSaved=false;
+  const sb=document.getElementById('saveBtn');
+  if(sb){sb.disabled=false;sb.textContent='☁️ 구글 시트에 저장';sb.style.background='';}
+  try{ if(currentRound){ localStorage.setItem(LS_DATA+'_'+currentRound, JSON.stringify({t:Date.now(), d:applicants})); } }catch(e){}
+  renderAlist(); showResult(id);
+  toast(undo ? '확인 기록을 지웠습니다' : '원본 확인 기록됨 — [저장]을 눌러야 시트에 남습니다','ok');
+}
+// 미확인 자동탈락 인원 — 목록 상단 경고에 쓴다
+function _disqUnreviewed(){
+  return applicants.filter(a=>a.status==='done' && a.result && a.result._disqualified && !a.result._disq_review);
+}
+
 function removeApplicant(id){
   if(!isAdmin){toast('관리자만 삭제할 수 있습니다','err');return;}
   const a = applicants.find(x=>String(x.id)===String(id));
