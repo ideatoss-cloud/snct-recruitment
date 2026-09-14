@@ -1868,7 +1868,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.27';
+const APP_VERSION = 'v1.4.28';
 const APP_VERSION_DATE = '2026.09.14';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -4164,7 +4164,11 @@ async function loadFromSheet() {
       gasJson(GAS_URL+'?action=getAnalysis&userEmail='+encodeURIComponent(currentUserEmail||'')+'&round='+encodeURIComponent(round)+'&email='+encodeURIComponent(currentUserEmail||''), null, 'getAnalysis'),
       gasJson(GAS_URL+'?action=getConfirmed&userEmail='+encodeURIComponent(currentUserEmail||'')+'&round='+encodeURIComponent(round), null, 'getConfirmed')
     ]);
-    _mark('GAS 응답 수신', Math.round(_r1.bytes / 1024) + 'KB');
+    // v1.4.28: GAS가 응답에 실어 보내는 서버 처리시간(_ms)을 함께 적는다.
+    //   이게 있어야 「서버가 느린가 / 네트워크·콜드스타트인가」가 갈린다.
+    const _srv = (_r1.data && _r1.data._ms != null) ? _r1.data._ms : null;
+    _mark('GAS 응답 수신', Math.round(_r1.bytes / 1024) + 'KB'
+          + (_srv != null ? ' · 서버 ' + _srv + 'ms · 대기 ' + Math.max(0, Math.round(performance.now() - _lt0) - _srv) + 'ms' : ''));
     const data = _r1.data, cfData = _r2.data;
 
     if (!data.success) { toast('불러오기 실패: '+data.message,'err'); setPanel('<div class="empty"><div class="empty-ic">⚠️</div><div style="font-size:15px;color:var(--red)">불러오기 실패<br>'+data.message+'</div><button class="btn btn-o" style="margin-top:12px" onclick="loadFromSheet()">🔄 다시 시도</button></div>'); return; }
