@@ -1868,7 +1868,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.35';
+const APP_VERSION = 'v1.4.36';
 const APP_VERSION_DATE = '2026.09.14';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -7299,6 +7299,16 @@ function _mailSentTo(round, tpl, email, name) {
     if (email && x.email && x.email === email) return true;
     return nm && String(x.name || '').replace(/\s+/g, '') === nm;
   }) || null;
+}
+
+// ✅ v1.4.36 (2026.09.14) — **아직 안 받아온 것을 「없다」고 말하지 않는다.**
+//   v1.4.32의 캐시 우선 렌더와 v1.4.35의 RSVP 배지가 물렸다. 집계 캐시에는 RSVP·발송이력이
+//   들어 있지 않아, 캐시로 그린 **1.6초 동안** 5명 전원이 「✉️ 안내 미발송」으로 보였다.
+//   실제로는 전원 발송에 1명은 불참 회신한 상태였다(전체 점검 중 헤드리스에서 재현).
+//   그 사이 화면을 본 사람은 「아직 아무도 안 받았네」로 오판한다.
+//   → 이력을 못 받아온 동안에는 **「확인 중」**으로 두고, 부족 인원도 단정하지 않는다.
+function _sentLoaded(round) {
+  return !!((window.__emailSentStatuses || {})[round]);
 }
 
 function _ivTargetOf(round) {
@@ -14895,6 +14905,7 @@ function showConfirmArea(results) {
   //   불참 회신이 오면 그 자리를 차순위로 채워야 하는데, 종전에는
   //   **불참 회신이 이 화면에 전혀 보이지 않았다.** 메일 상세 화면까지 들어가야 알 수 있었다.
   const _tgt = _ivTargetOf(currentRound);
+  const _loaded = _sentLoaded(currentRound);   // v1.4.36: 발송이력·RSVP를 받아왔는가
   const _rsvpOf = function (nm) { return _ivRsvpOf(currentRound, '', nm); };
   const _sentOf = function (nm) { return _mailSentTo(currentRound, 'interviewSchedule', '', nm); };
   let _cAttend = 0, _cAbsent = 0, _cPending = 0, _cNotSent = 0;
@@ -14917,6 +14928,8 @@ function showConfirmArea(results) {
       return `<span style="background:rgba(255,82,82,0.15);color:var(--red);font-size:12px;font-weight:700;padding:2px 7px;border-radius:6px;margin-left:6px">❌ 불참 회신</span>`;
     if (_sentOf(nm))
       return `<span style="background:rgba(244,168,0,0.13);color:var(--gold);font-size:12px;padding:2px 7px;border-radius:6px;margin-left:6px">⏳ 회신 대기</span>`;
+    if (!_loaded)   // v1.4.36: 아직 못 받아왔다 — 「미발송」이라고 단정하지 않는다
+      return `<span style="background:rgba(255,255,255,0.06);color:var(--tx2);font-size:12px;padding:2px 7px;border-radius:6px;margin-left:6px">… 확인 중</span>`;
     return `<span style="background:rgba(255,255,255,0.06);color:var(--tx2);font-size:12px;padding:2px 7px;border-radius:6px;margin-left:6px">✉️ 안내 미발송</span>`;
   };
   const _targetHtml = `
@@ -14928,14 +14941,16 @@ function showConfirmArea(results) {
         <span style="color:var(--tx2)">명 · 현재 확정 <b style="color:var(--tx)">${alreadyConfirmed.length}명</b></span>
       </div>
       <div style="font-size:13px;color:var(--tx2);margin-top:7px;line-height:1.7">
-        ✅ 참석 ${_cAttend} · ❌ 불참 ${_cAbsent} · ⏳ 회신 대기 ${_cPending} · ✉️ 안내 미발송 ${_cNotSent}
+        ${_loaded
+          ? `✅ 참석 ${_cAttend} · ❌ 불참 ${_cAbsent} · ⏳ 회신 대기 ${_cPending} · ✉️ 안내 미발송 ${_cNotSent}`
+          : `… 참석/불참 회신 현황을 불러오는 중입니다 — 잠시 뒤 표시됩니다`}
       </div>
-      ${_short ? `<div style="margin-top:9px;padding:9px 12px;background:rgba(244,168,0,0.10);border-left:3px solid var(--gold);border-radius:4px;font-size:13.5px;line-height:1.7;color:var(--gold)">
+      ${(_loaded && _short) ? `<div style="margin-top:9px;padding:9px 12px;background:rgba(244,168,0,0.10);border-left:3px solid var(--gold);border-radius:4px;font-size:13.5px;line-height:1.7;color:var(--gold)">
           <b>⚠️ ${_short}명이 부족합니다</b>
           <span style="color:var(--tx2)">${_cAbsent ? `— 불참 회신 ${_cAbsent}명의 자리입니다. ` : '— '}</span>
           <br><span style="color:var(--tx2)">아래 미확정 목록에서 <b>〈차순위〉</b> 표시된 분을 체크해 확정하신 뒤,
           【📅 면접 일정 안내】 메일을 다시 보내시면 <b>새로 확정된 분에게만</b> 나갑니다.</span>
-        </div>` : (alreadyConfirmed.length ? `<div style="margin-top:9px;font-size:13px;color:var(--green)">✅ 목표 인원이 채워졌습니다 — 이제 서류 불합격 통보를 보내셔도 됩니다.</div>` : '')}
+        </div>` : ((_loaded && alreadyConfirmed.length) ? `<div style="margin-top:9px;font-size:13px;color:var(--green)">✅ 목표 인원이 채워졌습니다 — 이제 서류 불합격 통보를 보내셔도 됩니다.</div>` : '')}
     </div>`;
   const confirmBtn = document.getElementById('confirmBtn');
 
