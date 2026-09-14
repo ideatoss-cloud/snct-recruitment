@@ -1868,8 +1868,8 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.23';
-const APP_VERSION_DATE = '2026.09.07';
+const APP_VERSION = 'v1.4.24';
+const APP_VERSION_DATE = '2026.09.14';
 let currentRound = ''; // 현재 선택된 회차
 
 const JOBS = {
@@ -14918,7 +14918,7 @@ if ('serviceWorker' in navigator) {
 <script>
 /* ═══════════════════════════════════════════════════════════════
    리퀴드 글래스 (Liquid Glass) — SNCT 사내 도구 공용 표면 표준
-   선광신컨테이너터미널 관리팀 · v0.2.1 · 2026.09.14
+   선광신컨테이너터미널 관리팀 · v0.2.2 · 2026.09.14
 
    흔한 글래스모피즘(blur+반투명)과 다릅니다.
    가장자리에서 뒤 배경이 **휘는**(굴절) 것이 핵심이고, 가운데는 맑게 둡니다.
@@ -14960,11 +14960,11 @@ if ('serviceWorker' in navigator) {
    · 인쇄·고대비·투명도 감소 설정에서는 자동으로 불투명 전환됩니다.
    · 한 화면에 유리를 8장 넘기지 마십시오. 합성 비용이 겹칩니다.
 
-   자세한 적용 기준은 `SNCT-리퀴드글래스-적용기준-v0.2.1.md` 참조.
+   자세한 적용 기준은 `SNCT-리퀴드글래스-적용기준-v0.2.2.md` 참조.
    ═══════════════════════════════════════════════════════ */
 
 var Glass = (function () {
-  var VER = '0.2.1';
+  var VER = '0.2.2';
   var MAX_MAP = 512;        /* 변위맵 한 변 상한. 넘으면 축소해 그린 뒤 늘려 쓴다 */
   var GC_LIMIT = 40;        /* 필터가 이보다 많아지면 안 쓰는 것을 수거한다 */
   var _cssDone = false;
@@ -15222,7 +15222,28 @@ var Glass = (function () {
        static 일 때만 손댄다. */
     if (cs.position === 'static') el.style.position = 'relative';
     var w = el.offsetWidth, h = el.offsetHeight;
-    if (w < 24 || h < 24) return false;               /* 너무 작으면 굴절이 안 보인다 */
+    if (w < 24 || h < 24) {
+      /* ⚠️ v0.2.2 (2026.09.14) — **여기서 그냥 물러나면 영영 다시 걸리지 않았다.**
+         호출 시점에 아직 레이아웃이 안 잡힌 요소(로그인 화면에 가려진 헤더, 처음엔 숨어
+         있는 탭 패널 등)가 크기 0으로 걸러진 뒤, 아래 ResizeObserver 등록부까지 가지
+         못해 재시도 기회를 잃었다.
+         실측 — 채용 에이전트 v1.4.23에서 FAB(고정 36×36)에는 걸렸는데
+         **헤더(flex, 렌더 후 60px)에는 lg-on이 끝내 붙지 않았다.**
+         → 크기가 잡히면 스스로 다시 걸리도록 **감시만 남기고** 물러난다. */
+      if (window.ResizeObserver && !el.__lgWait) {
+        el.__lgWait = new ResizeObserver(function () {
+          if (el.offsetWidth >= 24 && el.offsetHeight >= 24) {
+            try { el.__lgWait.disconnect(); } catch (e) {}
+            el.__lgWait = null;
+            apply(el, opts);
+          }
+        });
+        el.__lgWait.observe(el);
+      }
+      return false;                                   /* 너무 작으면 굴절이 안 보인다 */
+    }
+    /* 대기 감시가 남아 있으면 정리한다 — 이제 진짜로 걸린다 */
+    if (el.__lgWait) { try { el.__lgWait.disconnect(); } catch (e) {} el.__lgWait = null; }
 
     var radius = opts.radius;
     if (radius == null) {
@@ -15336,6 +15357,7 @@ var Glass = (function () {
       it.el.style.removeProperty('--lg-bd');
       if (it.ro) it.ro.disconnect();
       if (it.el.__lgSpec) { it.el.removeEventListener('pointermove', it.el.__lgSpec); it.el.__lgSpec = null; }
+      if (it.el.__lgWait) { try { it.el.__lgWait.disconnect(); } catch (e) {} it.el.__lgWait = null; }
       it.el.__lgRO = null;
     }
     _items = [];
