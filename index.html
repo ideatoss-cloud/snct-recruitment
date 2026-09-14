@@ -1868,7 +1868,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.30';
+const APP_VERSION = 'v1.4.31';
 const APP_VERSION_DATE = '2026.09.14';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -7177,9 +7177,20 @@ async function loadAdminResults() {
   currentRound = round;
   document.getElementById('adminResultBody').innerHTML='<div class="loading"><div class="spinner"></div><div style="font-size:14px;color:var(--tx2)">집계 중...</div></div>';
   document.getElementById('confirmArea').style.display='none';
+  // ✅ v1.4.31 (2026.09.14) — **집계가 GAS를 줄줄이 세 번 왕복하던 것을 한 번으로 줄인다.**
+  //   ① getResults → ② getConfirmed → ③ 재지원 이력을 **차례로** 기다렸다.
+  //   GAS는 왕복 1.6초가 바닥값이라(v1.4.30 실측) 그대로 3배가 됐다.
+  //   → ①②은 동시에 던지고, ③는 뱃지용이라 **기다리지 않고** 나중에 채운다.
+  const _at0 = performance.now();
   try {
-    const res=await fetch(GAS_URL+'?action=getResults&userEmail='+encodeURIComponent(currentUserEmail||'')+'&round='+encodeURIComponent(round));
-    const data=await res.json();
+    const [_rr, _rc] = await Promise.all([
+      gasJson(GAS_URL+'?action=getResults&userEmail='+encodeURIComponent(currentUserEmail||'')+'&round='+encodeURIComponent(round), null, 'getResults'),
+      gasJson(GAS_URL+'?action=getConfirmed&userEmail='+encodeURIComponent(currentUserEmail||'')+'&round='+encodeURIComponent(round), null, 'getConfirmed')
+    ]);
+    const data = _rr.data;
+    // 투표 기록이 없을 때 쓰는 확정자 명단 — 위에서 같이 받아 왔으므로 다시 묻지 않는다
+    const _confirmedNames = (_rc.data && _rc.data.success && Array.isArray(_rc.data.confirmed))
+      ? _rc.data.confirmed.map(function(c){ return c.name; }) : [];
     if(!data.success){document.getElementById('adminResultBody').innerHTML=`<div style="color:var(--red);font-size:14px;padding:20px">${data.message}</div>`;return;}
     // ✅ v1.2.54: 같은 사람이 두 번 제출하면 참여자 목록에도 이름이 두 번 나온다 → 중복 제거
     const voters=[...new Set((data.voters||[]).map(v=>String(v).trim()).filter(Boolean))];
@@ -7202,12 +7213,7 @@ async function loadAdminResults() {
           + '<span style="font-size:13px">투표 없이 서류점수로 확정하시려면 <b>[지원서 검토] 탭에서 해당 회차를 먼저 불러온 뒤</b> 이 탭으로 오세요.</span></div>';
         return;
       }
-      let confirmedNames = [];
-      try {
-        const cRes = await fetch(GAS_URL+'?action=getConfirmed&userEmail='+encodeURIComponent(currentUserEmail||'')+'&round='+encodeURIComponent(round));
-        const cData = await cRes.json();
-        if(cData.success && Array.isArray(cData.confirmed)) confirmedNames = cData.confirmed.map(c => c.name);
-      } catch(e){}
+      const confirmedNames = _confirmedNames;   // v1.4.31: 위에서 병렬로 받아 왔다
       pool.forEach(a => {
         const nm = a.result.name || a.name.replace('.pdf','');
         results.push({
@@ -7268,7 +7274,9 @@ async function loadAdminResults() {
         </div>
       </div>`;
     // ✅ v1.4.17: 재지원 이력 일괄 조회 (요청 1회). 실패해도 집계는 그대로 그린다.
-    await _fetchPastBulk(results.map(function(r){ return r.name; }), round);
+    // ✅ v1.4.31: **기다리지 않는다.** 뱃지·배너용인데 await하면 집계 화면 전체가 1.6초 늦게 뜬다.
+    //   먼저 그리고, 이력이 도착하면 목록만 다시 그린다(_paint).
+    const _paint = function () {
     const _reCnt = results.filter(function(r){ const h=_pastOf(r.name); return h && h.length; }).length;
     const reBanner = _reCnt ? `
       <div style="background:rgba(230,81,0,0.10);border:1px solid #e65100;border-radius:9px;padding:10px 14px;margin-bottom:12px;font-size:13.5px;line-height:1.6;color:#e65100">
@@ -7293,6 +7301,17 @@ async function loadAdminResults() {
           ${(!voteRankByDoc && !(r.total>0)) ? '<div style="font-size:12px;color:var(--gold);margin-top:2px">투표 0표 · 서류점수순</div>' : ''}
         </div>
       </div>`).join('');
+    };
+    _paint();                                        // ← 여기서 화면이 뜬다(GAS 왕복 1회분)
+    (function(){
+      const _ms = Math.round(performance.now() - _at0);
+      console.log('[집계] 화면 표시까지 ' + _ms + 'ms (GAS 왕복 1회)');
+    })();
+    _fetchPastBulk(results.map(function(r){ return r.name; }), round).then(function(){
+      if (round !== currentRound) return;            // 그 사이 회차가 바뀌었으면 그리지 않는다
+      if (!document.getElementById('adminResultBody')) return;
+      _paint();                                      // 재지원 뱃지·배너만 채워 다시 그린다
+    });
     // ✅ v1.2.59: 인쇄·투표결과 메일이 같은 집계를 쓰도록 캐시.
     //   화면에 보이는 것과 인쇄물·메일이 어긋나지 않게 하려는 것이다.
     //   (여기 담기는 값은 이미 dedupeVoteResults를 거쳤다)
