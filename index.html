@@ -1868,7 +1868,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.32';
+const APP_VERSION = 'v1.4.33';
 const APP_VERSION_DATE = '2026.09.14';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -4669,11 +4669,18 @@ const SENDER_INFO = {
   senderName: '이희경 차장',
   senderRole: '관리팀 이희경 차장',
   officePhone: '032-724-1212',
-  mobile: '010-9310-9137',
+  // ⚠️ v1.4.33 (2026.09.14) — **개인 연락처는 이 파일에 두지 않는다.**
+  //   이 저장소는 **공개**다(GitHub Pages). 그리고 단일 HTML이라 앱을 여는 사람은
+  //   누구나 소스를 읽는다. GAS는 2026.08.01부터 비로그인에게 휴대전화·회신주소를
+  //   가리고 있었는데(getSettings), **앱 소스가 같은 값을 평문으로 도로 흘리고 있었다.**
+  //   서버에서 막은 것을 클라이언트가 새면 막은 게 아니다.
+  //   → 실제 값은 GAS `_설정` 시트에만 둔다. 로그인한 등록 사용자는
+  //     loadSettings()가 받아와 여기에 덮어쓴다(비어 있으면 시그니처에서 그 줄이 빠진다).
+  mobile: '',
   companyShort: 'SNCT',
   companyFull: '선광신컨테이너터미널',
   // ✅ v1.0.55: 회신 메일 — MailApp 발신자는 GAS 실행 계정이지만 replyTo로 회사 메일 지정
-  replyToEmail: 'hklee@sun-kwang.co.kr',
+  replyToEmail: '',   // ⚠️ v1.4.33 — 위와 같은 이유. GAS `_설정` 시트에서 받아온다
   // 채용검진 회사 지정 정보
   healthCheckHospital: '현대유비스병원',
   healthCheckAddress: '인천시 미추홀구 독배로 503',
@@ -4721,6 +4728,17 @@ const SENDER_INFO = {
 //   - 평면화된 키 (healthCheckTypes_regular 등)를 중첩 객체로 복원
 //   - 배열 키 (shiftJobKeywords)는 콤마 split → 배열로 복원
 //   - URL 파생값(interviewLocationMapUrl 등)도 자동 재계산
+// ⚠️ v1.4.33 — 메일을 만들기 직전에 담당자 연락처가 실려 있는지 본다.
+//   v1.4.33부터 개인 연락처는 소스에 없고 GAS에서 받아온다. 설정 로드가 실패했거나
+//   로그인 전이면 **연락처 없는 메일이 조용히 만들어질 수 있다.** 조용히 두지 않는다.
+function _warnIfNoContact() {
+  if (!SENDER_INFO.mobile && !SENDER_INFO.replyToEmail) {
+    toast('담당자 연락처를 불러오지 못했습니다 — 메일 시그니처에서 빠집니다. 새로고침 후 다시 만들어 주세요', 'warn');
+    return false;
+  }
+  return true;
+}
+
 async function loadSettings() {
   if (!GAS_URL) return;
   try {
@@ -4908,9 +4926,9 @@ function _buildEmailBody(opts) {
       <div style="font-weight:700;color:#1e293b">${opts.personal
         ? _escapeHtml(SENDER_INFO.senderRole)
         : _escapeHtml(SENDER_INFO.companyFull) + ' ' + _escapeHtml(SENDER_INFO.team)}</div>
-      ${opts.hideContact ? '' : `<div style="font-family:'DM Mono',monospace;font-size:12px">사무실 ${_escapeHtml(SENDER_INFO.officePhone)}</div>`}
-      ${opts.showMobile ? `<div style="font-family:'DM Mono',monospace;font-size:12px">휴대전화 ${_escapeHtml(SENDER_INFO.mobile)}</div>` : ''}
-      ${opts.hideContact ? '' : `<div style="font-family:'DM Mono',monospace;font-size:12px">이메일 <a href="mailto:${_escapeHtml(SENDER_INFO.replyToEmail)}" style="color:#1e40af;text-decoration:none">${_escapeHtml(SENDER_INFO.replyToEmail)}</a></div>`}
+      ${(!opts.hideContact && SENDER_INFO.officePhone) ? `<div style="font-family:'DM Mono',monospace;font-size:12px">사무실 ${_escapeHtml(SENDER_INFO.officePhone)}</div>` : ''}
+      ${(opts.showMobile && SENDER_INFO.mobile) ? `<div style="font-family:'DM Mono',monospace;font-size:12px">휴대전화 ${_escapeHtml(SENDER_INFO.mobile)}</div>` : ''}
+      ${(!opts.hideContact && SENDER_INFO.replyToEmail) ? `<div style="font-family:'DM Mono',monospace;font-size:12px">이메일 <a href="mailto:${_escapeHtml(SENDER_INFO.replyToEmail)}" style="color:#1e40af;text-decoration:none">${_escapeHtml(SENDER_INFO.replyToEmail)}</a></div>` : ''}
     </div>
   </div>
 </div></body></html>`;
@@ -5075,6 +5093,7 @@ function _arrivalFromInterview(s){
 function openEmailSendModal(templateType, round) {
   if (!isAdmin) { toast('관리자만 가능합니다','err'); return; }
   if (!EMAIL_TEMPLATES[templateType]) { toast('알 수 없는 템플릿','err'); return; }
+  _warnIfNoContact();   // v1.4.33: 연락처 없는 메일이 조용히 나가지 않게
 
   // ✅ v1.0.62: 이미 발송된 템플릿 — confirm으로 중복 발송 방지
   const sentSt = (window.__emailSentStatuses?.[round] || {})[templateType];
