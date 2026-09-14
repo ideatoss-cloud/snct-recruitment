@@ -1868,7 +1868,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.31';
+const APP_VERSION = 'v1.4.32';
 const APP_VERSION_DATE = '2026.09.14';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -7142,18 +7142,41 @@ function setVoteRankMode(byDoc){
   loadAdminResults();
 }
 
+// ✅ v1.4.32 (2026.09.14) — 집계 캐시 + 「사람이 건드렸는지」 판정
+//   조용한 갱신이 화면을 갈아엎기 전에 **확정 체크박스를 손댔는지**를 본다.
+//   손댔으면 덮어쓰지 않는다 — 고르던 명단이 갱신 한 번에 날아가면 안 된다.
+const LS_DOCSUM = 'snct_docsum_cache';
+let _docsumSig = null;            // 마지막으로 그렸을 때의 체크 상태
+function _confirmSelSig(){
+  const box = document.getElementById('confirmArea');
+  if (!box || box.style.display === 'none') return '';
+  return [].slice.call(box.querySelectorAll('input[type=checkbox]'))
+    .filter(function(c){ return c.checked; })
+    .map(function(c){ return c.id; }).sort().join('|');
+}
+
 function sortVoteResults(results){
   results.sort((a,b) => voteRankByDoc
     ? (((b.score||0)-(a.score||0)) || ((b.total||0)-(a.total||0)))
     : (((b.total||0)-(a.total||0)) || ((b.score||0)-(a.score||0))));
 }
 
-async function loadAdminResults() {
-  if(!GAS_URL){document.getElementById('adminResultBody').innerHTML='<div style="font-size:14px;color:var(--tx2);text-align:center;padding:20px">GAS URL을 먼저 설정해주세요</div>';return;}
+// ✅ v1.4.32 (2026.09.14) — **집계도 「캐시 먼저 보여주고 뒤에서 갱신」**(작업자 지시)
+//   v1.4.31에서 왕복 3회→1회로 줄여 4.8초→1.6초가 됐다. 남은 1.6초는 구글 웹앱의
+//   왕복 바닥값이라 코드로 못 줄인다 — 그래서 검토 탭(v1.4.30)과 같은 방식을 건다.
+//   ⚠️ 집계는 **면접 대상자를 실제로 확정하는 화면**이다. 낡은 자료를 숨기면 안 된다.
+//      ① 캐시로 그린 동안 상단에 「○분 전 집계 · 최신 받는 중」 띠를 띄운다
+//      ② **확정 체크박스를 하나라도 건드렸으면 조용한 갱신이 덮어쓰지 않는다**
+//      ③ 그 사이 회차가 바뀌었으면 받아온 결과를 버린다
+async function loadAdminResults(opts) {
+  opts = opts || {};
+  const silent = !!opts.silent;
+  if(!GAS_URL){ if(!silent) document.getElementById('adminResultBody').innerHTML='<div style="font-size:14px;color:var(--tx2);text-align:center;padding:20px">GAS URL을 먼저 설정해주세요</div>'; return;}
   // adminRoundSel 값 우선, 없으면 currentRound(지원서 검토에서 불러온 회차) 사용
   const selEl = document.getElementById('adminRoundSel');
-  const round = selEl?.value || currentRound;
+  const round = (silent && opts.round) || selEl?.value || currentRound;
   if(!round){
+    if (silent) return;
     // 회차 목록이 없으면 자동 로드
     if(!rounds.length && GAS_URL) {
       await loadAdminRounds();
@@ -7174,23 +7197,17 @@ async function loadAdminResults() {
     }
     selEl.value=round;
   }
-  currentRound = round;
-  document.getElementById('adminResultBody').innerHTML='<div class="loading"><div class="spinner"></div><div style="font-size:14px;color:var(--tx2)">집계 중...</div></div>';
-  document.getElementById('confirmArea').style.display='none';
+  if (!silent) currentRound = round;
   // ✅ v1.4.31 (2026.09.14) — **집계가 GAS를 줄줄이 세 번 왕복하던 것을 한 번으로 줄인다.**
   //   ① getResults → ② getConfirmed → ③ 재지원 이력을 **차례로** 기다렸다.
   //   GAS는 왕복 1.6초가 바닥값이라(v1.4.30 실측) 그대로 3배가 됐다.
   //   → ①②은 동시에 던지고, ③는 뱃지용이라 **기다리지 않고** 나중에 채운다.
   const _at0 = performance.now();
-  try {
-    const [_rr, _rc] = await Promise.all([
-      gasJson(GAS_URL+'?action=getResults&userEmail='+encodeURIComponent(currentUserEmail||'')+'&round='+encodeURIComponent(round), null, 'getResults'),
-      gasJson(GAS_URL+'?action=getConfirmed&userEmail='+encodeURIComponent(currentUserEmail||'')+'&round='+encodeURIComponent(round), null, 'getConfirmed')
-    ]);
-    const data = _rr.data;
-    // 투표 기록이 없을 때 쓰는 확정자 명단 — 위에서 같이 받아 왔으므로 다시 묻지 않는다
-    const _confirmedNames = (_rc.data && _rc.data.success && Array.isArray(_rc.data.confirmed))
-      ? _rc.data.confirmed.map(function(c){ return c.name; }) : [];
+
+  // ── 화면을 그리는 부분. 캐시로도 부르고, GAS 응답으로도 부른다(v1.4.32) ──
+  //   staleMs > 0 이면 「○분 전 집계」 띠를 맨 위에 붙인다.
+  const _renderAll = function (data, confirmedNames, staleMs) {
+    confirmedNames = confirmedNames || [];
     if(!data.success){document.getElementById('adminResultBody').innerHTML=`<div style="color:var(--red);font-size:14px;padding:20px">${data.message}</div>`;return;}
     // ✅ v1.2.54: 같은 사람이 두 번 제출하면 참여자 목록에도 이름이 두 번 나온다 → 중복 제거
     const voters=[...new Set((data.voters||[]).map(v=>String(v).trim()).filter(Boolean))];
@@ -7213,7 +7230,6 @@ async function loadAdminResults() {
           + '<span style="font-size:13px">투표 없이 서류점수로 확정하시려면 <b>[지원서 검토] 탭에서 해당 회차를 먼저 불러온 뒤</b> 이 탭으로 오세요.</span></div>';
         return;
       }
-      const confirmedNames = _confirmedNames;   // v1.4.31: 위에서 병렬로 받아 왔다
       pool.forEach(a => {
         const nm = a.result.name || a.name.replace('.pdf','');
         results.push({
@@ -7274,6 +7290,12 @@ async function loadAdminResults() {
         </div>
       </div>`;
     // ✅ v1.4.17: 재지원 이력 일괄 조회 (요청 1회). 실패해도 집계는 그대로 그린다.
+    // v1.4.32: 캐시로 그린 화면이면 낡은 자료임을 **감추지 않는다**
+    const staleBanner = (staleMs > 0) ? `
+      <div style="background:rgba(244,168,0,0.10);border:1px solid var(--gold);border-radius:9px;padding:10px 14px;margin-bottom:12px;font-size:13.5px;line-height:1.6;color:var(--gold)">
+        <b>⏳ ${Math.max(1, Math.round(staleMs/60000))}분 전 집계입니다 · 최신 자료를 받는 중…</b>
+        <span style="color:var(--tx2)">— 잠시 뒤 자동으로 최신 집계로 바뀝니다. 확정은 바뀐 뒤에 하세요.</span>
+      </div>` : '';
     // ✅ v1.4.31: **기다리지 않는다.** 뱃지·배너용인데 await하면 집계 화면 전체가 1.6초 늦게 뜬다.
     //   먼저 그리고, 이력이 도착하면 목록만 다시 그린다(_paint).
     const _paint = function () {
@@ -7283,7 +7305,7 @@ async function loadAdminResults() {
         <b>⚠️ 재지원자 ${_reCnt}명</b>
         <span style="color:var(--tx2)">— 과거 회차에 지원한 이력이 있습니다. 아래 각 행에서 회차와 결과를 확인하세요.</span>
       </div>` : '';
-    document.getElementById('adminResultBody').innerHTML=closedBanner+dupBanner+reBanner+rankBar+results.map((r,i)=>`
+    document.getElementById('adminResultBody').innerHTML=staleBanner+closedBanner+dupBanner+reBanner+rankBar+results.map((r,i)=>`
       <div class="rank-row ${r.confirmed?'':''}${i===0?'r1':i===1?'r2':i===2?'r3':''}" style="${r.confirmed?'border-color:var(--green);background:rgba(0,201,122,0.08)':''}">
         <div class="rank-medal">${r.confirmed?'✅':(medals[i]||i+1)}</div>
         <div style="flex:1;min-width:0">
@@ -7302,11 +7324,14 @@ async function loadAdminResults() {
         </div>
       </div>`).join('');
     };
-    _paint();                                        // ← 여기서 화면이 뜬다(GAS 왕복 1회분)
-    (function(){
-      const _ms = Math.round(performance.now() - _at0);
-      console.log('[집계] 화면 표시까지 ' + _ms + 'ms (GAS 왕복 1회)');
-    })();
+    _paint();                                        // ← 여기서 화면이 뜬다
+    console.log('[집계] 화면 표시까지 ' + Math.round(performance.now() - _at0) + 'ms'
+                + (staleMs > 0 ? ' (캐시)' : ' (GAS 왕복 1회)'));
+    // v1.4.32: 다음 번에 곧바로 띄우도록 담아 둔다. 캐시로 그린 화면은 다시 담지 않는다.
+    if (staleMs === 0) {
+      try { localStorage.setItem(LS_DOCSUM + '_' + round,
+        JSON.stringify({ t: Date.now(), voters: voters, results: results })); } catch(e){}
+    }
     _fetchPastBulk(results.map(function(r){ return r.name; }), round).then(function(){
       if (round !== currentRound) return;            // 그 사이 회차가 바뀌었으면 그리지 않는다
       if (!document.getElementById('adminResultBody')) return;
@@ -7322,7 +7347,47 @@ async function loadAdminResults() {
     const ivDateArea = document.getElementById('ivDateAdminArea');
     if (ivDateArea) ivDateArea.style.display = isAdmin ? 'block' : 'none';
     showIvDateBanner(round);
-  } catch(e){document.getElementById('adminResultBody').innerHTML=`<div style="color:var(--red);font-size:14px;padding:20px">${e.message}</div>`;}
+    _docsumSig = _confirmSelSig();   // v1.4.32: 지금 그린 상태를 기억한다(사람이 건드렸는지 판정용)
+  };
+
+  // ── 1) 캐시가 있으면 **기다리지 않고** 먼저 그린다(v1.4.32) ──
+  if (!silent) {
+    try {
+      const _c = JSON.parse(localStorage.getItem(LS_DOCSUM + '_' + round) || 'null');
+      if (_c && Array.isArray(_c.results) && _c.results.length) {
+        _renderAll({ success:true, voters:_c.voters||[], results:_c.results }, [],
+                   Math.max(1, Date.now() - (_c.t||0)));
+        setTimeout(function(){ loadAdminResults({ silent:true, round: round }); }, 0);
+        return;
+      }
+    } catch(e){}
+    document.getElementById('adminResultBody').innerHTML='<div class="loading"><div class="spinner"></div><div style="font-size:14px;color:var(--tx2)">집계 중...</div></div>';
+    document.getElementById('confirmArea').style.display='none';
+  }
+
+  // ── 2) GAS 조회 ──
+  try {
+    const [_rr, _rc] = await Promise.all([
+      gasJson(GAS_URL+'?action=getResults&userEmail='+encodeURIComponent(currentUserEmail||'')+'&round='+encodeURIComponent(round), null, 'getResults'),
+      gasJson(GAS_URL+'?action=getConfirmed&userEmail='+encodeURIComponent(currentUserEmail||'')+'&round='+encodeURIComponent(round), null, 'getConfirmed')
+    ]);
+    // 투표 기록이 없을 때 쓰는 확정자 명단 — 위에서 같이 받아 왔으므로 다시 묻지 않는다
+    const _confirmedNames = (_rc.data && _rc.data.success && Array.isArray(_rc.data.confirmed))
+      ? _rc.data.confirmed.map(function(c){ return c.name; }) : [];
+    // ⚠️ v1.4.32 조용한 갱신을 여기서 멈춰야 하는 두 경우
+    if (silent) {
+      if (round !== currentRound) { console.warn('[집계 조용한 갱신] 회차가 바뀌어 결과를 버림'); return; }
+      if (_docsumSig !== null && _confirmSelSig() !== _docsumSig) {
+        console.warn('[집계 조용한 갱신] 확정 체크박스를 손대는 중이라 덮어쓰지 않음');
+        toast('확정 대상을 고르는 중이라 집계를 갱신하지 않았습니다 — 새로고침하면 최신으로 바뀝니다', 'warn');
+        return;
+      }
+    }
+    _renderAll(_rr.data, _confirmedNames, 0);
+  } catch(e){
+    if (silent) { console.warn('[집계 조용한 갱신] 실패 — 캐시 화면 유지:', e.message); return; }
+    document.getElementById('adminResultBody').innerHTML=`<div style="color:var(--red);font-size:14px;padding:20px">${e.message}</div>`;
+  }
 }
 
 // ✅ v1.4.17 (2026.09.07) — **[지원서 집계]에도 재지원 이력을 띄운다** (작업자 지시)
