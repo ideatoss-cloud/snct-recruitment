@@ -1868,7 +1868,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.29';
+const APP_VERSION = 'v1.4.30';
 const APP_VERSION_DATE = '2026.09.14';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -2195,6 +2195,7 @@ let bonusScores = {};
 let ivVotes = {}; // {applicantId: rank(1|2|null)}
 let voteSubmitted = false;
 let analysisSaved = false;
+let _shownId = null;   // v1.4.30: 지금 오른쪽 패널에 떠 있는 지원자 — 조용한 갱신 때 그대로 유지한다
 const LS_ROUNDS = 'snct_rounds_cache';
 const LS_DATA   = 'snct_data_cache';
 const LS_TTL    = 5 * 60 * 1000; // 5분
@@ -4097,13 +4098,25 @@ function onRoundChange() {
   if (sel) currentRound = sel.value;
 }
 
-async function loadFromSheet() {
-  if (!GAS_URL) { toast('GAS URL을 설정해주세요','err'); return; }
-  const round = currentRound || document.getElementById('roundSel')?.value;
-  if (!round) { toast('회차를 먼저 선택해주세요','err'); return; }
-  currentRound = round;
-  // 일반 사용자 회차 접근 권한 검증
-  if (!isAdmin && currentUserEmail) {
+// ✅ v1.4.30 (2026.09.14) — **캐시를 먼저 보여주고 뒤에서 갱신한다.**
+//   실측: GAS 웹앱은 아무 일도 안 하는 요청(ping)에도 왕복 1.5~1.9초가 든다
+//   (연결 0.13초 · 서버 처리 1ms). 「불러오는 데 오래 걸린다」의 바닥값이고 **코드로 못 줄인다.**
+//   그래서 「빠르게 만든다」가 아니라 **「기다리지 않게 한다」**로 간다.
+//   종전에는 캐시가 5분 지나면 버리고 GAS를 끝까지 기다렸다.
+//   이제는 **캐시가 있으면 나이와 무관하게 즉시 뿌리고**, 뒤에서 조용히 받아 교체한다.
+//   ⚠️ 조용한 갱신이 화면을 망치지 않도록 안전장치 셋 —
+//      ① 저장 안 한 편집이 있으면(analysisSaved=false) 덮어쓰지 않는다
+//      ② 그 사이 회차가 바뀌었으면 버린다
+//      ③ 보고 있던 지원자를 그대로 유지하고, 스크롤을 건드리지 않는다
+async function loadFromSheet(opts) {
+  opts = opts || {};
+  const silent = !!opts.silent;
+  if (!GAS_URL) { if (!silent) toast('GAS URL을 설정해주세요','err'); return; }
+  const round = (silent && opts.round) || currentRound || document.getElementById('roundSel')?.value;
+  if (!round) { if (!silent) toast('회차를 먼저 선택해주세요','err'); return; }
+  if (!silent) currentRound = round;
+  // 일반 사용자 회차 접근 권한 검증 (조용한 갱신은 방금 통과한 회차라 다시 묻지 않는다)
+  if (!silent && !isAdmin && currentUserEmail) {
     try {
       const chk = await fetch(GAS_URL + '?action=checkUserRole&email=' + encodeURIComponent(currentUserEmail) + '&round=' + encodeURIComponent(round));
       const chkData = await chk.json();
@@ -4113,7 +4126,8 @@ async function loadFromSheet() {
     } catch(e) { /* GAS 오류 시 통과 */ }
   }
 
-  // ✅ 회차 전환 시 이전 상태 완전 초기화
+  // ✅ 회차 전환 시 이전 상태 완전 초기화 — 조용한 갱신은 화면·상태를 건드리지 않는다
+  if (!silent) {
   confirmedList = [];
   absentList = [];
   ivVotes = {};
@@ -4127,15 +4141,16 @@ async function loadFromSheet() {
   if (banner) banner.style.display = 'none';
   const namesEl = document.getElementById('confirmedNames');
   if (namesEl) namesEl.innerHTML = '';
+  }
 
   const lsKey = LS_DATA + '_' + round;
 
-  // 1) 로컬스토리지 캐시 즉시 표시
+  // 1) 로컬스토리지 캐시 즉시 표시 — v1.4.30부터 **나이와 무관하게** 먼저 뿌린다
   try {
-    const lsRaw = localStorage.getItem(lsKey);
+    const lsRaw = silent ? null : localStorage.getItem(lsKey);
     if (lsRaw) {
       const lsData = JSON.parse(lsRaw);
-      if (Date.now() - lsData.t < LS_TTL) {
+      if (lsData && lsData.d && lsData.d.length) {
         applicants = lsData.d;
         applicants.forEach(a=>{ 
           if(a._bonus && Object.keys(a._bonus).length) bonusScores[a.id]=a._bonus;
@@ -4148,7 +4163,12 @@ async function loadFromSheet() {
         const last = applicants.find(a=>a.status==='done');
         if (last) showResult(last.id);
         else setPanel('<div class="empty"><div class="empty-ic">📋</div><div style="font-size:15px;line-height:1.8">지원자를 선택해 분석 결과를 확인하세요</div></div>');
-        toast(round+' 캐시에서 즉시 불러옴 ⚡','ok');
+        const _ageMin = Math.max(0, Math.round((Date.now() - (lsData.t || 0)) / 60000));
+        toast(round + ' — ' + (_ageMin < 1 ? '방금 받은' : _ageMin + '분 전') + ' 자료 표시 ⚡ 최신 자료를 받는 중…', 'ok');
+        // 뒤에서 조용히 받아 온다 — 화면은 이미 떠 있다(v1.4.30)
+        //   ⚠️ 아래 checkConfirmed()보다 **먼저** 띄운다. 나중에 두면 확정자 조회(GAS 왕복 1.5초)가
+        //   끝날 때까지 갱신이 시작조차 못 한다. 두 요청을 겹쳐서 보낸다.
+        setTimeout(function(){ loadFromSheet({ silent: true, round: round }); }, 0);
         await checkConfirmed(); // ⚠️ v1.2.78: await 없이 부르면 뒤따르는 질문지 동기화가
                                 //   빈 confirmedList를 보고 그냥 리턴했다(재접속 시 캐시 미로드)
         return;
@@ -4157,8 +4177,10 @@ async function loadFromSheet() {
   } catch(e) {}
 
   // 2) GAS 조회 + checkConfirmed 병렬 실행
-  toast(round+' 불러오는 중...','ok');
-  setPanel(`<div class="loading"><div class="spinner"></div><div style="font-size:14px;color:var(--tx2)">${round} 불러오는 중...</div></div>`);
+  if (!silent) {
+    toast(round+' 불러오는 중...','ok');
+    setPanel(`<div class="loading"><div class="spinner"></div><div style="font-size:14px;color:var(--tx2)">${round} 불러오는 중...</div></div>`);
+  }
   // ✅ v1.4.26 (2026.09.14): **불러오기가 느릴 때 어디서 걸리는지 숫자로 본다.**
   //   v1.4.25에서 재지원 조회를 41회→1회로 줄였는데도 여전히 느리다는 지적이 있었다.
   //   추측으로 한 군데씩 고치지 말고 **단계별 소요를 재서** 범인을 지목한다.
@@ -4180,8 +4202,17 @@ async function loadFromSheet() {
           + (_srv != null ? ' · 서버 ' + _srv + 'ms · 대기 ' + Math.max(0, Math.round(performance.now() - _lt0) - _srv) + 'ms' : ''));
     const data = _r1.data, cfData = _r2.data;
 
-    if (!data.success) { toast('불러오기 실패: '+data.message,'err'); setPanel('<div class="empty"><div class="empty-ic">⚠️</div><div style="font-size:15px;color:var(--red)">불러오기 실패<br>'+data.message+'</div><button class="btn btn-o" style="margin-top:12px" onclick="loadFromSheet()">🔄 다시 시도</button></div>'); return; }
+    if (!data.success) {
+      if (silent) { console.warn('[조용한 갱신] 실패 — 캐시 화면 유지:', data.message); return; }
+      toast('불러오기 실패: '+data.message,'err'); setPanel('<div class="empty"><div class="empty-ic">⚠️</div><div style="font-size:15px;color:var(--red)">불러오기 실패<br>'+data.message+'</div><button class="btn btn-o" style="margin-top:12px" onclick="loadFromSheet()">🔄 다시 시도</button></div>'); return;
+    }
+    // ⚠️ v1.4.30 조용한 갱신을 여기서 멈춰야 하는 두 경우
+    if (silent) {
+      if (round !== currentRound) { console.warn('[조용한 갱신] 회차가 바뀌어 결과를 버림'); return; }
+      if (analysisSaved === false) { console.warn('[조용한 갱신] 저장 안 한 편집이 있어 덮어쓰지 않음'); return; }
+    }
     if (!data.applicants.length) {
+      if (silent) { console.warn('[조용한 갱신] 서버에 분석결과 0건 — 캐시 화면 유지'); return; }
       toast('저장된 분석결과가 없습니다','err');
       setPanel(`<div class="empty"><div class="empty-ic">📋</div><div style="font-size:15px">저장된 분석결과가 없습니다</div></div>`);
       return;
@@ -4208,9 +4239,14 @@ async function loadFromSheet() {
     } catch(e){ _mark('로컬 캐시 저장 실패', e.name); }
     renderAlist(); updateBadge();
     _mark('목록 렌더');
-    const last = applicants.find(a=>a.status==='done');
-    if (last) showResult(last.id);
-    else setPanel('<div class="empty"><div class="empty-ic">📋</div><div style="font-size:15px;line-height:1.8">지원자를 선택해 분석 결과를 확인하세요</div></div>');
+    if (silent) {
+      // 보던 지원자를 그대로 다시 그린다. 스크롤은 건드리지 않는다(다른 탭을 보고 있을 수 있다)
+      if (_shownId != null && applicants.some(function(a){ return a.id == _shownId; })) showResult(_shownId, {noScroll:true});
+    } else {
+      const last = applicants.find(a=>a.status==='done');
+      if (last) showResult(last.id);
+      else setPanel('<div class="empty"><div class="empty-ic">📋</div><div style="font-size:15px;line-height:1.8">지원자를 선택해 분석 결과를 확인하세요</div></div>');
+    }
     _mark('첫 지원자 상세 렌더');
 
     // 어디서 걸렸는지 남긴다 — 콘솔 표 + 토스트
@@ -4223,8 +4259,10 @@ async function loadFromSheet() {
       try { console.table(_lap); } catch(e) { console.log(_lap); }
       const total = _lap.length ? _lap[_lap.length - 1].누적ms : 0;
       window.__loadLap = _lap;           // 자가진단·문의 시 그대로 읽어갈 수 있게
-      toast(applicants.length + '명 불러오기 완료 ✅ ' + (total/1000).toFixed(1) + '초'
-            + (total > 4000 ? ' — 최장 ' + worst.단계 + ' ' + (worst.ms/1000).toFixed(1) + '초' : ''), 'ok');
+      toast(silent
+        ? ('최신 자료로 갱신 완료 (' + applicants.length + '명 · ' + (total/1000).toFixed(1) + '초)')
+        : (applicants.length + '명 불러오기 완료 ✅ ' + (total/1000).toFixed(1) + '초'
+           + (total > 4000 ? ' — 최장 ' + worst.단계 + ' ' + (worst.ms/1000).toFixed(1) + '초' : '')), 'ok');
     })();
 
     // 병렬로 받아온 확정자 처리
@@ -4257,7 +4295,8 @@ async function loadFromSheet() {
       });
     }
   } catch(e) {
-    // v1.4.27: 3회 재시도까지 실패한 경우다. 원인별로 다르게 안내한다.
+    if (silent) { console.warn('[조용한 갱신] 실패 — 캐시 화면 유지:', e.message); return; }
+    // v1.4.27: 재시도까지 실패한 경우다. 원인별로 다르게 안내한다.
     const isTemp = /HTML|빈 응답|일시적/.test(e.message || '');
     toast(isTemp ? '서버가 일시적으로 응답하지 않습니다 — 다시 시도해 주세요' : ('불러오기 실패: '+e.message), 'err');
     const isNetErr = e.message.includes('fetch')||e.message.includes('Failed')||e.message.includes('network');
@@ -6633,13 +6672,14 @@ function showCareerView() {
   }, 60);
 }
 
-function showResult(id) {
+function showResult(id, sopts) {
   try {
   const a=applicants.find(x=>x.id==id); if(!a) return;
+  _shownId = id;   // v1.4.30: 조용한 갱신이 끝나면 이 지원자를 다시 그린다
   // v1.0.5: 조회 이력 기록 + 좌측 카드 시각 갱신 + 우측 패널로 자동 스크롤
   markViewed(id);
   renderAlist();
-  setTimeout(() => {
+  if (!(sopts && sopts.noScroll)) setTimeout(() => {
     const rp = document.getElementById('rpanel');
     if (rp) {
       // 우측 패널이 viewport에 충분히 안 보이면 스크롤 (와이드 PC에서는 거의 영향 없음)
