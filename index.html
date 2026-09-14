@@ -437,6 +437,28 @@ hr.dv{border:none;border-top:1px solid var(--bd);margin:13px 0;}
 </style>
   <!-- Google Identity Services -->
   <script src="https://accounts.google.com/gsi/client" defer></script>
+<style>
+/* ══ 리퀴드 글래스 (SNCT 표준 v0.2.1) ══════════════════════════
+   다크 테마라 유리가 가장 잘 맞는다.
+   다만 카드가 60장이라 §4-4(8장 초과 금지)에 걸리므로 크롬에만 씌운다.
+   지원서 검토 화면은 대비가 생명이다 — 본문·표는 손대지 않는다. */
+body{
+  background:
+    radial-gradient(1100px 560px at 8% -6%,  rgba(0,180,216,.18), transparent 60%),
+    radial-gradient(900px 500px at 92% 4%,   rgba(244,168,0,.10), transparent 62%),
+    radial-gradient(800px 540px at 48% 104%, rgba(0,119,182,.16), transparent 60%),
+    var(--bg,#080f1a);
+  background-attachment:fixed;
+  --lg-tint:.08; --lg-sat:170%; --lg-bright:1.05;
+  --lg-shadow:0 14px 38px rgba(0,0,0,.45);
+  --lg-fallback:rgba(13,26,46,.95);
+}
+/* 헤더는 모서리가 없다. 라운드 클리핑이 필요 없으므로 overflow 를 되돌린다. */
+header.lg{border-radius:0;overflow:visible;}
+header.lg.lg-on{background:rgba(8,15,26,.62);}
+.scroll-fab.lg{--lg-tint:.14;}
+@media print{ body{background:#fff!important;} }
+</style>
 </head>
 <body>
 
@@ -1846,7 +1868,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.21';
+const APP_VERSION = 'v1.4.23';
 const APP_VERSION_DATE = '2026.09.07';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -9555,7 +9577,7 @@ async function loadTalentPool() {
 function _copyContact(v) {
   if (!v) return;
   if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(v).then(() => toast(v + ' 복사됨 ������', 'ok')).catch(() => _fallbackCopy(v));
+    navigator.clipboard.writeText(v).then(() => toast(v + ' 복사됨 📞', 'ok')).catch(() => _fallbackCopy(v));
   } else _fallbackCopy(v);
 }
 
@@ -14893,5 +14915,446 @@ if ('serviceWorker' in navigator) {
 </script>
 <button class="scroll-fab" style="bottom:124px;" onclick="fabTop()" title="최상단">▲</button>
 <button class="scroll-fab" style="bottom:80px;" onclick="fabBottom()" title="최하단">▼</button>
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   리퀴드 글래스 (Liquid Glass) — SNCT 사내 도구 공용 표면 표준
+   선광신컨테이너터미널 관리팀 · v0.2.1 · 2026.09.14
+
+   흔한 글래스모피즘(blur+반투명)과 다릅니다.
+   가장자리에서 뒤 배경이 **휘는**(굴절) 것이 핵심이고, 가운데는 맑게 둡니다.
+   거기에 정반사 림과 적응 틴트를 얹습니다.
+
+   ── 쓰는 법 ─────────────────────────────────────────────
+   이 파일 전체를 도구의 <script> 안에 붙여넣습니다.
+   외부 파일·이미지를 쓰지 않으므로 단일 HTML 그대로 동작합니다.
+   CSS와 SVG 필터는 첫 호출 때 자동으로 주입됩니다.
+
+     <div class="lg lg-card">…</div>
+     <nav class="lg lg-bar">…</nav>
+
+     Glass.init();                  // .lg 를 전부 훑어 적용
+     Glass.watch({                  // JS로 다시 그리는 화면은 이쪽 (SNCT 도구 대부분)
+       'header':'lg-bar', '.kpi':'lg-card', '.scroll-fab':'lg-fab'
+     });
+     Glass.apply(el);               // 하나만
+     Glass.refresh();               // 레이아웃이 크게 바뀐 뒤 다시 계산
+     Glass.off();                   // 전부 해제(불투명으로 복귀)
+
+   ── 프리셋 ──────────────────────────────────────────────
+     lg-bar     떠 있는 탭바·툴바 (알약)
+     lg-card    카드·패널
+     lg-modal   모달·다이얼로그 (가독성 위해 틴트를 더 준다)
+     lg-fab     원형 플로팅 버튼
+     lg-nav     사이드바
+
+   ── 옵션(속성) ──────────────────────────────────────────
+     data-lg-bevel="30"     가장자리 굴절 폭(px). 프리셋 기본값을 덮어씀
+     data-lg-tint="0.12"    흰 틴트 농도(0~1)
+     data-lg-spec="pointer" 정반사 각도가 마우스를 따라옴
+     data-lg-on="light"     밝은 배경 위에 얹을 때 (어두운 틴트로 전환)
+
+   ── 지켜야 할 것 ────────────────────────────────────────
+   · 크롬(헤더·탭바·모달·FAB)에만 씌웁니다. **표·입력칸·숫자 위에는 올리지 않습니다.**
+   · 뒤에 색·그라디언트·이미지가 있어야 의미가 있습니다.
+     흰 배경 위에 얹으면 굴절할 것이 없어 뿌옇기만 합니다.
+   · 인쇄·고대비·투명도 감소 설정에서는 자동으로 불투명 전환됩니다.
+   · 한 화면에 유리를 8장 넘기지 마십시오. 합성 비용이 겹칩니다.
+
+   자세한 적용 기준은 `SNCT-리퀴드글래스-적용기준-v0.2.1.md` 참조.
+   ═══════════════════════════════════════════════════════ */
+
+var Glass = (function () {
+  var VER = '0.2.1';
+  var MAX_MAP = 512;        /* 변위맵 한 변 상한. 넘으면 축소해 그린 뒤 늘려 쓴다 */
+  var GC_LIMIT = 40;        /* 필터가 이보다 많아지면 안 쓰는 것을 수거한다 */
+  var _cssDone = false;
+  var _svg = null;          /* 필터를 모아 두는 SVG 스프라이트 */
+  var _cache = {};          /* 기하가 같으면 필터를 재사용한다 */
+  var _n = 0;
+  var _items = [];          /* {el, ro} — off()로 되돌리기 위해 보관 */
+  var _mo = null;           /* 자동 추적용 MutationObserver */
+  var _watchMap = null;     /* {선택자: 프리셋} */
+  var _click = null;        /* 탭 전환 감지용 클릭 리스너 */
+
+  var PRESET = {
+    'lg-bar':   { bevel: 20, tint: 0.07, blur: 0.5, radius: null },
+    'lg-card':  { bevel: 30, tint: 0.07, blur: 0.5, radius: null },
+    'lg-modal': { bevel: 26, tint: 0.14, blur: 1.2, radius: null },
+    'lg-fab':   { bevel: 14, tint: 0.10, blur: 0.5, radius: null },
+    'lg-nav':   { bevel: 26, tint: 0.08, blur: 0.5, radius: null }
+  };
+
+  /* ── 지원 여부 ──────────────────────────────────────────
+     하나라도 없으면 아무것도 하지 않는다. CSS 폴백이 불투명으로 받는다. */
+  function supported() {
+    if (typeof CSS === 'undefined' || !CSS.supports) return false;
+    if (!CSS.supports('backdrop-filter', 'blur(4px)') &&
+        !CSS.supports('-webkit-backdrop-filter', 'blur(4px)')) return false;
+    if (!CSS.supports('backdrop-filter', 'url(#x)')) return false;
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-transparency: reduce)').matches) return false;
+    return true;
+  }
+
+  /* ── 변위맵 ────────────────────────────────────────────
+     둥근 사각형 가장자리에서 안쪽으로 들어오는 베벨을 만든다.
+     R=x변위, G=y변위, 128이 중립. 가운데는 128로 남겨 맑게 둔다. */
+  function makeMap(w, h, radius, bevel) {
+    var s = Math.min(1, MAX_MAP / Math.max(w, h));   /* 가로세로 같은 비율로 줄여 왜곡을 막는다 */
+    var mw = Math.max(8, Math.round(w * s)), mh = Math.max(8, Math.round(h * s));
+    var r = radius * s, bv = Math.max(1, bevel * s);
+
+    var cv = document.createElement('canvas');
+    cv.width = mw; cv.height = mh;
+    var ctx = cv.getContext('2d'), img = ctx.createImageData(mw, mh), d = img.data;
+    var rx = mw / 2, ry = mh / 2;
+    r = Math.min(r, Math.min(rx, ry));
+
+    /* 전체를 중립(128,128,128,255)으로 먼저 깔아 둔다.
+       가장자리 띠 바깥은 계산할 것이 없다 — 큰 패널일수록 이 생략이 대부분을 차지한다. */
+    for (var p = 0, N = mw * mh * 4; p < N; p += 4) {
+      d[p] = 128; d[p + 1] = 128; d[p + 2] = 128; d[p + 3] = 255;
+    }
+
+    /* 띠만 훑는다: 가장자리로부터 (베벨 + 모서리반경)까지. 안쪽 사각형은 건너뛴다. */
+    var band = Math.ceil(bv + r) + 2;
+    var ix0 = band, ix1 = mw - band, iy0 = band, iy1 = mh - band;
+    var skipInner = (ix1 > ix0 && iy1 > iy0);
+
+    for (var y = 0; y < mh; y++) {
+      var inRowBand = (y < iy0 || y >= iy1);
+      for (var x = 0; x < mw; x++) {
+        if (skipInner && !inRowBand && x >= ix0 && x < ix1) { x = ix1 - 1; continue; }
+
+        /* 둥근 사각형 부호거리 — sdf 1회만 부른다 */
+        var ax = x - rx, ay = y - ry;
+        var qx = (ax < 0 ? -ax : ax) - (rx - r);
+        var qy = (ay < 0 ? -ay : ay) - (ry - r);
+        var mx = qx > 0 ? qx : 0, my = qy > 0 ? qy : 0;
+        var outer = Math.sqrt(mx * mx + my * my);
+        var mq = qx > qy ? qx : qy;
+        var dist = -(outer + (mq < 0 ? mq : 0) - r);   /* 가장자리로부터 안쪽 거리 */
+        if (dist < 0 || dist >= bv) continue;          /* 띠 밖 — 중립 그대로 */
+
+        var amt = Math.pow(1 - dist / bv, 1.6);
+
+        /* 법선은 해석해로 구한다(유한차분 4회 제거) */
+        var sx = ax < 0 ? -1 : 1, sy = ay < 0 ? -1 : 1, nx, ny;
+        if (qx > 0 && qy > 0) {                        /* 모서리 — 반경 중심에서 방사 */
+          var L = outer || 1; nx = sx * qx / L; ny = sy * qy / L;
+        } else if (qx > qy) { nx = sx; ny = 0; }       /* 좌·우 변 */
+        else                { nx = 0;  ny = sy; }      /* 상·하 변 */
+
+        var i = (y * mw + x) * 4;
+        d[i]     = clamp8(128 + nx * amt * 127);
+        d[i + 1] = clamp8(128 + ny * amt * 127);
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    return cv.toDataURL('image/png');
+  }
+  function clamp8(v) { return v < 0 ? 0 : v > 255 ? 255 : v; }
+
+  /* ── 필터 확보(같은 기하면 재사용) ── */
+  function filterFor(w, h, radius, bevel) {
+    var key = Math.round(w) + 'x' + Math.round(h) + 'r' + Math.round(radius) + 'b' + Math.round(bevel);
+    if (_cache[key]) return _cache[key];
+
+    ensureSvg();
+    var id = 'lgf' + (++_n);
+    var NS = 'http://www.w3.org/2000/svg';
+    var f = document.createElementNS(NS, 'filter');
+    f.setAttribute('id', id);
+    f.setAttribute('x', '-15%'); f.setAttribute('y', '-15%');
+    f.setAttribute('width', '130%'); f.setAttribute('height', '130%');
+    f.setAttribute('color-interpolation-filters', 'sRGB');
+
+    var im = document.createElementNS(NS, 'feImage');
+    var url = makeMap(w, h, radius, bevel);
+    im.setAttributeNS('http://www.w3.org/1999/xlink', 'href', url);
+    im.setAttribute('href', url);
+    im.setAttribute('preserveAspectRatio', 'none');
+    im.setAttribute('result', 'm');
+
+    var dm = document.createElementNS(NS, 'feDisplacementMap');
+    dm.setAttribute('in', 'SourceGraphic');
+    dm.setAttribute('in2', 'm');
+    dm.setAttribute('scale', String(Math.round(Math.min(120, Math.max(18, bevel * 3)))));
+    dm.setAttribute('xChannelSelector', 'R');
+    dm.setAttribute('yChannelSelector', 'G');
+
+    f.appendChild(im); f.appendChild(dm);
+    _svg.appendChild(f);
+    _cache[key] = id;
+    return id;
+  }
+
+  /* ── 안 쓰는 필터 수거 ──────────────────────────────────
+     창 크기를 바꿀 때마다 기하가 달라져 필터가 새로 생긴다.
+     그대로 두면 긴 세션에서 무한히 쌓인다(실측 — 리사이즈 1회에 5→8개).
+     지금 화면이 실제로 참조하는 것만 남기고 버린다. */
+  function gc() {
+    if (!_svg || _svg.childElementCount <= GC_LIMIT) return;
+    var live = {};
+    for (var i = 0; i < _items.length; i++) {
+      var bd = _items[i].el.style.getPropertyValue('--lg-bd') || '';
+      var m = bd.match(/url\(#([\w-]+)\)/);
+      if (m) live[m[1]] = 1;
+    }
+    var kids = [].slice.call(_svg.children);
+    for (var k = 0; k < kids.length; k++) {
+      if (!live[kids[k].id]) _svg.removeChild(kids[k]);
+    }
+    for (var key in _cache) { if (!live[_cache[key]]) delete _cache[key]; }
+  }
+
+  function ensureSvg() {
+    if (_svg) return;
+    var NS = 'http://www.w3.org/2000/svg';
+    var s = document.createElementNS(NS, 'svg');
+    s.setAttribute('width', '0'); s.setAttribute('height', '0');
+    s.setAttribute('aria-hidden', 'true');
+    s.style.cssText = 'position:absolute;width:0;height:0;overflow:hidden';
+    s.id = 'lg-filters';
+    document.body.appendChild(s);
+    _svg = s;
+  }
+
+  /* ── CSS 주입 ────────────────────────────────────────── */
+  function injectCSS() {
+    if (_cssDone || document.getElementById('lg-style-tokens')) { _cssDone = true; return; }
+    var css = [
+      ':root{',
+      '  --lg-tint:.07; --lg-tint-dark:.10; --lg-blur:.5px;',
+      '  --lg-sat:180%; --lg-bright:1.06;',
+      '  --lg-radius:22px; --lg-radius-bar:31px; --lg-radius-fab:50%;',
+      '  --lg-shadow:0 16px 44px rgba(0,0,0,.38);',
+      '  --lg-rim:1.5px; --lg-rim-angle:205deg;',
+      '  --lg-fallback:rgba(255,255,255,.92);',
+      '  --lg-fallback-dark:rgba(17,24,39,.92);',
+      '}',
+      '/*__RULES__*/',
+
+      /* 기본 표면 — 유리가 못 붙어도 여기가 받아 준다 */
+      '.lg{border-radius:var(--lg-radius);overflow:hidden;isolation:isolate;',
+      '    background:var(--lg-fallback);box-shadow:var(--lg-shadow);}',
+
+      /* 유리가 실제로 붙은 뒤에만 켜지는 표현 */
+      '.lg.lg-on{background:rgba(255,255,255,var(--lg-tint));',
+      '    -webkit-backdrop-filter:var(--lg-bd);backdrop-filter:var(--lg-bd);}',
+      '.lg.lg-on[data-lg-on="light"]{background:rgba(17,24,39,var(--lg-tint-dark));}',
+
+      /* 적응 틴트 — 뒤 색을 옅게 머금는 층 */
+      '.lg.lg-on::before{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;',
+      '    background:linear-gradient(140deg,rgba(255,255,255,.18),rgba(255,255,255,.02) 42%,rgba(255,255,255,.10));}',
+
+      /* 정반사 림 */
+      '.lg.lg-on::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;',
+      '    padding:var(--lg-rim);',
+      '    background:conic-gradient(from var(--lg-ang,var(--lg-rim-angle)),',
+      '      rgba(255,255,255,0) 0deg,rgba(255,255,255,1) 42deg,rgba(255,255,255,.15) 96deg,',
+      '      rgba(255,255,255,0) 170deg,rgba(255,255,255,.75) 232deg,rgba(255,255,255,0) 296deg);',
+      '    -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);',
+      '    -webkit-mask-composite:xor;mask-composite:exclude;}',
+
+      /* 프리셋 */
+      '.lg-bar{border-radius:var(--lg-radius-bar);}',
+      '.lg-fab{border-radius:var(--lg-radius-fab);}',
+      '.lg-modal{--lg-tint:.14;}',
+
+      /* 내용 층은 유리를 타지 않는다 — 표·입력은 항상 또렷하게 */
+      '.lg .lg-solid{position:relative;z-index:1;background:#fff;color:#0f172a;border-radius:14px;}',
+
+      /* ── 안전장치 ──────────────────────────────────────
+         인쇄: 반투명은 회색으로 뭉갠다. 전부 해제한다. */
+      '@media print{.lg,.lg.lg-on{background:#fff!important;color:#000!important;',
+      '    -webkit-backdrop-filter:none!important;backdrop-filter:none!important;',
+      '    box-shadow:none!important;border:1px solid #999!important;}',
+      '  .lg.lg-on::before,.lg.lg-on::after{display:none!important;}}',
+
+      /* 투명도 감소·고대비 설정 존중 */
+      '@media (prefers-reduced-transparency:reduce){.lg,.lg.lg-on{background:var(--lg-fallback)!important;',
+      '    -webkit-backdrop-filter:none!important;backdrop-filter:none!important;}',
+      '  .lg.lg-on::before,.lg.lg-on::after{display:none!important;}}',
+      '@media (prefers-contrast:more){.lg,.lg.lg-on{background:var(--lg-fallback)!important;',
+      '    -webkit-backdrop-filter:none!important;backdrop-filter:none!important;border:1px solid #334155!important;}',
+      '  .lg.lg-on::before{display:none!important;}}',
+
+      /* 움직임 감소: 정반사 각도 추종을 끈다 */
+      '@media (prefers-reduced-motion:reduce){.lg.lg-on::after{transition:none!important;}}',
+
+      /* 구형 브라우저 */
+      '@supports not (backdrop-filter:blur(1px)){.lg{background:var(--lg-fallback);}',
+      '  .lg::before,.lg::after{display:none;}}'
+    ].join('\n');
+
+    /* 토큰과 규칙을 갈라 넣는다.
+       토큰(:root)은 <head> 맨 앞 — 도구가 자기 값으로 덮어쓸 수 있어야 한다.
+       규칙(.lg …)은 맨 뒤 — 도구의 기존 카드 배경을 이겨야 유리가 보인다.
+       한 덩어리로 뒤에 넣었더니 도구의 틴트 지정이 먹지 않았다(실측). */
+    var cut = css.indexOf('/*__RULES__*/');
+    var tokens = css.slice(0, cut), rules = css.slice(cut);
+
+    var a = document.createElement('style');
+    a.id = 'lg-style-tokens';
+    a.textContent = tokens;
+    document.head.insertBefore(a, document.head.firstChild);
+
+    var el = document.createElement('style');
+    el.id = 'lg-style';
+    el.textContent = rules;
+    document.head.appendChild(el);
+    _cssDone = true;
+  }
+
+  /* ── 요소 하나에 적용 ── */
+  function apply(el, opts) {
+    injectCSS();
+    if (!supported() || !el) return false;
+
+    opts = opts || {};
+    var preset = null;
+    for (var k in PRESET) { if (el.classList.contains(k)) { preset = PRESET[k]; break; } }
+    if (!preset) preset = PRESET['lg-card'];
+
+    var cs = getComputedStyle(el);
+    /* ::before/::after 를 얹으려면 배치 문맥이 필요하다. 다만 이미 fixed/absolute 인
+       요소를 relative 로 덮으면 자리가 무너진다(실측 — scroll-fab 이 화면 밖으로 튀었다).
+       static 일 때만 손댄다. */
+    if (cs.position === 'static') el.style.position = 'relative';
+    var w = el.offsetWidth, h = el.offsetHeight;
+    if (w < 24 || h < 24) return false;               /* 너무 작으면 굴절이 안 보인다 */
+
+    var radius = opts.radius;
+    if (radius == null) {
+      radius = parseFloat(cs.borderTopLeftRadius) || 0;
+      if (/%/.test(cs.borderTopLeftRadius)) radius = Math.min(w, h) / 2;   /* fab 등 */
+    }
+    var bevel = opts.bevel || parseFloat(el.getAttribute('data-lg-bevel')) || preset.bevel;
+    bevel = Math.min(bevel, Math.min(w, h) / 2.2);    /* 얇은 요소에서 과하게 휘지 않게 */
+
+    var tint = el.getAttribute('data-lg-tint');
+    if (tint) el.style.setProperty('--lg-tint', tint);
+
+    var id = filterFor(w, h, radius, bevel);
+    el.style.setProperty('--lg-bd',
+      'url(#' + id + ') blur(' + (opts.blur || preset.blur) + 'px) ' +
+      'saturate(var(--lg-sat)) brightness(var(--lg-bright))');
+    el.classList.add('lg-on');
+
+    /* 정반사 각도가 마우스를 따라오게 (선택) */
+    if (el.getAttribute('data-lg-spec') === 'pointer' && !el.__lgSpec) {
+      el.__lgSpec = function (e) {
+        var r = el.getBoundingClientRect();
+        var a = Math.atan2(e.clientY - (r.top + r.height / 2), e.clientX - (r.left + r.width / 2));
+        el.style.setProperty('--lg-ang', (a * 180 / Math.PI + 180).toFixed(0) + 'deg');
+      };
+      el.addEventListener('pointermove', el.__lgSpec);
+    }
+
+    /* 크기가 바뀌면 변위맵을 다시 잡는다 */
+    if (window.ResizeObserver && !el.__lgRO) {
+      var t = null;
+      var ro = new ResizeObserver(function () {
+        clearTimeout(t);
+        t = setTimeout(function () { apply(el, opts); }, 120);   /* 디바운스 */
+      });
+      ro.observe(el);
+      el.__lgRO = ro;
+      _items.push({ el: el, ro: ro });
+    } else if (!el.__lgRO) {
+      _items.push({ el: el, ro: null });
+    }
+    gc();
+    return true;
+  }
+
+  /* ── 전체 적용 ── */
+  function init(root) {
+    injectCSS();
+    var scope = root || document;
+    var list = scope.querySelectorAll('.lg');
+    var n = 0;
+    for (var i = 0; i < list.length; i++) { if (apply(list[i])) n++; }
+    return n;
+  }
+
+  /* ── 자동 추적 ──────────────────────────────────────────
+     SNCT 도구는 화면을 JS로 다시 그린다(`'<div class="kpi">…'` 식 템플릿 문자열).
+     그래서 한 번 붙인 유리가 렌더 때마다 날아간다.
+     선택자 → 프리셋을 등록해 두면 새로 그려진 것에도 알아서 붙는다.
+
+       Glass.watch({ 'header':'lg-bar', '.kpi':'lg-card', '.scroll-fab':'lg-fab' });
+
+     속성 변경은 관찰하지 않는다 — apply()가 인라인 스타일을 건드리므로
+     속성까지 보면 자기 자신 때문에 무한히 돈다. */
+  function watch(map) {
+    injectCSS();
+    if (map) _watchMap = map;
+    tagAndApply();
+    if (_mo || !window.MutationObserver) return;
+    var t = null;
+    var kick = function () { clearTimeout(t); t = setTimeout(tagAndApply, 80); };
+    _mo = new MutationObserver(kick);
+    _mo.observe(document.body, { childList: true, subtree: true });
+
+    /* 탭 전환이 display 토글로만 이뤄지면 childList가 안 뛴다.
+       숨어 있던 요소는 그제야 크기를 갖는다(apply는 24px 미만을 건너뛴다).
+       탭 전환은 예외 없이 클릭에서 시작하므로 클릭을 한 번 더 신호로 쓴다. */
+    _click = kick;
+    document.addEventListener("click", _click, true);
+  }
+
+  function tagAndApply() {
+    if (!_watchMap) return;
+    for (var sel in _watchMap) {
+      var preset = _watchMap[sel];
+      var list;
+      try { list = document.querySelectorAll(sel); } catch (e) { continue; }
+      for (var i = 0; i < list.length; i++) {
+        var el = list[i];
+        if (el.classList.contains('lg-on')) continue;   /* 이미 붙었다 */
+        el.classList.add('lg');
+        if (preset) el.classList.add(preset);
+        apply(el);
+      }
+    }
+  }
+
+  function refresh() {
+    _cache = {};
+    if (_svg) { while (_svg.firstChild) _svg.removeChild(_svg.firstChild); }
+    for (var i = 0; i < _items.length; i++) apply(_items[i].el);
+  }
+
+  function off() {
+    if (_mo) { _mo.disconnect(); _mo = null; }
+    if (_click) { document.removeEventListener("click", _click, true); _click = null; }
+    _watchMap = null;
+    for (var i = 0; i < _items.length; i++) {
+      var it = _items[i];
+      it.el.classList.remove('lg-on');
+      it.el.style.removeProperty('--lg-bd');
+      if (it.ro) it.ro.disconnect();
+      if (it.el.__lgSpec) { it.el.removeEventListener('pointermove', it.el.__lgSpec); it.el.__lgSpec = null; }
+      it.el.__lgRO = null;
+    }
+    _items = [];
+    _cache = {};
+    if (_svg) { while (_svg.firstChild) _svg.removeChild(_svg.firstChild); }
+  }
+
+  return {
+    version: VER,
+    supported: supported,
+    init: init,
+    watch: watch,
+    apply: apply,
+    refresh: refresh,
+    off: off,
+    _presets: PRESET
+  };
+})();
+Glass.watch({"header": "lg-bar", ".scroll-fab": "lg-fab"});
+</script>
 </body>
 </html>
