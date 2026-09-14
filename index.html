@@ -1868,7 +1868,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.34';
+const APP_VERSION = 'v1.4.35';
 const APP_VERSION_DATE = '2026.09.14';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -5128,18 +5128,18 @@ function _arrivalFromInterview(s){
   return (datePart ? datePart + ' ' : '') + timeStr;
 }
 
-function openEmailSendModal(templateType, round) {
+// ✅ v1.4.35 (2026.09.14) — opts.includeSent : 이미 받은 사람도 대상에 넣는다.
+//   기본은 **아직 못 받은 사람만**이다. 작업자 운영상 면접 안내는 여러 번 나간다 —
+//   불참 회신이 오면 차순위를 채우고 그 사람에게만 보내야 하는데,
+//   종전에는 확정자 전원이 대상이라 **이미 받은 사람에게 또 나갔다.**
+function openEmailSendModal(templateType, round, opts) {
+  opts = opts || {};
+  const includeSent = !!opts.includeSent;
   if (!isAdmin) { toast('관리자만 가능합니다','err'); return; }
   if (!EMAIL_TEMPLATES[templateType]) { toast('알 수 없는 템플릿','err'); return; }
   _warnIfNoContact();   // v1.4.33: 연락처 없는 메일이 조용히 나가지 않게
 
-  // ✅ v1.0.62: 이미 발송된 템플릿 — confirm으로 중복 발송 방지
   const sentSt = (window.__emailSentStatuses?.[round] || {})[templateType];
-  if (sentSt && sentSt.count > 0) {
-    if (!confirm(`⚠️ 이미 발송된 메일입니다.\n\n· 발송 인원: ${sentSt.count}명\n· 최근 발송: ${sentSt.lastSentAt||'-'}\n\n다시 발송하시겠습니까?\n(같은 사람에게 또 발송될 수 있습니다)`)) {
-      return;
-    }
-  }
 
   const tpl = EMAIL_TEMPLATES[templateType];
   const apps = window.__currentRoundApps || [];
@@ -5153,10 +5153,52 @@ function openEmailSendModal(templateType, round) {
   if (!apps.length) { toast('회차 데이터가 로드되지 않았습니다','err'); return; }
 
   // ✅ v1.0.58: includeReserve는 더 이상 사용 안 함 (healthCheckNotice는 합격자 전용)
-  const recipients = _extractEmailRecipients(templateType, apps, ivResults, confirmedNames, absentNames, false);
+  let recipients = _extractEmailRecipients(templateType, apps, ivResults, confirmedNames, absentNames, false);
   if (!recipients.length) {
     toast('발송 대상이 없습니다 (이메일 누락 또는 단계 미충족)','err');
     return;
+  }
+
+  // ⚠️ v1.4.35 안전장치 — **서류 불합격 통보에서 「면접 안내를 이미 받은 사람」을 뺀다.**
+  //   불참 회신이 와서 확정을 해제하면 그 사람은 확정 명단에서 빠진다. 그런데 서류 불합격
+  //   대상은 「확정 명단에 없는 사람」이라, **그 사람이 서류 불합격 대상으로 올라온다.**
+  //   그는 이미 「서류 합격 + 면접 안내」를 받은 사람이다. 앞뒤가 맞지 않는 메일이 나간다.
+  //   (2026.09.14 이 기능을 만들며 헤드리스 시험에서 실제로 재현됨 — 문현필 케이스)
+  //   → 면접 안내를 받은 이력이 있으면 서류 불합격 대상에서 뺀다. 면접을 포기한 사람의 처리는
+  //     서류 단계가 아니라 **면접 결과 단계**에서 할 일이다.
+  let _wasInvited = [];
+  if (templateType === 'docResult') {
+    const _keep = recipients.filter(function (r) {
+      return !_mailSentTo(round, 'interviewSchedule', r.app.email, r.app.name);
+    });
+    _wasInvited = recipients.filter(function (r) { return _keep.indexOf(r) < 0; })
+                            .map(function (r) { return r.app.name; });
+    recipients = _keep;
+    if (!recipients.length) {
+      toast('서류 불합격 대상이 없습니다 — 남은 분들은 모두 면접 안내를 받으셨습니다', 'warn');
+      return;
+    }
+  }
+
+  // ✅ v1.4.35: **이미 이 메일을 받은 사람은 기본으로 뺀다.**
+  //   ⚠️ 발송 이력을 못 받아온 상태(_mailSentTo가 전부 null)면 아무도 걸러지지 않는다 —
+  //     덜 거르는 쪽이 안전하다. 거꾸로 잘못 걸러 안내를 못 받는 사람이 생기면 안 된다.
+  let _skippedSent = [];
+  if (!includeSent) {
+    const _fresh = recipients.filter(function (r) {
+      return !_mailSentTo(round, templateType, r.app.email, r.app.name);
+    });
+    _skippedSent = recipients.filter(function (r) { return _fresh.indexOf(r) < 0; })
+                             .map(function (r) { return r.app.name; });
+    if (_fresh.length) {
+      recipients = _fresh;
+    } else if (_skippedSent.length) {
+      // 대상 전원이 이미 받았다 — 여기서만 「또 보낼까요」를 묻는다
+      if (!confirm(`⚠️ 대상 ${_skippedSent.length}명이 **모두 이미 이 메일을 받았습니다.**\n\n`
+        + `· 최근 발송: ${(sentSt && sentSt.lastSentAt) || '-'}\n\n`
+        + `같은 분들께 다시 보내시겠습니까?`)) return;
+      return openEmailSendModal(templateType, round, { includeSent: true });
+    }
   }
 
   // ✅ v1.2.48: 오발송 차단 (메일은 되돌릴 수 없다)
@@ -5302,6 +5344,26 @@ function openEmailSendModal(templateType, round) {
     </div>` : '';
 
   // ✅ v1.0.52: 회차 종료 시 안내 + healthCheckNotice의 예비합격자 토글
+  // v1.4.35: 걸러낸 사실을 숨기지 않는다. 전원에게 보내려면 여기서 바꾼다.
+  let sentNotice = '';
+  if (_wasInvited.length) {
+    sentNotice += `<div style="background:rgba(244,168,0,0.10);border-left:3px solid var(--gold);padding:9px 12px;border-radius:4px;margin-bottom:10px;font-size:12.5px;line-height:1.7;color:var(--gold)">
+      ⚠️ <b>면접 안내를 이미 받은 ${_wasInvited.length}명을 제외했습니다</b> — ${_escapeHtml(_wasInvited.join(', '))}<br>
+      <span style="color:var(--tx2)">이분들은 <b>서류 합격</b>을 이미 통보받았습니다(불참 회신 등으로 확정이 해제된 분).
+      서류 불합격으로 안내하면 앞뒤가 맞지 않습니다 — 면접 결과 단계에서 처리하세요.</span>
+    </div>`;
+  }
+  if (_skippedSent.length) {
+    sentNotice = `<div style="background:rgba(0,201,122,0.08);border-left:3px solid var(--green);padding:9px 12px;border-radius:4px;margin-bottom:10px;font-size:12.5px;line-height:1.7;color:var(--tx2)">
+      ✉️ <b style="color:var(--green)">이미 이 메일을 받은 ${_skippedSent.length}명은 제외했습니다</b> — ${_escapeHtml(_skippedSent.join(', '))}<br>
+      아래 <b style="color:var(--tx)">${recipients.length}명</b>에게만 나갑니다.
+      <button class="btn btn-o" style="font-size:11px;padding:3px 9px;margin-left:6px" onclick="openEmailSendModal('${templateType}','${round}',{includeSent:true})">전원에게 다시 보내기</button>
+    </div>`;
+  } else if (includeSent && sentSt && sentSt.count > 0) {
+    sentNotice = `<div style="background:rgba(255,82,82,0.09);border-left:3px solid var(--red);padding:9px 12px;border-radius:4px;margin-bottom:10px;font-size:12.5px;line-height:1.7;color:var(--red)">
+      ⚠️ <b>이미 받은 분을 포함해 전원에게 보냅니다.</b> <span style="color:var(--tx2)">같은 메일을 두 번 받게 됩니다.</span>
+    </div>`;
+  }
   let closedNotice = '';
   if (isClosed) {
     closedNotice = `<div style="background:rgba(244,168,0,0.10);border-left:3px solid var(--gold);padding:8px 12px;border-radius:4px;margin-bottom:10px;font-size:12px;color:var(--gold)">
@@ -5339,6 +5401,7 @@ function openEmailSendModal(templateType, round) {
         <span style="color:var(--tx2);font-size:12px;margin-left:10px" id="emailRecipientCount">📤 ${recipients.length}명</span>
       </div>
     </div>
+    ${sentNotice}
     ${closedNotice}
     ${reserveToggle}
     ${attachmentSection}
@@ -5429,6 +5492,9 @@ function _renderEmailRecipientList() {
     } else {
       label = '대상'; color = 'var(--tx2)';
     }
+    // v1.4.35: 전원 포함으로 보낼 때, 이미 받은 사람을 구분해 보여준다
+    const _dup = _mailSentTo(pending.round, pending.templateType, r.app.email, r.app.name);
+    if (_dup) { label = '재발송'; color = 'var(--red)'; }
     const isSel = i === selIdx;
     const bg = isSel ? 'rgba(37,99,235,0.18)' : 'transparent';
     const border = isSel ? '1px solid var(--ac)' : '1px solid rgba(255,255,255,0.04)';
@@ -7203,6 +7269,55 @@ function setVoteRankMode(byDoc){
 //   조용한 갱신이 화면을 갈아엎기 전에 **확정 체크박스를 손댔는지**를 본다.
 //   손댔으면 덮어쓰지 않는다 — 고르던 명단이 갱신 한 번에 날아가면 안 된다.
 const LS_DOCSUM = 'snct_docsum_cache';
+const LS_IV_TARGET = 'snct_ivTarget';       // 회차별 면접 대상 목표 인원
+
+// ✅ v1.4.35 (2026.09.14) — **불참 회신 → 차순위 충원 → 그 사람에게만 재발송** 흐름 지원
+//   작업자 운영: 면접 안내 메일 → 참석/불참 회신 → 불참자 자리에 차순위 충원 →
+//   **새로 확정된 사람에게만** 안내 메일 → 5명이 차면 서류 불합격 통보.
+//   종전에는 ①불참 회신이 확정 화면에 안 보였고 ②재발송하면 **이미 받은 사람에게 또 나갔다.**
+
+// 면접 안내 메일의 RSVP 응답을 이름 또는 이메일로 찾는다. 없으면 null.
+function _ivRsvpOf(round, email, name) {
+  const m = ((window.__emailRsvpStatuses || {})[round] || {}).interviewSchedule;
+  if (!m || !m.byRecipient) return null;
+  if (email && m.byRecipient[email]) return m.byRecipient[email];
+  const nm = String(name || '').replace(/\s+/g, '');
+  if (!nm) return null;
+  const k = Object.keys(m.byRecipient).find(function (e) {
+    return String(m.byRecipient[e].name || '').replace(/\s+/g, '') === nm;
+  });
+  return k ? m.byRecipient[k] : null;
+}
+
+// 이 사람에게 이 템플릿 메일이 이미 나갔는지. 없으면 null.
+//   ⚠️ 이력을 못 받아온 회차에서는 항상 null이 된다 — 그때는 **거르지 않는다**(덜 거르는 쪽이 안전하다).
+function _mailSentTo(round, tpl, email, name) {
+  const st = ((window.__emailSentStatuses || {})[round] || {})[tpl];
+  if (!st || !st.byRecipient || !st.byRecipient.length) return null;
+  const nm = String(name || '').replace(/\s+/g, '');
+  return st.byRecipient.find(function (x) {
+    if (email && x.email && x.email === email) return true;
+    return nm && String(x.name || '').replace(/\s+/g, '') === nm;
+  }) || null;
+}
+
+function _ivTargetOf(round) {
+  try {
+    const m = JSON.parse(localStorage.getItem(LS_IV_TARGET) || '{}');
+    const v = Number(m[round]);
+    if (v > 0 && v < 100) return v;
+  } catch (e) {}
+  return 5;   // 작업자 기본 운영 인원
+}
+function setIvTarget(round, v) {
+  const n = Math.max(1, Math.min(99, Number(v) || 5));
+  try {
+    const m = JSON.parse(localStorage.getItem(LS_IV_TARGET) || '{}');
+    m[round] = n;
+    localStorage.setItem(LS_IV_TARGET, JSON.stringify(m));
+  } catch (e) {}
+  loadAdminResults();
+}
 let _docsumSig = null;            // 마지막으로 그렸을 때의 체크 상태
 function _confirmSelSig(){
   const box = document.getElementById('confirmArea');
@@ -7424,10 +7539,26 @@ async function loadAdminResults(opts) {
 
   // ── 2) GAS 조회 ──
   try {
-    const [_rr, _rc] = await Promise.all([
-      gasJson(GAS_URL+'?action=getResults&userEmail='+encodeURIComponent(currentUserEmail||'')+'&round='+encodeURIComponent(round), null, 'getResults'),
-      gasJson(GAS_URL+'?action=getConfirmed&userEmail='+encodeURIComponent(currentUserEmail||'')+'&round='+encodeURIComponent(round), null, 'getConfirmed')
-    ]);
+    // v1.4.35: 확정 화면에 RSVP(참석/불참)와 발송 이력을 같이 띄운다.
+    //   **같은 왕복에 얹는다** — 순차로 부르면 그만큼 늦어진다(v1.4.31에서 배운 것).
+    //   관리자만 호출한다(둘 다 _requireAdmin). 실패해도 집계는 그대로 그린다.
+    const _u = encodeURIComponent(currentUserEmail||''), _rd = encodeURIComponent(round);
+    const _reqs = [
+      gasJson(GAS_URL+'?action=getResults&userEmail='+_u+'&round='+_rd, null, 'getResults'),
+      gasJson(GAS_URL+'?action=getConfirmed&userEmail='+_u+'&round='+_rd, null, 'getConfirmed')
+    ];
+    if (isAdmin) {
+      _reqs.push(gasJson(GAS_URL+'?action=getRsvpStatus&userEmail='+_u+'&round='+_rd, null, 'getRsvpStatus').catch(function(){ return {data:{}}; }));
+      _reqs.push(gasJson(GAS_URL+'?action=getEmailSentStatus&userEmail='+_u+'&round='+_rd, null, 'getEmailSentStatus').catch(function(){ return {data:{}}; }));
+    }
+    const _all = await Promise.all(_reqs);
+    const _rr = _all[0], _rc = _all[1];
+    if (isAdmin) {
+      window.__emailRsvpStatuses = window.__emailRsvpStatuses || {};
+      window.__emailSentStatuses = window.__emailSentStatuses || {};
+      if (_all[2] && _all[2].data && _all[2].data.rsvps)     window.__emailRsvpStatuses[round] = _all[2].data.rsvps;
+      if (_all[3] && _all[3].data && _all[3].data.statuses)  window.__emailSentStatuses[round] = _all[3].data.statuses;
+    }
     // 투표 기록이 없을 때 쓰는 확정자 명단 — 위에서 같이 받아 왔으므로 다시 묻지 않는다
     const _confirmedNames = (_rc.data && _rc.data.success && Array.isArray(_rc.data.confirmed))
       ? _rc.data.confirmed.map(function(c){ return c.name; }) : [];
@@ -14759,6 +14890,53 @@ function showConfirmArea(results) {
   const hasVotes = results.some(r => r.total > 0 || r.rank1 > 0 || r.rank2 > 0);
   const alreadyConfirmed = results.filter(r => r.confirmed);
   const notYetConfirmed = results.filter(r => !r.confirmed);
+
+  // ✅ v1.4.35 — 면접 대상 정원과 참석 회신 현황.
+  //   불참 회신이 오면 그 자리를 차순위로 채워야 하는데, 종전에는
+  //   **불참 회신이 이 화면에 전혀 보이지 않았다.** 메일 상세 화면까지 들어가야 알 수 있었다.
+  const _tgt = _ivTargetOf(currentRound);
+  const _rsvpOf = function (nm) { return _ivRsvpOf(currentRound, '', nm); };
+  const _sentOf = function (nm) { return _mailSentTo(currentRound, 'interviewSchedule', '', nm); };
+  let _cAttend = 0, _cAbsent = 0, _cPending = 0, _cNotSent = 0;
+  alreadyConfirmed.forEach(function (r) {
+    const v = _rsvpOf(r.name);
+    if (v && v.response === 'attend') _cAttend++;
+    else if (v && v.response === 'absent') _cAbsent++;
+    else if (_sentOf(r.name)) _cPending++;
+    else _cNotSent++;
+  });
+  // 실제로 면접장에 올 사람 = 확정 − 불참 회신
+  const _live = alreadyConfirmed.length - _cAbsent;
+  const _short = Math.max(0, _tgt - _live);
+  // 한 명의 RSVP 배지
+  const _rsvpBadge = function (nm) {
+    const v = _rsvpOf(nm);
+    if (v && v.response === 'attend')
+      return `<span style="background:rgba(0,201,122,0.15);color:var(--green);font-size:12px;font-weight:700;padding:2px 7px;border-radius:6px;margin-left:6px">✅ 참석</span>`;
+    if (v && v.response === 'absent')
+      return `<span style="background:rgba(255,82,82,0.15);color:var(--red);font-size:12px;font-weight:700;padding:2px 7px;border-radius:6px;margin-left:6px">❌ 불참 회신</span>`;
+    if (_sentOf(nm))
+      return `<span style="background:rgba(244,168,0,0.13);color:var(--gold);font-size:12px;padding:2px 7px;border-radius:6px;margin-left:6px">⏳ 회신 대기</span>`;
+    return `<span style="background:rgba(255,255,255,0.06);color:var(--tx2);font-size:12px;padding:2px 7px;border-radius:6px;margin-left:6px">✉️ 안내 미발송</span>`;
+  };
+  const _targetHtml = `
+    <div style="background:rgba(37,99,235,0.07);border:1px solid var(--bd);border-radius:9px;padding:12px 14px;margin-bottom:12px">
+      <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;font-size:14px">
+        <span style="font-weight:700">🎯 면접 대상 목표</span>
+        <input type="number" min="1" max="99" value="${_tgt}" onchange="setIvTarget('${currentRound}', this.value)"
+          style="width:58px;padding:4px 8px;font-size:14px;font-weight:700;text-align:center;background:var(--bg);color:var(--tx);border:1px solid var(--bd);border-radius:6px">
+        <span style="color:var(--tx2)">명 · 현재 확정 <b style="color:var(--tx)">${alreadyConfirmed.length}명</b></span>
+      </div>
+      <div style="font-size:13px;color:var(--tx2);margin-top:7px;line-height:1.7">
+        ✅ 참석 ${_cAttend} · ❌ 불참 ${_cAbsent} · ⏳ 회신 대기 ${_cPending} · ✉️ 안내 미발송 ${_cNotSent}
+      </div>
+      ${_short ? `<div style="margin-top:9px;padding:9px 12px;background:rgba(244,168,0,0.10);border-left:3px solid var(--gold);border-radius:4px;font-size:13.5px;line-height:1.7;color:var(--gold)">
+          <b>⚠️ ${_short}명이 부족합니다</b>
+          <span style="color:var(--tx2)">${_cAbsent ? `— 불참 회신 ${_cAbsent}명의 자리입니다. ` : '— '}</span>
+          <br><span style="color:var(--tx2)">아래 미확정 목록에서 <b>〈차순위〉</b> 표시된 분을 체크해 확정하신 뒤,
+          【📅 면접 일정 안내】 메일을 다시 보내시면 <b>새로 확정된 분에게만</b> 나갑니다.</span>
+        </div>` : (alreadyConfirmed.length ? `<div style="margin-top:9px;font-size:13px;color:var(--green)">✅ 목표 인원이 채워졌습니다 — 이제 서류 불합격 통보를 보내셔도 됩니다.</div>` : '')}
+    </div>`;
   const confirmBtn = document.getElementById('confirmBtn');
 
   if (confirmBtn) {
@@ -14783,11 +14961,11 @@ function showConfirmArea(results) {
         🔒 기확정 면접 대상자 (${alreadyConfirmed.length}명) <span style="font-size:12px;font-weight:400;color:var(--tx2)">— 체크박스 선택 시 확정 취소 가능</span>
       </div>
       ${alreadyConfirmed.map(r => `
-      <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;background:rgba(0,201,122,0.06);border-radius:8px;margin-bottom:6px;border:1px solid rgba(0,201,122,0.35)">
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;background:${(_rsvpOf(r.name)||{}).response === 'absent' ? 'rgba(255,82,82,0.07)' : 'rgba(0,201,122,0.06)'};border-radius:8px;margin-bottom:6px;border:1px solid ${(_rsvpOf(r.name)||{}).response === 'absent' ? 'rgba(255,82,82,0.35)' : 'rgba(0,201,122,0.35)'}">
         <input type="checkbox" id="cf_${r.name}" checked
           style="width:18px;height:18px;cursor:pointer;flex-shrink:0" title="체크 해제 시 확정 취소">
         <label for="cf_${r.name}" style="flex:1;font-size:15px;font-weight:600;cursor:pointer">
-          <span style="color:var(--green)">✅ </span>${r.name}
+          <span style="color:var(--green)">✅ </span>${r.name}${_rsvpBadge(r.name)}
           <span style="font-size:13px;color:var(--tx2);font-weight:400">
             ${r.age||''} · 지원서 ${r.score}점 · 투표 ${r.total}점 (우선 ${r.rank1}표·대상 ${r.rank2}표)
           </span>
@@ -14801,7 +14979,9 @@ function showConfirmArea(results) {
       <div style="font-size:13px;font-weight:700;color:var(--tx2);margin-bottom:6px">
         ${hasVotes ? '📋 투표 결과' : '📋 서류점수 순 (투표 없음 — 관리자 직권 확정)'} — 확정할 대상자를 선택하세요 (${notYetConfirmed.length}명)
       </div>
-      ${notYetConfirmed.map(r => {
+      ${notYetConfirmed.map((r, _ni) => {
+        // v1.4.35: 부족한 인원만큼 위에서부터 「차순위」로 짚어 준다(목록은 이미 점수순).
+        const nextLabel = (_ni < _short) ? `<span style="background:var(--gold);color:#000;font-size:12px;font-weight:700;padding:2px 8px;border-radius:6px;margin-left:6px">〈차순위 ${_ni+1}〉</span>` : '';
         const rankLabel = r.rank1 > 0 ? `<span style="background:rgba(244,168,0,0.15);color:var(--gold);font-size:12px;padding:2px 6px;border-radius:6px;margin-left:5px">우선면접 ${r.rank1}표</span>` :
                           r.rank2 > 0 ? `<span style="background:rgba(0,180,216,0.1);color:var(--ac);font-size:12px;padding:2px 6px;border-radius:6px;margin-left:5px">면접대상 ${r.rank2}표</span>` : '';
         // ✅ v1.0.10: 투표자 상세 호버 툴팁
@@ -14813,7 +14993,7 @@ function showConfirmArea(results) {
           <input type="checkbox" id="cf_${r.name}"
             style="width:18px;height:18px;cursor:pointer;flex-shrink:0">
           <label for="cf_${r.name}" style="flex:1;font-size:15px;font-weight:600;cursor:pointer">
-            ${nameHtml}${rankLabel}
+            ${nameHtml}${nextLabel}${rankLabel}
             <span style="font-size:13px;color:var(--tx2);font-weight:400;display:block;margin-top:2px">
               ${r.age||''} · 지원서 ${r.score}점 · 투표합산 ${r.total}점
             </span>
@@ -14873,7 +15053,7 @@ function showConfirmArea(results) {
       </button>
     </div>` : '';
 
-  document.getElementById('confirmCheckList').innerHTML = noRecordHtml + mailedHtml + confirmedHtml + pendingHtml;
+  document.getElementById('confirmCheckList').innerHTML = _targetHtml + noRecordHtml + mailedHtml + confirmedHtml + pendingHtml;
 }
 
 // ✅ v1.2.63: 메일 복사 기록이 없을 때 — 인원수를 직접 넣어 투표 점수 상위 N명을 확정.
