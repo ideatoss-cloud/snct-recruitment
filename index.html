@@ -1868,7 +1868,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.28';
+const APP_VERSION = 'v1.4.29';
 const APP_VERSION_DATE = '2026.09.14';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -2112,9 +2112,18 @@ let GAS_URL = GAS_URL_CANON;
 //   → 한 번 실패했다고 사용자에게 던지지 않는다. **최대 3회 시도**하고,
 //     그래도 안 되면 **무엇이 왔는지** 알 수 있는 메시지를 낸다.
 //   ⚠️ window.fetch는 위 세션 래퍼가 감싸고 있으므로 sess 부착은 그대로 적용된다.
+//   ⚠️ v1.4.29 (2026.09.14): 재시도 폭을 넓히고 첫 시도를 당겼다.
+//     ※ 측정 주의 — curl 기본 User-Agent로는 10회 중 5회가 HTML이었지만,
+//       **브라우저 User-Agent로는 8회 중 8회 성공**했다. 즉 그 높은 실패율은
+//       측정 도구 탓이고 **실제 브라우저에서는 드물게 난다.** 다만 작업자가
+//       실사용에서 「Unexpected token '<'」를 실제로 봤으므로 0은 아니다.
+//     → 실패가 드물다면 재시도를 늘려도 손해가 없다(붙으면 즉시 반환). 5회로 둔다.
+//       대신 **첫 재시도를 0.5초 → 0.2초로 당겼다** — 서버는 1ms에 끝났고(응답의 _ms)
+//       라우팅에서 흘린 것이므로 오래 기다릴 이유가 없다. 종전보다 오히려 빠르다.
+const _GAS_BACKOFF = [200, 400, 800, 1200];
 async function gasJson(url, init, label) {
   let last = null;
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < _GAS_BACKOFF.length + 1; i++) {
     try {
       const res = await fetch(url, init);
       const txt = await res.text();
@@ -2127,9 +2136,9 @@ async function gasJson(url, init, label) {
         catch (e) { last = new Error('응답을 읽지 못했습니다: ' + txt.slice(0, 80)); }
       }
     } catch (e) { last = e; }
-    if (i < 2) {
-      console.warn('[gasJson] ' + (label || '') + ' 재시도 ' + (i + 1) + '/2 —', last && last.message);
-      await new Promise(function (r) { setTimeout(r, 500 * (i + 1)); });
+    if (i < _GAS_BACKOFF.length) {
+      console.warn('[gasJson] ' + (label || '') + ' 재시도 ' + (i + 1) + '/' + _GAS_BACKOFF.length + ' —', last && last.message);
+      await new Promise(function (r) { setTimeout(r, _GAS_BACKOFF[i]); });
     }
   }
   throw last || new Error('알 수 없는 오류');
