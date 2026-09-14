@@ -1868,7 +1868,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.25';
+const APP_VERSION = 'v1.4.26';
 const APP_VERSION_DATE = '2026.09.14';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -4119,12 +4119,26 @@ async function loadFromSheet() {
   // 2) GAS 조회 + checkConfirmed 병렬 실행
   toast(round+' 불러오는 중...','ok');
   setPanel(`<div class="loading"><div class="spinner"></div><div style="font-size:14px;color:var(--tx2)">${round} 불러오는 중...</div></div>`);
+  // ✅ v1.4.26 (2026.09.14): **불러오기가 느릴 때 어디서 걸리는지 숫자로 본다.**
+  //   v1.4.25에서 재지원 조회를 41회→1회로 줄였는데도 여전히 느리다는 지적이 있었다.
+  //   추측으로 한 군데씩 고치지 말고 **단계별 소요를 재서** 범인을 지목한다.
+  //   결과는 콘솔 표 + 완료 토스트(총 시간·최장 단계)로 남는다. 상시 켜둔다 — 느려지면 바로 보인다.
+  const _lt0 = performance.now();
+  const _lap = [];
+  const _mark = function (label, extra) {
+    _lap.push({ 단계: label, 누적ms: Math.round(performance.now() - _lt0), 비고: extra || '' });
+  };
   try {
     const [res, cfRes] = await Promise.all([
       fetch(GAS_URL+'?action=getAnalysis&userEmail='+encodeURIComponent(currentUserEmail||'')+'&round='+encodeURIComponent(round)+'&email='+encodeURIComponent(currentUserEmail||'')),
       fetch(GAS_URL+'?action=getConfirmed&userEmail='+encodeURIComponent(currentUserEmail||'')+'&round='+encodeURIComponent(round))
     ]);
-    const [data, cfData] = await Promise.all([res.json(), cfRes.json()]);
+    _mark('GAS 응답 헤더 도착');
+    // .json() 대신 .text()로 받아 **응답 크기**를 함께 잰다
+    const [_txt, _cfTxt] = await Promise.all([res.text(), cfRes.text()]);
+    _mark('본문 수신', Math.round(_txt.length / 1024) + 'KB');
+    const data = JSON.parse(_txt), cfData = JSON.parse(_cfTxt);
+    _mark('JSON 파싱');
 
     if (!data.success) { toast('불러오기 실패: '+data.message,'err'); setPanel('<div class="empty"><div class="empty-ic">⚠️</div><div style="font-size:15px;color:var(--red)">불러오기 실패<br>'+data.message+'</div><button class="btn btn-o" style="margin-top:12px" onclick="loadFromSheet()">🔄 다시 시도</button></div>'); return; }
     if (!data.applicants.length) {
@@ -4145,13 +4159,33 @@ async function loadFromSheet() {
       applySchoolGender(a.result);
       reapplyEduJudgment(a);   // ✅ v1.4.14 학력 판정 재계산 (재분석 없음 = API 비용 0)
     });
-    // LS 저장
-    try { localStorage.setItem(lsKey, JSON.stringify({t:Date.now(), d:applicants})); } catch(e){}
+    _mark('후처리(성별·학력 재판정)', applicants.length + '명');
+    // LS 저장 — 41명 fullJson 직렬화는 동기 작업이라 여기서 걸릴 수 있다
+    try {
+      const _ls = JSON.stringify({t:Date.now(), d:applicants});
+      localStorage.setItem(lsKey, _ls);
+      _mark('로컬 캐시 저장', Math.round(_ls.length / 1024) + 'KB');
+    } catch(e){ _mark('로컬 캐시 저장 실패', e.name); }
     renderAlist(); updateBadge();
+    _mark('목록 렌더');
     const last = applicants.find(a=>a.status==='done');
     if (last) showResult(last.id);
     else setPanel('<div class="empty"><div class="empty-ic">📋</div><div style="font-size:15px;line-height:1.8">지원자를 선택해 분석 결과를 확인하세요</div></div>');
-    toast(applicants.length+'명 불러오기 완료 ✅','ok');
+    _mark('첫 지원자 상세 렌더');
+
+    // 어디서 걸렸는지 남긴다 — 콘솔 표 + 토스트
+    (function(){
+      let prev = 0, worst = { 단계: '-', ms: 0 };
+      _lap.forEach(function (r) {
+        r.구간ms = r.누적ms - prev; prev = r.누적ms;
+        if (r.구간ms > worst.ms) worst = { 단계: r.단계, ms: r.구간ms };
+      });
+      try { console.table(_lap); } catch(e) { console.log(_lap); }
+      const total = _lap.length ? _lap[_lap.length - 1].누적ms : 0;
+      window.__loadLap = _lap;           // 자가진단·문의 시 그대로 읽어갈 수 있게
+      toast(applicants.length + '명 불러오기 완료 ✅ ' + (total/1000).toFixed(1) + '초'
+            + (total > 4000 ? ' — 최장 ' + worst.단계 + ' ' + (worst.ms/1000).toFixed(1) + '초' : ''), 'ok');
+    })();
 
     // 병렬로 받아온 확정자 처리
     if (cfData.success && cfData.confirmed?.length) {
@@ -4174,6 +4208,8 @@ async function loadFromSheet() {
     if (GAS_URL && round) {
       const names = applicants.map(a => a.result && a.result.name).filter(Boolean);
       _fetchPastBulk(names, round).then(() => {
+        _mark('재지원 이력 일괄 조회', names.length + '명 · 요청 1회');
+        try { console.table(_lap); } catch(e) {}
         if (round !== currentRound) return;         // 회차가 바뀌었으면 그리지 않는다
         const found = names.filter(n => { const h = _pastOf(n); return h && h.length; }).length;
         renderAlist();                              // 조회가 끝난 뒤 한 번만 다시 그린다
