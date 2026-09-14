@@ -1868,7 +1868,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.24';
+const APP_VERSION = 'v1.4.25';
 const APP_VERSION_DATE = '2026.09.14';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -4164,31 +4164,19 @@ async function loadFromSheet() {
     //   브라우저 동시연결 한도(호스트당 6개)에 걸리고 GAS 쪽에서도 큐잉되어
     //   불러오기 전체가 눈에 띄게 느려졌다. 이 조회는 '재지원 뱃지'용이라 급하지 않으므로
     //   3개씩 순차로 천천히 돌린다(화면은 이미 렌더된 상태).
+    // ✅ v1.4.25 (2026.09.14): **지원자 수만큼 GAS를 왕복하던 것을 1회로 바꿨다.**
+    //   v1.2.46이 동시요청을 3개로 제한해 브라우저 연결 한도 문제는 막았지만,
+    //   **요청 횟수 자체는 그대로**였다. 41명이면 41번 왕복이고, GAS 쪽은 매 요청마다
+    //   과거 회차 `_분석` 시트를 **전부 다시 읽는다**(41명 × 10회차 = 410회 시트 읽기).
+    //   이것이 「불러오는 데 너무 오래 걸린다」의 원인이었다(2026.09.14 작업자 지적).
+    //   → v1.4.17에서 집계 탭용으로 만들어 둔 getPastHistoryBulk(@107)를 여기서도 쓴다.
+    //     회차 시트를 한 번씩만 읽고 이름 전체를 훑으므로 **요청 1회·시트 10회**로 끝난다.
     if (GAS_URL && round) {
-      const queue = applicants.filter(a => a.result?.name && _pastCache[(a.result.name||'')+'_'+(a.result.contact||'')] === undefined);
-      const CONCURRENCY = 3;
-      let qi = 0, found = 0;
-      const runNext = async () => {
-        while (qi < queue.length) {
-          const a = queue[qi++];
-          if (round !== currentRound) return;      // 회차가 바뀌면 중단
-          const hKey = (a.result.name||'') + '_' + (a.result.contact||'');
-          try {
-            const r = await fetch(GAS_URL+'?action=getPastHistory&userEmail='+encodeURIComponent(currentUserEmail||'')
-              +'&name='+encodeURIComponent(a.result.name||'')
-              +'&contact='+encodeURIComponent(a.result.contact||'')
-              +'&currentRound='+encodeURIComponent(round));
-            const d = await r.json();
-            if (d.success) {
-              _pastCache[hKey] = d.history || [];
-              if (d.history && d.history.length) found++;
-            }
-          } catch(e) { /* 뱃지용이라 실패해도 무시 */ }
-        }
-      };
-      Promise.all(Array.from({length: Math.min(CONCURRENCY, queue.length)}, runNext)).then(() => {
-        if (round !== currentRound) return;
-        renderAlist();                              // 전원 조회 후 한 번만 다시 그린다
+      const names = applicants.map(a => a.result && a.result.name).filter(Boolean);
+      _fetchPastBulk(names, round).then(() => {
+        if (round !== currentRound) return;         // 회차가 바뀌었으면 그리지 않는다
+        const found = names.filter(n => { const h = _pastOf(n); return h && h.length; }).length;
+        renderAlist();                              // 조회가 끝난 뒤 한 번만 다시 그린다
         if (found) toast(`재지원 이력 있는 지원자 ${found}명 — 목록에서 확인하세요`, 'warn');
       });
     }
