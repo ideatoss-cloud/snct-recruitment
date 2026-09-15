@@ -1874,7 +1874,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.40';
+const APP_VERSION = 'v1.4.41';
 const APP_VERSION_DATE = '2026.09.14';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -8692,6 +8692,13 @@ ${a.pdfText.slice(0,3000)}` : '';
     });
 
     document.getElementById('qTypeLoading').style.display = 'none';
+    // ⚠️ v1.4.41 — **근거 스탬프를 렌더보다 먼저 찍는다.**
+    //   v1.4.38에서 _qStampMeta를 저장 직전(=렌더 뒤)에 뒀더니, 방금 만든 질문지의
+    //   근거 배지가 **기록이 없는 상태로 그려졌다.** 원문 확보에 성공했을 때는
+    //   배지의 「메모리에 원문이 있으면 resume」 폴백이 우연히 가려줬지만,
+    //   **실패했을 때는 「v1.4.37 이전 저장본」이라는 엉뚱한 안내가 떴다**
+    //   (2026.09.15 전수 점검에서 발견 — 실제로 「요약만으로 만듦」이어야 할 자리).
+    _qStampMeta(a, _gotResume);
     // 종합이 비었으면 만들어진 유형 중 하나를 먼저 보여준다(빈 화면으로 시작하지 않게)
     currentQType = (qCache[cacheKey]['종합']||[]).length
       ? '종합'
@@ -8719,7 +8726,7 @@ ${a.pdfText.slice(0,3000)}` : '';
     const _toSave = {};
     Q_TYPES.forEach(t => { const v = (qCache[cacheKey]||{})[t]; if (v && v.length) _toSave[t] = v; });
     // v1.4.38: 무엇을 근거로 만들었는지 함께 저장한다 — 배지가 이 기록을 읽는다
-    _qStampMeta(a, _gotResume);
+    //   (스탬프 자체는 위에서 렌더 전에 찍었다 — v1.4.41)
     if (Object.keys(_toSave).length) _toSave._meta = qCache[cacheKey]._meta;
     if (!Object.keys(_toSave).length) {
       toast('생성된 질문지가 없어 저장하지 않았습니다 (' + (a.result?.name||a.name) + ')', 'err');
@@ -9225,9 +9232,10 @@ function _qSourceBadge() {
   const box = function (bg, color, html) {
     return `<div style="font-size:12px;margin-bottom:8px;padding:7px 10px;border-radius:6px;line-height:1.65;background:${bg};color:${color}">${html}</div>`;
   };
+  // ⚠️ v1.4.41: 기록이 있으면 **기록만** 믿는다. 「지금 메모리에 원문이 있으니 resume이겠지」라는
+  //   폴백은 v1.4.38의 결함을 가려 버렸다(실패했는데도 ✅로 보임). 폴백은 기록이 아예 없을 때만.
   const meta = _qMeta(a.id);
-  const live = !!(a.pdfText && String(a.pdfText).trim());
-  const src = meta ? meta.src : (live ? 'resume' : null);
+  const src = (meta && meta.src) ? meta.src : null;
 
   if (src === 'resume')
     return box('rgba(0,201,122,0.08)', 'var(--green)',
