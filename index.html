@@ -1883,7 +1883,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.45';
+const APP_VERSION = 'v1.4.46';
 const APP_VERSION_DATE = '2026.09.15';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -10266,10 +10266,21 @@ async function loadTalentPool() {
 //                ② 이름 일치 — 단 **동명이인이 둘 이상이면 내주지 않는다**
 //                ③ 못 찾으면 빈칸
 //   어느 근거로 찾았는지도 같이 돌려준다 — 화면에서 「이름으로 찾음」을 구분해 표시한다.
-function _contactOf(name, email) {
-  const src = (window.__currentRoundApps && window.__currentRoundApps.length)
-    ? window.__currentRoundApps : (typeof applicants !== 'undefined' ? applicants : []);
-  const rs = (src || []).map(function (a) { return (a && a.result) ? a.result : a; }).filter(Boolean);
+//   ⚠️ v1.4.46 — **어느 회차 명단에서 찾을지는 부르는 쪽이 정한다.**
+//     v1.4.45는 `window.__currentRoundApps`를 무조건 먼저 봤는데, 그건 **[채용 집계] 탭이
+//     자기 회차로 채워 두는 배열**이다. [지원서 집계]에서 보는 회차와 다를 수 있다.
+//     그러면 **다른 회차 동명이인의 번호**가 나온다 — 이번에 넣은 기능이 곧바로 사고가 될 자리였다.
+//     → 호출부가 `src`를 넘긴다. 안 넘기면 **회차가 일치할 때만** __currentRoundApps를 쓴다.
+function _contactSource(src) {
+  if (src && src.length) return src;
+  const sameRound = window.__currentRoundId && currentRound
+    && String(window.__currentRoundId) === String(currentRound);
+  if (sameRound && window.__currentRoundApps && window.__currentRoundApps.length) return window.__currentRoundApps;
+  return (typeof applicants !== 'undefined' ? applicants : []);
+}
+
+function _contactOf(name, email, src) {
+  const rs = (_contactSource(src) || []).map(function (a) { return (a && a.result) ? a.result : a; }).filter(Boolean);
   const em = String(email || '').trim().toLowerCase();
   if (em) {
     const hit = rs.filter(function (r) { return String(r.email || '').trim().toLowerCase() === em; });
@@ -10286,8 +10297,8 @@ function _contactOf(name, email) {
 }
 
 // 표에 넣을 번호 칸. 눌러서 복사.
-function _phoneCell(name, email) {
-  const c = _contactOf(name, email);
+function _phoneCell(name, email, src) {
+  const c = _contactOf(name, email, src);
   if (c.by === 'dup')
     return `<span style="font-size:11px;color:var(--red)" title="같은 이름/메일이 둘 이상입니다. 원본에서 직접 확인하세요">⚠️ 동명이인 — 직접 확인</span>`;
   if (!c.phone)
@@ -10300,10 +10311,10 @@ function _phoneCell(name, email) {
 
 // 여러 명 번호를 한 번에 복사 — 문자 앱에 그대로 붙여넣는 용도.
 //   ⚠️ **확실한 번호만 담는다.** 못 찾은 사람은 이름을 따로 알려 준다(조용히 빠지면 안 된다).
-function _copyPhoneList(list, label) {
+function _copyPhoneList(list, label, src) {
   const ok = [], miss = [];
   (list || []).forEach(function (x) {
-    const c = _contactOf(x.name, x.email);
+    const c = _contactOf(x.name, x.email, src);
     if (c.phone) ok.push(c.phone); else miss.push(x.name || x.email || '?');
   });
   if (!ok.length) { toast('복사할 번호가 없습니다' + (miss.length ? ' — ' + miss.join(', ') : ''), 'err'); return; }
@@ -13356,6 +13367,11 @@ function printRejectReport() {
 // 최종합격/예비합격 결정 카드 (관리자 전용)
 // ══════════════════════════════════════════
 function renderFinalDecisionCard(round, confirmedNames, ivResults, isClosed, absentNames = []) {
+  // ⚠️ v1.4.46: 연락처는 **이 round의 명단**에서만 찾는다.
+  //   (v1.4.45→4.46 작업 중 여기서 함수 밖 변수 `apps`를 쓸 뻔했다 — 문법 검사로는 안 잡히고
+  //    화면을 열 때 터졌을 자리다. 전수 점검에서 발견.)
+  const _fdApps = (String(window.__currentRoundId || '') === String(round) && window.__currentRoundApps)
+    ? window.__currentRoundApps : [];
   // ✅ v1.0.39: 면접 불참자는 최종합격결정에서 제외
   const eligibleNames = confirmedNames.filter(n => !absentNames.includes(n));
   if (!eligibleNames.length) return '';
@@ -13375,7 +13391,7 @@ function renderFinalDecisionCard(round, confirmedNames, ivResults, isClosed, abs
     const color = isPass(cur)?'var(--green)':isReserve(cur)?'var(--gold)':cur==='불합격'?'var(--red)':'var(--tx2)';
     return `<tr>
       <td style="font-weight:700">${name}</td>
-      <td style="white-space:nowrap">${_phoneCell(name, '')}</td>
+      <td style="white-space:nowrap">${_phoneCell(name, '', _fdApps)}</td>
       <td style="color:${color};font-weight:700;font-size:15px">${cur||'미결정'}</td>
       <td>
         ${isClosed
@@ -13552,6 +13568,11 @@ function autoFillFinalResult(round) {
 // ✅ v1.0.66: 발송/클릭 상세 모달 — 수신자별 개별 확인
 // ✅ v1.0.67: RSVP 응답 컬럼 추가 (면접 참석/입사 확정)
 function showEmailEngagement(round, tplKey) {
+  // v1.4.46: 이 표의 연락처는 **이 round의 명단**에서만 찾는다.
+  //   __currentRoundApps가 다른 회차 것이면 쓰지 않는다(빈 배열 → _contactSource가 안전한 쪽으로).
+  const _engApps = (String(window.__currentRoundId||'') === String(round) && window.__currentRoundApps)
+    ? window.__currentRoundApps
+    : ((typeof currentRound !== 'undefined' && String(currentRound) === String(round) && typeof applicants !== 'undefined') ? applicants : []);
   const sentSt = (window.__emailSentStatuses?.[round] || {})[tplKey];
   const clickSt = (window.__emailClickStatuses?.[round] || {})[tplKey];
   const rsvpSt = (window.__emailRsvpStatuses?.[round] || {})[tplKey];
@@ -13604,9 +13625,10 @@ function showEmailEngagement(round, tplKey) {
   const _unclickList = tplMeta.hasClick ? rows.filter(r => !clickByEmail[r.email]).map(r => ({name:r.name, email:r.email})) : [];
   const _allList = rows.map(r => ({name:r.name, email:r.email}));
   window.__engagePhoneLists = { rsvp:_noRsvpList, click:_unclickList, all:_allList };
+  window.__engagePhoneSrc = _engApps;     // v1.4.46: 일괄 복사도 같은 명단에서만 찾는다
   const _btn = (k, label, n) => n
     ? `<button class="btn btn-o" style="font-size:11px;padding:4px 9px;margin-right:5px"
-        onclick="_copyPhoneList(window.__engagePhoneLists['${k}'], '${label}')">📋 ${label} ${n}명 번호 복사</button>` : '';
+        onclick="_copyPhoneList(window.__engagePhoneLists['${k}'], '${label}', window.__engagePhoneSrc)">📋 ${label} ${n}명 번호 복사</button>` : '';
 
   let noticeHtml = '';
   if (tplMeta.hasRsvp && noRsvpCount > 0) {
@@ -13639,7 +13661,7 @@ function showEmailEngagement(round, tplKey) {
         <div style="font-weight:600">${_escapeHtml(r.name||'-')}</div>
         <div style="font-size:11px;color:var(--tx2);margin-top:2px">${_escapeHtml(r.email||'')}</div>
       </td>
-      <td style="padding:8px 10px;border-bottom:1px solid var(--bd);white-space:nowrap">${_phoneCell(r.name, r.email)}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid var(--bd);white-space:nowrap">${_phoneCell(r.name, r.email, _engApps)}</td>
       <td style="padding:8px 10px;border-bottom:1px solid var(--bd);font-size:12px;color:var(--tx2);font-family:'DM Mono',monospace;white-space:nowrap">📤 ${_escapeHtml(r.sentAt||'-')}</td>
       ${tplMeta.hasClick ? `<td style="padding:8px 10px;border-bottom:1px solid var(--bd);font-size:12px;font-family:'DM Mono',monospace;white-space:nowrap;color:${clicked?'var(--ac)':'var(--tx2)'}">${clicked ? '👆 '+_escapeHtml(click.firstClickAt) + (click.clickCount>1?` <span style="color:var(--tx2);font-size:10px">(${click.clickCount}회)</span>`:'') : '<span style="color:var(--gold)">❌ 미확인</span>'}</td>` : ''}
       ${tplMeta.hasRsvp ? `<td style="padding:8px 10px;border-bottom:1px solid var(--bd);font-size:12px;white-space:nowrap">${rsvp ? `<span style="font-weight:700;color:${(rsvp.response==='attend'||rsvp.response==='accept')?'var(--green)':'#64748b'}">${_escapeHtml(rsvpLabelMap[rsvp.response]||rsvp.response)}</span><div style="font-size:10px;color:var(--tx2);font-family:\\'DM Mono\\',monospace;margin-top:2px">${_escapeHtml(rsvp.at)}</div>` : '<span style="color:var(--gold);font-size:11px">⏳ 미응답</span>'}</td>` : ''}
@@ -15348,7 +15370,7 @@ function showConfirmArea(results) {
             ${r.age||''} · 지원서 ${r.score}점 · 투표 ${r.total}점 (우선 ${r.rank1}표·대상 ${r.rank2}표)
           </span>
         </label>
-        <span style="flex-shrink:0;margin-left:6px">${_phoneCell(r.name, '')}</span>
+        <span style="flex-shrink:0;margin-left:6px">${_phoneCell(r.name, '', applicants)}</span>
       </div>`).join('')}
     </div>` : '';
 
