@@ -737,8 +737,17 @@ header.lg.lg-on{background:rgba(8,15,26,.62);}
       </div>
       <div class="card" id="qcard" style="display:none">
         <div id="qSavedBadge" style="display:none;font-size:13px;color:var(--tx2);background:rgba(0,180,216,0.08);border:1px solid rgba(0,180,216,0.2);border-radius:6px;padding:4px 10px;margin-bottom:8px"></div>
+        <!-- ✅ v1.4.44 (2026.09.15, 작업자 지시) — 질문지 카드에서 바로 지원자를 바꾼다.
+             좌측 [면접 설정] 카드까지 올라가야 바꿀 수 있어서, 누구 질문지를 보고 있는지
+             헷갈리기 쉬웠다(v1.4.42~43의 사고도 여기서 시작됐다). 좌측 명단과 항상 같은 값이다. -->
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
-          <div class="ct" style="margin:0">❓ 면접 질문지</div>
+          <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">
+            <div class="ct" style="margin:0">❓ 면접 질문지</div>
+            <select id="qAppSel" onchange="onQAppSelChange()" title="지원자를 바꾸면 그 사람 질문지로 바뀝니다"
+              style="font-size:14px;font-weight:700;padding:5px 10px;border-radius:7px;background:var(--bg);color:var(--tx);border:1px solid var(--ac);cursor:pointer;max-width:220px">
+              <option value="">-- 지원자 선택 --</option>
+            </select>
+          </div>
           <div id="qTypeLoading" style="font-size:13px;color:var(--tx2);display:none">
             <span class="spinner" style="width:12px;height:12px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:4px"></span>생성 중...
           </div>
@@ -1874,7 +1883,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.41';
+const APP_VERSION = 'v1.4.44';
 const APP_VERSION_DATE = '2026.09.14';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -8442,6 +8451,7 @@ async function refreshIvApplicants() {
     sel.innerHTML = '<option value="">-- 분석 완료 지원자 없음 --</option>';
   }
   if (cur) sel.value = cur;
+  _syncQAppSel();                 // v1.4.44: 목록을 새로 그리면 카드 명단도 다시 채운다
 
   // 불참자 선택 셀렉트도 동기화
   const absSel = document.getElementById('absentSel');
@@ -8491,9 +8501,59 @@ async function refreshIvApplicants() {
 const qCache = {};
 let currentQType = '종합';
 
+// ✅ v1.4.44 — 질문지 카드의 명단은 좌측 [면접 설정]의 명단과 **항상 같은 값**을 유지한다.
+//   두 곳이 어긋나면 「누구 질문지를 보고 있나」가 다시 헷갈린다.
+function _syncQAppSel() {
+  const src = document.getElementById('ivApp');
+  const dst = document.getElementById('qAppSel');
+  if (!src || !dst) return;
+  if (dst.innerHTML !== src.innerHTML) dst.innerHTML = src.innerHTML;
+  if (dst.value !== src.value) dst.value = src.value;
+}
+async function onQAppSelChange() {
+  const src = document.getElementById('ivApp');
+  const dst = document.getElementById('qAppSel');
+  if (!src || !dst) return;
+  src.value = dst.value;          // 좌측 명단을 먼저 맞추고
+  await onIvAppChange();          // 기존 전환 경로를 그대로 탄다
+  _syncQAppSel();
+}
+
 async function onIvAppChange() {
   const aId = document.getElementById('ivApp').value;
-  if (!aId || !GAS_URL || !currentRound) return;
+
+  // ⚠️⚠️ v1.4.43 (2026.09.15) — **지원자를 바꾸면 화면이 반드시 따라간다.**
+  //   작업자 지적: 「면접질문지가 지원자 선택 명단을 그대로 안 따라가고 머물러 있다」.
+  //   종전에는 ivData 갱신이 **저장본을 찾은 분기 안에만** 있었다. 그래서
+  //   **질문지가 아직 없는 지원자로 바꾸면** 어느 분기에도 들어가지 못해
+  //   ivData도, 화면의 질문지도 **이전 사람 것이 그대로 남았다.**
+  //   그 상태에서 [다시 생성]을 누르면 이전 사람 이력으로 만들어졌다(v1.4.42에서 막은 사고).
+  //   화면에 남아 있는 것 자체가 위험하다 — 면접관이 그걸 그대로 들고 들어갈 수 있다.
+  const _newA = aId ? applicants.find(x => x.id == aId) : null;
+  ivData = ivData || {};
+  if (_newA) ivData.applicant = _newA;
+  // v1.4.44(작업자 지시): 명단·질문지·**평가표**가 한 덩어리로 같이 바뀐다.
+  //   종전엔 평가표 갱신(syncIvPanel)이 저장본을 찾은 분기 안에만 있어,
+  //   질문지가 없는 지원자로 바꾸면 평가표도 이전 사람 것이 남았다.
+  if (_newA) {
+    const _ivs = ((document.getElementById('ivIv')||{}).value || '').split(/[,，]/).map(function(x){return x.trim();}).filter(Boolean);
+    if (_ivs.length) ivData.interviewers = _ivs;
+    ivData.questions = ivData.questions || [];
+    try { renderIvPanel(); } catch (e) {}
+  }
+  _syncQAppSel();                 // v1.4.44: 카드의 명단도 같이 움직인다
+  // 새 지원자의 질문지가 메모리에 없으면 **이전 사람 것을 먼저 치운다.**
+  if (!aId || !_qFilledTypes(aId).length) {
+    const _ql = document.getElementById('qlist');
+    if (_ql) _ql.innerHTML = _newA
+      ? '<div style="padding:16px;text-align:center;font-size:13px;color:var(--tx2);line-height:1.9">'
+        + '<b style="color:var(--tx);font-size:14px">' + _escapeHtml((_newA.result && _newA.result.name) || '') + '</b> 님의 질문지가 아직 없습니다.<br>'
+        + '좌측 <b>[🎤 면접 준비 시작]</b>을 눌러 주세요.</div>'
+      : '<div style="padding:16px;text-align:center;font-size:13px;color:var(--tx2)">지원자를 선택해 주세요.</div>';
+    const _sb = document.getElementById('qSavedBadge');
+    if (_sb) _sb.style.display = 'none';
+  }
+  if (!aId || !GAS_URL || !currentRound) { updateInterviewButtons(); return; }
   // ✅ v1.0.18: 우측 평가 패널 자동 갱신 헬퍼 (드롭다운만 변경해도 즉시 평가 가능)
   const syncIvPanel = () => {
     const a = applicants.find(x => x.id == aId);
@@ -8507,9 +8567,14 @@ async function onIvAppChange() {
   // qCache에 이미 있으면 즉시 표시 (API 호출 없음)
   if (_qFilledTypes(aId).length) {
     document.getElementById('qcard').style.display = 'block';
-    // ✅ v1.2.71: switchQType을 거친다 — 비어 있는 유형이면 재생성 버튼이 나오게
+    // ⚠️⚠️ v1.4.42 (2026.09.15) — **지원자를 바꾸면 ivData도 반드시 바꾼다.**
+    //   종전: `if (!ivData.applicant)` — 이미 값이 있으면 **갱신하지 않았다.**
+    //   그래서 안재한 → 주윤성으로 드롭다운을 바꿔도 ivData.applicant는 안재한으로 남고,
+    //   [다시 생성]을 누르면 **안재한의 이력으로 질문을 만들어 안재한 시트에 저장**했다.
+    //   화면은 주윤성인데 질문에 삼부해운(안재한 경력)이 나왔다 — 2026.09.15 작업자 발견.
+    //   면접장에 다른 사람 이력이 적힌 질문지를 들고 들어갈 뻔한 사고다.
     ivData = ivData || {};
-    if (!ivData.applicant) ivData.applicant = applicants.find(x => x.id == aId);
+    ivData.applicant = applicants.find(x => x.id == aId) || ivData.applicant;
     switchQType(_qFirstFilled(aId));
     const savedBadge = document.getElementById('qSavedBadge');
     if (savedBadge) savedBadge.style.display = 'none';
@@ -8541,8 +8606,9 @@ async function onIvAppChange() {
       document.getElementById('qcard').style.display = 'block';
       // ✅ v1.2.71: 저장본에 빈 유형이 섞여 있어도 볼 수 있는 것부터 띄우고,
       //   빈 탭을 누르면 재생성 버튼이 나오게 switchQType을 거친다
+      // ⚠️⚠️ v1.4.42: 위와 같은 이유 — 조건부 갱신을 없앤다
       ivData = ivData || {};
-      if (!ivData.applicant) ivData.applicant = applicants.find(x => x.id == aId);
+      ivData.applicant = applicants.find(x => x.id == aId) || ivData.applicant;
       switchQType(_qFirstFilled(aId));
       const savedBadge = document.getElementById('qSavedBadge');
       if (savedBadge) { savedBadge.textContent = '☁️ 저장된 질문지 (' + data.savedAt + ')'; savedBadge.style.display = 'block'; }
@@ -8551,6 +8617,8 @@ async function onIvAppChange() {
       syncIvPanel();
       updateInterviewButtons();
     } else {
+      // v1.4.43: 저장본이 없다 — 위에서 띄운 「질문지가 아직 없습니다」 안내를 그대로 둔다.
+      //   이전 사람 질문지를 남겨두지 않는다.
       updateInterviewButtons();
     }
   } catch(e) { updateInterviewButtons(); } // 실패 시 무시
@@ -9193,9 +9261,25 @@ function _qMeta(id) {
   return (c && c._meta) || null;
 }
 
+// ⚠️⚠️ v1.4.42 — **재생성 대상은 드롭다운이 진실이다.**
+//   ivData.applicant를 그대로 믿었더니 낡은 지원자로 만들어 남의 시트에 저장한 사고가 났다.
+//   드롭다운에 선택된 사람과 다르면 **드롭다운을 따르고 ivData를 바로잡는다.**
+function _regenTarget() {
+  const sel = document.getElementById('ivApp');
+  const selId = sel && sel.value;
+  const bySel = selId ? applicants.find(x => String(x.id) === String(selId)) : null;
+  const cur = ivData && ivData.applicant;
+  if (bySel && (!cur || String(cur.id) !== String(bySel.id))) {
+    ivData = ivData || {};
+    ivData.applicant = bySel;          // 화면이 가리키는 사람으로 바로잡는다
+    return bySel;
+  }
+  return bySel || cur || null;
+}
+
 // ✅ v1.4.39 — 지금 보고 있는 유형을 다시 만든다(이력서 원문을 되찾아서).
 function regenCurrentQType() {
-  const a = ivData && ivData.applicant;
+  const a = _regenTarget();
   if (!a) { toast('지원자를 먼저 선택해주세요','err'); return; }
   const t = currentQType || '종합';
   if (!confirm(`[${(a.result&&a.result.name)||''}] ${t} 질문지를 다시 만들까요?\n\n`
@@ -9207,7 +9291,7 @@ function regenCurrentQType() {
 
 // 4가지 유형을 모두 다시 만든다.
 async function regenAllQTypes() {
-  const a = ivData && ivData.applicant;
+  const a = _regenTarget();
   if (!a) { toast('지원자를 먼저 선택해주세요','err'); return; }
   if (!confirm(`[${(a.result&&a.result.name)||''}] 질문지 4가지 유형을 **전부** 다시 만들까요?\n\n`
     + `· 이력서 원본을 다시 읽어 그 내용을 근거로 만듭니다.\n`
@@ -9229,8 +9313,23 @@ function _qStampMeta(a, gotResume) {
 function _qSourceBadge() {
   const a = ivData && ivData.applicant;
   if (!a) return '';
+  // ⚠️ v1.4.42 — **이 질문지가 누구 것인지 화면에 박는다.**
+  //   이름이 없어서, 다른 사람 이력이 섞여 들어와도 눈으로 알아챌 수 없었다.
+  //   드롭다운과 다르면 그 자리에서 빨갛게 경고한다.
+  const sel = document.getElementById('ivApp');
+  const selName = (function(){
+    const o = sel && sel.options[sel.selectedIndex];
+    return (o && o.value) ? (o.textContent || '').trim() : '';
+  })();
+  const myName = (a.result && a.result.name) || '';
+  const mismatch = selName && myName && selName.indexOf(myName) < 0;
+  const who = `<div style="font-size:13px;font-weight:700;margin-bottom:6px;padding:6px 10px;border-radius:6px;`
+    + (mismatch
+        ? `background:rgba(255,82,82,0.12);color:var(--red)">⚠️ 화면에 선택된 지원자(<b>${_escapeHtml(selName)}</b>)와 이 질문지의 주인(<b>${_escapeHtml(myName)}</b>)이 다릅니다 — 지원자를 다시 선택해 주세요.`
+        : `background:rgba(0,180,216,0.08);color:var(--ac)">👤 <b>${_escapeHtml(myName)}</b> 님의 질문지`)
+    + `</div>`;
   const box = function (bg, color, html) {
-    return `<div style="font-size:12px;margin-bottom:8px;padding:7px 10px;border-radius:6px;line-height:1.65;background:${bg};color:${color}">${html}</div>`;
+    return who + `<div style="font-size:12px;margin-bottom:8px;padding:7px 10px;border-radius:6px;line-height:1.65;background:${bg};color:${color}">${html}</div>`;
   };
   // ⚠️ v1.4.41: 기록이 있으면 **기록만** 믿는다. 「지금 메모리에 원문이 있으니 resume이겠지」라는
   //   폴백은 v1.4.38의 결함을 가려 버렸다(실패했는데도 ✅로 보임). 폴백은 기록이 아예 없을 때만.
@@ -9258,6 +9357,7 @@ function _qSourceBadge() {
 }
 
 function renderQuestions(qs) {
+  _syncQAppSel();                 // v1.4.44
   const tm = { '역량':'qt-c', '경험':'qt-e', '상황판단':'qt-s', '가치관':'qt-v' };
   if (!qs || !qs.length) {
     document.getElementById('qlist').innerHTML = '<div style="color:var(--tx2);font-size:14px;padding:10px">질문을 불러오지 못했습니다</div>';
