@@ -1883,7 +1883,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.44';
+const APP_VERSION = 'v1.4.45';
 const APP_VERSION_DATE = '2026.09.15';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -10259,6 +10259,65 @@ async function loadTalentPool() {
   }
 }
 
+// ⚠️⚠️ v1.4.45 (2026.09.15, 작업자 지시) — **번호는 반드시 그 사람 것이어야 한다.**
+//   「이상한 전번 갖다 붙이면 좆되는 거야」 — 엉뚱한 사람에게 문자가 나가면 되돌릴 수 없다.
+//   그래서 **확실할 때만 내준다. 빈칸이 틀린 번호보다 낫다.**
+//   판정 순서 — ① **이메일 완전 일치**(이메일은 고유하다. 가장 안전)
+//                ② 이름 일치 — 단 **동명이인이 둘 이상이면 내주지 않는다**
+//                ③ 못 찾으면 빈칸
+//   어느 근거로 찾았는지도 같이 돌려준다 — 화면에서 「이름으로 찾음」을 구분해 표시한다.
+function _contactOf(name, email) {
+  const src = (window.__currentRoundApps && window.__currentRoundApps.length)
+    ? window.__currentRoundApps : (typeof applicants !== 'undefined' ? applicants : []);
+  const rs = (src || []).map(function (a) { return (a && a.result) ? a.result : a; }).filter(Boolean);
+  const em = String(email || '').trim().toLowerCase();
+  if (em) {
+    const hit = rs.filter(function (r) { return String(r.email || '').trim().toLowerCase() === em; });
+    if (hit.length === 1) return { phone: String(hit[0].contact || '').trim(), by: 'email' };
+    if (hit.length > 1)   return { phone: '', by: 'dup' };   // 같은 메일이 둘 — 사람이 볼 일이다
+  }
+  const nm = String(name || '').replace(/\s+/g, '');
+  if (nm) {
+    const hit = rs.filter(function (r) { return String(r.name || '').replace(/\s+/g, '') === nm; });
+    if (hit.length === 1) return { phone: String(hit[0].contact || '').trim(), by: 'name' };
+    if (hit.length > 1)   return { phone: '', by: 'dup' };   // 동명이인 — 내주지 않는다
+  }
+  return { phone: '', by: 'none' };
+}
+
+// 표에 넣을 번호 칸. 눌러서 복사.
+function _phoneCell(name, email) {
+  const c = _contactOf(name, email);
+  if (c.by === 'dup')
+    return `<span style="font-size:11px;color:var(--red)" title="같은 이름/메일이 둘 이상입니다. 원본에서 직접 확인하세요">⚠️ 동명이인 — 직접 확인</span>`;
+  if (!c.phone)
+    return `<span style="font-size:11px;color:var(--tx2)">번호 없음</span>`;
+  const warn = (c.by === 'name')
+    ? `<div style="font-size:10px;color:var(--gold);margin-top:1px">이름으로 찾음</div>` : '';
+  return `<span onclick="_copyContact('${c.phone.replace(/'/g, "")}')" title="눌러서 복사"
+      style="cursor:pointer;font-family:'DM Mono',monospace;font-size:12px;color:var(--ac);border-bottom:1px dashed var(--ac)">📞 ${_escapeHtml(c.phone)}</span>${warn}`;
+}
+
+// 여러 명 번호를 한 번에 복사 — 문자 앱에 그대로 붙여넣는 용도.
+//   ⚠️ **확실한 번호만 담는다.** 못 찾은 사람은 이름을 따로 알려 준다(조용히 빠지면 안 된다).
+function _copyPhoneList(list, label) {
+  const ok = [], miss = [];
+  (list || []).forEach(function (x) {
+    const c = _contactOf(x.name, x.email);
+    if (c.phone) ok.push(c.phone); else miss.push(x.name || x.email || '?');
+  });
+  if (!ok.length) { toast('복사할 번호가 없습니다' + (miss.length ? ' — ' + miss.join(', ') : ''), 'err'); return; }
+  const text = ok.join(', ');
+  const done = function () {
+    toast((label || '') + ' ' + ok.length + '명 번호 복사 📋'
+      + (miss.length ? ' — ⚠️ 번호를 못 찾은 ' + miss.length + '명: ' + miss.join(', ') : ''),
+      miss.length ? 'warn' : 'ok');
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(function () { _fallbackCopy(text); done(); });
+  } else { _fallbackCopy(text); done(); }
+}
+
 // v1.4.8: 인재풀에서 번호를 눌러 바로 복사 — 유선 연락이 첫 단계라(작업자 흐름) 손이 덜 가게 한다
 function _copyContact(v) {
   if (!v) return;
@@ -13316,6 +13375,7 @@ function renderFinalDecisionCard(round, confirmedNames, ivResults, isClosed, abs
     const color = isPass(cur)?'var(--green)':isReserve(cur)?'var(--gold)':cur==='불합격'?'var(--red)':'var(--tx2)';
     return `<tr>
       <td style="font-weight:700">${name}</td>
+      <td style="white-space:nowrap">${_phoneCell(name, '')}</td>
       <td style="color:${color};font-weight:700;font-size:15px">${cur||'미결정'}</td>
       <td>
         ${isClosed
@@ -13336,7 +13396,7 @@ function renderFinalDecisionCard(round, confirmedNames, ivResults, isClosed, abs
       저장하면 구글 시트 <b>_면접집계</b> 시트의 result 컬럼에 반영됩니다.
     </div>
     <div style="overflow-x:auto"><table class="ctbl" style="width:100%;min-width:400px">
-      <thead><tr><th>이름</th><th>면접관 집계</th><th>최종 결정</th></tr></thead>
+      <thead><tr><th>이름</th><th>연락처</th><th>면접관 집계</th><th>최종 결정</th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div>
     ${isClosed
@@ -13539,6 +13599,15 @@ function showEmailEngagement(round, tplKey) {
   const unclickedCount = tplMeta.hasClick ? rows.filter(r => !clickByEmail[r.email]).length : 0;
   const noRsvpCount = tplMeta.hasRsvp ? rows.filter(r => !rsvpByEmail[r.email]).length : 0;
 
+  // v1.4.45: 문자 보낼 대상의 번호를 한 번에 복사한다(작업자 흐름 — 미응답자에게 문자로 재촉).
+  const _noRsvpList = tplMeta.hasRsvp ? rows.filter(r => !rsvpByEmail[r.email]).map(r => ({name:r.name, email:r.email})) : [];
+  const _unclickList = tplMeta.hasClick ? rows.filter(r => !clickByEmail[r.email]).map(r => ({name:r.name, email:r.email})) : [];
+  const _allList = rows.map(r => ({name:r.name, email:r.email}));
+  window.__engagePhoneLists = { rsvp:_noRsvpList, click:_unclickList, all:_allList };
+  const _btn = (k, label, n) => n
+    ? `<button class="btn btn-o" style="font-size:11px;padding:4px 9px;margin-right:5px"
+        onclick="_copyPhoneList(window.__engagePhoneLists['${k}'], '${label}')">📋 ${label} ${n}명 번호 복사</button>` : '';
+
   let noticeHtml = '';
   if (tplMeta.hasRsvp && noRsvpCount > 0) {
     noticeHtml += `<div style="background:rgba(244,168,0,0.10);border-left:3px solid var(--gold);padding:9px 13px;border-radius:4px;font-size:12px;color:var(--gold);margin-bottom:8px">
@@ -13549,6 +13618,10 @@ function showEmailEngagement(round, tplKey) {
       ⚠️ <b>미클릭 ${unclickedCount}명</b> — 메일은 받았지만 상세 페이지를 클릭하지 않은 수신자. SMS/전화 follow-up 권장.
     </div>`;
   }
+  noticeHtml += `<div style="margin-bottom:10px;display:flex;flex-wrap:wrap;align-items:center;gap:4px">
+    ${_btn('rsvp','미응답', noRsvpCount)}${_btn('click','미확인', unclickedCount)}${_btn('all','전체', rows.length)}
+    <span style="font-size:11px;color:var(--tx2)">쉼표로 이어 복사됩니다 — 문자 앱에 그대로 붙여넣으세요</span>
+  </div>`;
 
   const rsvpLabelMap = tplMeta.rsvpLabels || {};
   const tableRows = rows.map(r => {
@@ -13566,6 +13639,7 @@ function showEmailEngagement(round, tplKey) {
         <div style="font-weight:600">${_escapeHtml(r.name||'-')}</div>
         <div style="font-size:11px;color:var(--tx2);margin-top:2px">${_escapeHtml(r.email||'')}</div>
       </td>
+      <td style="padding:8px 10px;border-bottom:1px solid var(--bd);white-space:nowrap">${_phoneCell(r.name, r.email)}</td>
       <td style="padding:8px 10px;border-bottom:1px solid var(--bd);font-size:12px;color:var(--tx2);font-family:'DM Mono',monospace;white-space:nowrap">📤 ${_escapeHtml(r.sentAt||'-')}</td>
       ${tplMeta.hasClick ? `<td style="padding:8px 10px;border-bottom:1px solid var(--bd);font-size:12px;font-family:'DM Mono',monospace;white-space:nowrap;color:${clicked?'var(--ac)':'var(--tx2)'}">${clicked ? '👆 '+_escapeHtml(click.firstClickAt) + (click.clickCount>1?` <span style="color:var(--tx2);font-size:10px">(${click.clickCount}회)</span>`:'') : '<span style="color:var(--gold)">❌ 미확인</span>'}</td>` : ''}
       ${tplMeta.hasRsvp ? `<td style="padding:8px 10px;border-bottom:1px solid var(--bd);font-size:12px;white-space:nowrap">${rsvp ? `<span style="font-weight:700;color:${(rsvp.response==='attend'||rsvp.response==='accept')?'var(--green)':'#64748b'}">${_escapeHtml(rsvpLabelMap[rsvp.response]||rsvp.response)}</span><div style="font-size:10px;color:var(--tx2);font-family:\\'DM Mono\\',monospace;margin-top:2px">${_escapeHtml(rsvp.at)}</div>` : '<span style="color:var(--gold);font-size:11px">⏳ 미응답</span>'}</td>` : ''}
@@ -13580,6 +13654,7 @@ function showEmailEngagement(round, tplKey) {
           <tr style="background:rgba(255,255,255,0.04)">
             <th style="padding:8px 10px;text-align:center;font-size:11px;color:var(--tx2);width:32px">상태</th>
             <th style="padding:8px 10px;text-align:left;font-size:11px;color:var(--tx2)">수신자</th>
+            <th style="padding:8px 10px;text-align:left;font-size:11px;color:var(--tx2);white-space:nowrap">연락처</th>
             <th style="padding:8px 10px;text-align:left;font-size:11px;color:var(--tx2);white-space:nowrap">발송일시</th>
             ${tplMeta.hasClick ? `<th style="padding:8px 10px;text-align:left;font-size:11px;color:var(--tx2);white-space:nowrap">클릭일시</th>` : ''}
             ${tplMeta.hasRsvp ? `<th style="padding:8px 10px;text-align:left;font-size:11px;color:var(--tx2);white-space:nowrap">RSVP 응답</th>` : ''}
@@ -15273,6 +15348,7 @@ function showConfirmArea(results) {
             ${r.age||''} · 지원서 ${r.score}점 · 투표 ${r.total}점 (우선 ${r.rank1}표·대상 ${r.rank2}표)
           </span>
         </label>
+        <span style="flex-shrink:0;margin-left:6px">${_phoneCell(r.name, '')}</span>
       </div>`).join('')}
     </div>` : '';
 
