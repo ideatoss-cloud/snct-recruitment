@@ -1868,7 +1868,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.37';
+const APP_VERSION = 'v1.4.38';
 const APP_VERSION_DATE = '2026.09.14';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -8704,6 +8704,9 @@ ${a.pdfText.slice(0,3000)}` : '';
     //   → 실제 질문이 담긴 유형만 저장하고, 하나도 없으면 저장을 건너뛴다.
     const _toSave = {};
     Q_TYPES.forEach(t => { const v = (qCache[cacheKey]||{})[t]; if (v && v.length) _toSave[t] = v; });
+    // v1.4.38: 무엇을 근거로 만들었는지 함께 저장한다 — 배지가 이 기록을 읽는다
+    _qStampMeta(a, _gotResume);
+    if (Object.keys(_toSave).length) _toSave._meta = qCache[cacheKey]._meta;
     if (!Object.keys(_toSave).length) {
       toast('생성된 질문지가 없어 저장하지 않았습니다 (' + (a.result?.name||a.name) + ')', 'err');
     } else if (GAS_URL && currentRound) {
@@ -8999,24 +9002,28 @@ JSON으로만 출력: {"questions":[{"num":1,"text":"질문내용","type":"역�
 //   한 번 받아 두면 그 세션 동안 재사용한다. 실패해도 질문 생성은 진행한다
 //   (원문 없이도 위 프롬프트가 「지어내지 마라」로 안전하게 동작한다).
 async function _ensureResumeText(a) {
+  a._resumeFail = '';
   if (a.pdfText && String(a.pdfText).trim()) return true;
-  if (!GAS_URL || !currentRound || !a || a.id == null) return false;
+  if (!GAS_URL || !currentRound || !a || a.id == null) { a._resumeFail = '회차를 불러오지 않았습니다'; return false; }
   try {
     const r = await gasJson(GAS_URL + '?action=getResumePdf&userEmail=' + encodeURIComponent(currentUserEmail||'')
       + '&round=' + encodeURIComponent(currentRound) + '&appId=' + encodeURIComponent(a.id), null, 'getResumePdf');
     const d = r.data;
     if (!d || !d.success || !d.b64) {
-      console.warn('[이력서 원문] 되찾기 실패 — 요약 정보만으로 질문을 만듭니다:', d && d.message);
+      a._resumeFail = (d && d.message) || '알 수 없는 오류';
+      console.warn('[이력서 원문] 되찾기 실패:', a._resumeFail);
       return false;
     }
     const txt = await extractPdfText(d.b64);
     if (!txt || txt.length < 100 || txt.indexOf('(PDF 텍스트 추출') >= 0) {
-      console.warn('[이력서 원문] 추출 실패(스캔본 가능성) — 요약 정보만으로 질문을 만듭니다');
+      a._resumeFail = '원본은 있으나 글자를 뽑지 못했습니다 (스캔 이미지 PDF로 보입니다)';
+      console.warn('[이력서 원문]', a._resumeFail);
       return false;
     }
     a.pdfText = txt;
     return true;
   } catch (e) {
+    a._resumeFail = e.message;
     console.warn('[이력서 원문] 되찾기 오류:', e.message);
     return false;
   }
@@ -9105,7 +9112,8 @@ async function regenQType(type) {
   const list = document.getElementById('qlist');
   if (list) list.innerHTML = '<div style="text-align:center;padding:20px"><div class="spinner" style="display:inline-block;margin:auto"></div><div style="font-size:14px;color:var(--tx2);margin-top:8px">이력서 원문을 불러오는 중...</div></div>';
   try {
-    await _ensureResumeText(a);   // v1.4.37: 재생성도 원문을 먼저 되찾는다
+    const _gotResume = await _ensureResumeText(a);   // v1.4.37: 재생성도 원문을 먼저 되찾는다
+    if (!_gotResume) toast('이력서 원문을 불러오지 못해 — 서류 요약만으로 만듭니다: ' + (a._resumeFail||''), 'warn');
     if (list) list.innerHTML = '<div style="text-align:center;padding:20px"><div class="spinner" style="display:inline-block;margin:auto"></div><div style="font-size:14px;color:var(--tx2);margin-top:8px">'+type+' 질문지 생성 중...</div></div>';
     const r2 = await callOpenAI(_buildQPrompt(a, type), true, {purpose:'ivQuestions'});
     const qs = Array.isArray(r2) ? r2 : (r2 && (r2.questions || r2.data || r2.items) || []);
@@ -9116,6 +9124,7 @@ async function regenQType(type) {
     }
     if (!qCache[a.id]) qCache[a.id] = {};
     qCache[a.id][type] = qs;
+    _qStampMeta(a, _gotResume);   // v1.4.38
     renderQuestions(qs);
     toast(type + ' 질문지 생성 완료 ✅','ok');
     // 저장된 질문지도 갱신 (다음에 불러올 때 또 비어 있으면 안 된다)
@@ -9152,17 +9161,49 @@ function updateQTypeTabs() {
   });
 }
 
-// ✅ v1.4.37: 이 질문지가 **무엇을 근거로 만들어졌는지** 화면에 남긴다.
-//   원문 기준인지 요약 기준인지 모르면, 겉도는 질문을 보고도 원인을 알 수 없다.
+// ✅ v1.4.37 → v1.4.38: 이 질문지가 **무엇을 근거로 만들어졌는지** 화면에 남긴다.
+//   ⚠️ v1.4.37의 결함 — 배지가 「생성 당시」가 아니라 **「지금 메모리에 원문이 있느냐」**를 봤다.
+//     저장된 질문지를 불러오면 원문은 당연히 메모리에 없으므로, **원문 기준으로 잘 만든 질문지도
+//     열 때마다 「요약만으로 만듦」으로 표시**됐다(2026.09.15 작업자 스크린샷).
+//   → 생성 시점에 `_meta`를 질문지와 함께 저장하고, 배지는 **그 기록**을 읽는다.
+//     기록이 없으면(v1.4.37 이전 저장본) 「알 수 없음」으로 두고 단정하지 않는다.
+function _qMeta(id) {
+  const c = qCache[id];
+  return (c && c._meta) || null;
+}
+// 생성 시점의 근거를 질문지에 같이 담는다. Q_TYPES 순회에는 걸리지 않는 키(_meta)다.
+function _qStampMeta(a, gotResume) {
+  if (!qCache[a.id]) qCache[a.id] = {};
+  qCache[a.id]._meta = {
+    src: gotResume ? 'resume' : 'summary',
+    why: gotResume ? '' : (a._resumeFail || ''),
+    at: new Date().toLocaleString('ko-KR', {month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit'}),
+    ver: APP_VERSION
+  };
+}
 function _qSourceBadge() {
   const a = ivData && ivData.applicant;
   if (!a) return '';
-  const ok = !!(a.pdfText && String(a.pdfText).trim());
-  return `<div style="font-size:12px;margin-bottom:8px;padding:6px 10px;border-radius:6px;line-height:1.6;`
-    + (ok ? `background:rgba(0,201,122,0.08);color:var(--green)">✅ 이력서 원문을 근거로 만든 질문입니다.`
-          : `background:rgba(244,168,0,0.10);color:var(--gold)">⚠️ 이력서 원문 없이 <b>서류 요약</b>(경력·강점·확인포인트)만으로 만든 질문입니다. `
-            + `<span style="color:var(--tx2)">원문이 필요하면 [🔄 다시 생성]을 눌러 주세요.</span>`)
-    + `</div>`;
+  const box = function (bg, color, html) {
+    return `<div style="font-size:12px;margin-bottom:8px;padding:7px 10px;border-radius:6px;line-height:1.65;background:${bg};color:${color}">${html}</div>`;
+  };
+  const meta = _qMeta(a.id);
+  const live = !!(a.pdfText && String(a.pdfText).trim());
+  const src = meta ? meta.src : (live ? 'resume' : null);
+
+  if (src === 'resume')
+    return box('rgba(0,201,122,0.08)', 'var(--green)',
+      `✅ <b>이력서 원문을 근거로</b> 만든 질문입니다.${(meta && meta.at) ? ` <span style="color:var(--tx2)">(${_escapeHtml(meta.at)})</span>` : ''}`);
+
+  if (src === 'summary')
+    return box('rgba(244,168,0,0.10)', 'var(--gold)',
+      `⚠️ 이력서 원문 없이 <b>서류 요약</b>(경력·강점·확인포인트)만으로 만든 질문입니다.`
+      + ((meta && meta.why) ? `<br><span style="color:var(--tx2)">사유: ${_escapeHtml(meta.why)}</span>` : '')
+      + `<br><span style="color:var(--tx2)">[🔄 다시 생성]을 누르면 원본 PDF를 되찾아 다시 만듭니다.</span>`);
+
+  return box('rgba(255,255,255,0.05)', 'var(--tx2)',
+    `ℹ️ 이 질문지는 <b>v1.4.37 이전</b>에 만들어져 무엇을 근거로 만들었는지 기록이 없습니다.`
+    + `<br>당시에는 이력서 원문이 프롬프트에 들어가지 않았으므로, <b>[🔄 다시 생성]</b>을 권합니다.`);
 }
 
 function renderQuestions(qs) {
