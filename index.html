@@ -1883,7 +1883,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.46';
+const APP_VERSION = 'v1.4.47';
 const APP_VERSION_DATE = '2026.09.15';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -4434,7 +4434,11 @@ const EMAIL_TEMPLATES = {
     // ✅ v1.2.65 (작업자 지시): 서류 합격 통보를 겸하는 메일인데 그 말이 없었다.
     //   제목·본문에 '서류 전형 합격'을 명시하고, 집합 시각(arrivalTime)을 따로 받는다.
     needsVars: ['jobLabel', 'interviewDate', 'arrivalTime', 'interviewLocation'],
-    subjectBuilder: (round, vars, app) => `[${SENDER_INFO.companyShort}] 서류 전형 합격을 축하드립니다 — 면접 일정 안내`,
+    // ⚠️ v1.4.47 (2026.09.15) — **제목에서부터 「회신」을 요구한다.**
+    //   실측(2026.09.14 발송분): 상세 페이지까지 들어간 2명이 **둘 다 미응답**이었다.
+    //   귀찮아서가 아니라 **눌러야 하는 줄 몰랐다** — 본문 어디에도 회신 요청이 없었고
+    //   버튼 이름이 「면접 상세 안내 확인하기」라 **읽어보라는 뜻**으로 읽혔다.
+    subjectBuilder: (round, vars, app) => `[${SENDER_INFO.companyShort}] 서류 전형 합격 — 면접 일정 안내 (참석 여부 회신 요청)`,
     bodyBuilder: (round, vars, app) => {
       const nm = _escapeHtml(app.name);
       const job = _escapeHtml(vars.jobLabel || '');
@@ -4476,7 +4480,9 @@ const EMAIL_TEMPLATES = {
           + `축하드립니다.<br><br>`
           + `이제 면접을 통해 ${nm}님을 직접 뵙고자 합니다.<br>`
           + `편안한 마음으로 오셔서 그동안 준비해 오신 것들을<br>`
-          + `충분히 보여주시기 바랍니다.`,
+          + `충분히 보여주시기 바랍니다.<br><br>`
+          + `<b style="color:#b91c1c">아래 버튼을 눌러 면접 참석 여부를 꼭 알려주시기 바랍니다.</b><br>`
+          + `<span style="color:#64748b;font-size:14px">면접 준비와 좌석 배정에 필요합니다.</span>`,
         // ✅ v1.2.65: 집합 시각을 본문에 명시한다(작업자 지시).
         //   면접 시작 전에 인적성 검사 등 사전 절차가 있어 실제로는 더 일찍 와야 한다.
         //   상세 페이지에만 두면 안 보고 면접 시각에 맞춰 오는 사람이 생긴다.
@@ -4489,13 +4495,16 @@ const EMAIL_TEMPLATES = {
             </div>
           </div>` : ''}
           <div style="text-align:center;margin:24px 0">
-            <a href="${_escapeHtml(detailsUrl)}" target="_blank" style="display:inline-block;padding:16px 36px;background:#1e40af;color:#fff;text-decoration:none;border-radius:8px;font-size:16px;font-weight:700;box-shadow:0 4px 12px rgba(30,64,175,0.30)">📋 면접 상세 안내 확인하기</a>
+            <a href="${_escapeHtml(detailsUrl)}" target="_blank" style="display:inline-block;padding:17px 34px;background:#b91c1c;color:#fff;text-decoration:none;border-radius:8px;font-size:17px;font-weight:800;box-shadow:0 4px 12px rgba(185,28,28,0.30)">✅ 면접 참석 여부 회신하기</a>
           </div>
-          <div style="text-align:center;font-size:12px;color:#94a3b8;margin-bottom:6px">
-            ↑ 위 버튼을 클릭하시면 일시·장소·지도·면접비 등<br>모든 안내 사항을 확인하실 수 있습니다.
+          <div style="text-align:center;font-size:12.5px;color:#64748b;margin-bottom:6px;line-height:1.7">
+            ↑ 위 버튼을 누르시면 <b style="color:#b91c1c">참석 / 불참을 선택</b>하실 수 있습니다.<br>
+            일시·장소·지도·면접비 등 안내 사항도 같은 화면에 있습니다.
           </div>`,
         // ✅ v1.2.66: 사실 전달로 끝내지 않고 마무리 인사를 남긴다
-        closing: `<div style="line-height:1.9">부득이하게 일정 조정이 필요하시면 편히 연락 주십시오.<br>`
+        // v1.4.47: 종전 맺음말이 「문제 있을 때만 연락하라」로 읽혀 회신 요청을 약화시켰다.
+        closing: `<div style="line-height:1.9">참석이 어려우시더라도 <b>위 버튼으로 알려주시면</b> 됩니다 — 불이익은 없습니다.<br>`
+          + `일정 조정이 필요하시면 편히 연락 주십시오.<br>`
           + `면접장에서 반갑게 뵙겠습니다.</div>`
       });
     }
