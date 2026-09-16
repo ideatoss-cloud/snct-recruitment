@@ -607,6 +607,8 @@ header.lg.lg-on{background:rgba(8,15,26,.62);}
         <div class="fg">
           <label>지원자 선택 <span style="font-size:12px;color:var(--tx2)">(면접 확정자 우선)</span></label>
           <select id="ivApp" onchange="onIvAppChange()"><option value="">-- 지원자 선택 --</option></select>
+          <!-- v1.4.48: 참석자+미응답자만 올라온다. 빠진 사람을 여기에 밝힌다 -->
+          <div id="ivExcludedNote" style="display:none;margin-top:6px;font-size:12px;line-height:1.6;color:var(--gold);background:rgba(244,168,0,0.08);border-left:3px solid var(--gold);border-radius:4px;padding:7px 10px"></div>
         </div>
         <div class="fg">
           <label>면접관</label>
@@ -1883,7 +1885,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.47';
+const APP_VERSION = 'v1.4.49';
 const APP_VERSION_DATE = '2026.09.15';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -7335,6 +7337,65 @@ function _sentLoaded(round) {
   return !!((window.__emailSentStatuses || {})[round]);
 }
 
+// ✅ v1.4.48 (2026.09.17) — **참석 여부를 관리자가 직접 고친다.**
+//   작업자 사례: 문현필은 메일로 「참석」을 회신했는데 **따로 전화로 불참을 알려 왔다.**
+//   RSVP는 지원자가 누른 값이라 고칠 방법이 없었고, 그대로 두면 면접 준비 대상에 계속 올라온다.
+//   → 확정 목록의 배지를 눌러 참석/미참석/미응답으로 바꾼다. GAS에 **수정자·사유와 함께** 남는다.
+window.__ivAttendance = window.__ivAttendance || {};   // round → { 이름 → {response, at, byAdmin} }
+
+function _attendOf(round, name) {
+  const m = (window.__ivAttendance || {})[round];
+  if (!m) return null;
+  return m[String(name || '').replace(/\s+/g, '')] || null;
+}
+
+// 면접 준비 대상에서 쓸 판정 — **불참만 뺀다. 미응답은 남긴다.**
+//   작업자 지시: 「면접자는 참석자+미응답자가 넘어가게, 불참자까지 면접 준비 대상으로 올리지 마라」
+function _isIvAbsent(round, name) {
+  const a = _attendOf(round, name);
+  return !!(a && a.response === 'absent');
+}
+
+async function loadIvAttendance(round) {
+  if (!GAS_URL || !round) return;
+  try {
+    const r = await gasJson(GAS_URL + '?action=getIvAttendance&userEmail=' + encodeURIComponent(currentUserEmail||'')
+      + '&round=' + encodeURIComponent(round), null, 'getIvAttendance');
+    if (r.data && r.data.success && r.data.map) {
+      window.__ivAttendance[round] = r.data.map;
+    }
+  } catch (e) { console.warn('[참석 여부] 조회 실패 — 전원을 대상으로 둡니다:', e.message); }
+}
+
+// 관리자가 참석 여부를 바꾼다. '' 이면 미응답으로 되돌린다.
+async function setAttendance(name, response) {
+  if (!isAdmin) { toast('관리자만 수정할 수 있습니다', 'err'); return; }
+  if (!GAS_URL || !currentRound) { toast('회차를 먼저 불러오세요', 'err'); return; }
+  const label = response === 'attend' ? '참석' : response === 'absent' ? '미참석' : '미응답';
+  let reason = '';
+  if (response === 'absent') {
+    reason = prompt(`[${name}] 을(를) **미참석**으로 바꿉니다.\n\n`
+      + `· 면접 준비 대상에서 빠집니다.\n`
+      + `· 지원자가 메일로 「참석」을 눌렀더라도 이 값이 우선합니다.\n\n`
+      + `사유를 적어 주세요 (예: 유선으로 불참 통보)`, '유선으로 불참 통보');
+    if (reason === null) return;                     // 취소
+  } else if (!confirm(`[${name}] 을(를) ${label}(으)로 바꿀까요?`)) return;
+
+  try {
+    const res = await fetch(GAS_URL, { method:'POST', headers:{'Content-Type':'text/plain'},
+      body: JSON.stringify({ action:'setRsvp', userEmail: currentUserEmail, round: currentRound,
+        name: name, templateType: 'interviewSchedule', response: response, reason: reason }) });
+    const d = await res.json();
+    if (!d.success) { toast('수정 실패: ' + (d.message||''), 'err'); return; }
+    toast(d.message || (name + ' — ' + label), 'ok');
+    // 화면 세 곳을 같이 맞춘다 — 확정 목록·면접 대상·발송 상세
+    await loadIvAttendance(currentRound);
+    delete (window.__emailRsvpStatuses||{})[currentRound];   // 다음 조회 때 다시 받는다
+    loadAdminResults();
+    try { await refreshIvApplicants(); } catch (e) {}
+  } catch (e) { toast('수정 실패: ' + e.message, 'err'); }
+}
+
 function _ivTargetOf(round) {
   try {
     const m = JSON.parse(localStorage.getItem(LS_IV_TARGET) || '{}');
@@ -8436,6 +8497,13 @@ async function refreshIvApplicants() {
       }
     } catch (e) {}
   }
+  // ⚠️ v1.4.49 — **DOM을 비우기 전에 필요한 조회를 끝낸다.**
+  //   v1.4.48에서 참석여부 조회(await)를 목록을 비운 **뒤**에 뒀더니,
+  //   이 함수가 겹쳐 호출될 때 「A가 비움 → A 대기 → B가 비움 → B가 5명 추가 →
+  //   A가 5명 추가」로 **명단이 10명으로 중복**됐다(헤드리스에서 재현).
+  //   비우기와 채우기 사이에 await을 두지 않는다.
+  await loadIvAttendance(currentRound);
+
   const sel = document.getElementById('ivApp');
   const cur = sel.value;
   sel.innerHTML = '<option value="">-- 지원자 선택 --</option>';
@@ -8444,7 +8512,13 @@ async function refreshIvApplicants() {
   const confirmedNames = confirmedList.map(c => c.name);
   const done = applicants.filter(a => a.status === 'done');
   const absentNames = absentList.map(x => x.name);
-  const confirmedApps = done.filter(a => confirmedNames.includes(a.result?.name) && !absentNames.includes(a.result?.name));
+  // ⚠️ v1.4.48 (작업자 지시) — **면접 준비 대상은 참석자 + 미응답자.**
+  //   「불참자까지 면접 준비 대상으로 올리지 마라」. 미응답은 아직 올지 모르니 **남긴다.**
+  //   absentNames(면접 당일 노쇼 처리)와 RSVP 불참은 다른 것이라 둘 다 뺀다.
+  const _rsvpAbsent = done.filter(a => _isIvAbsent(currentRound, a.result?.name)).map(a => a.result?.name);
+  const confirmedApps = done.filter(a => confirmedNames.includes(a.result?.name)
+    && !absentNames.includes(a.result?.name)
+    && !_isIvAbsent(currentRound, a.result?.name));
 
   if (confirmedApps.length) {
     confirmedApps.forEach(a => {
@@ -8460,6 +8534,18 @@ async function refreshIvApplicants() {
     sel.innerHTML = '<option value="">-- 분석 완료 지원자 없음 --</option>';
   }
   if (cur) sel.value = cur;
+  // v1.4.48: 빠진 사람을 조용히 숨기지 않는다 — 「왜 목록에 없지?」가 되면 안 된다
+  (function () {
+    const el = document.getElementById('ivExcludedNote');
+    if (!el) return;
+    const parts = [];
+    if (_rsvpAbsent.length) parts.push('❌ 미참석 ' + _rsvpAbsent.length + '명(' + _rsvpAbsent.join(', ') + ')');
+    if (absentNames.length) parts.push('🚫 면접 불참 처리 ' + absentNames.length + '명(' + absentNames.join(', ') + ')');
+    if (!parts.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+    el.style.display = 'block';
+    el.innerHTML = '면접 준비 대상에서 제외됨 — ' + _escapeHtml(parts.join(' · '))
+      + '<br><span style="color:var(--tx2)">참석자와 미응답자만 올라옵니다. 되돌리려면 [지원서 집계]의 확정 목록에서 바꾸세요.</span>';
+  })();
   _syncQAppSel();                 // v1.4.44: 목록을 새로 그리면 카드 명단도 다시 채운다
 
   // 불참자 선택 셀렉트도 동기화
@@ -15301,10 +15387,12 @@ function showConfirmArea(results) {
   const _tgt = _ivTargetOf(currentRound);
   const _loaded = _sentLoaded(currentRound);   // v1.4.36: 발송이력·RSVP를 받아왔는가
   const _rsvpOf = function (nm) { return _ivRsvpOf(currentRound, '', nm); };
+  // v1.4.48: 불참자 행 배경도 관리자 수정값을 따른다
+  const _effOf = function (nm) { return _attendOf(currentRound, nm) || _rsvpOf(nm); };
   const _sentOf = function (nm) { return _mailSentTo(currentRound, 'interviewSchedule', '', nm); };
   let _cAttend = 0, _cAbsent = 0, _cPending = 0, _cNotSent = 0;
   alreadyConfirmed.forEach(function (r) {
-    const v = _rsvpOf(r.name);
+    const v = _attendOf(currentRound, r.name) || _rsvpOf(r.name);   // v1.4.48: 관리자 수정 우선
     if (v && v.response === 'attend') _cAttend++;
     else if (v && v.response === 'absent') _cAbsent++;
     else if (_sentOf(r.name)) _cPending++;
@@ -15315,16 +15403,30 @@ function showConfirmArea(results) {
   const _short = Math.max(0, _tgt - _live);
   // 한 명의 RSVP 배지
   const _rsvpBadge = function (nm) {
-    const v = _rsvpOf(nm);
+    // v1.4.48: 관리자가 직접 고친 값(_attendOf)이 **지원자 응답보다 우선**한다.
+    const adm = _attendOf(currentRound, nm);
+    const v = adm || _rsvpOf(nm);
+    const admMark = (adm && adm.byAdmin)
+      ? `<span style="font-size:10px;color:var(--tx2);margin-left:3px" title="관리자가 직접 수정한 값입니다">(수정됨)</span>` : '';
+    // v1.4.48: 관리자는 배지를 눌러 바꿀 수 있다
+    const pick = isAdmin
+      ? `<span style="margin-left:5px;white-space:nowrap">`
+        + `<button onclick="setAttendance('${_escapeHtml(nm)}','attend')" title="참석으로" style="font-size:11px;padding:1px 6px;border-radius:5px;border:1px solid rgba(0,201,122,0.45);background:transparent;color:var(--green);cursor:pointer">참석</button>`
+        + `<button onclick="setAttendance('${_escapeHtml(nm)}','absent')" title="미참석으로 — 면접 준비 대상에서 빠집니다" style="font-size:11px;padding:1px 6px;border-radius:5px;border:1px solid rgba(255,82,82,0.45);background:transparent;color:var(--red);cursor:pointer;margin-left:3px">미참석</button>`
+        + `<button onclick="setAttendance('${_escapeHtml(nm)}','')" title="미응답으로 되돌리기" style="font-size:11px;padding:1px 6px;border-radius:5px;border:1px solid var(--bd);background:transparent;color:var(--tx2);cursor:pointer;margin-left:3px">되돌리기</button>`
+        + `</span>` : '';
+    let badge;
     if (v && v.response === 'attend')
-      return `<span style="background:rgba(0,201,122,0.15);color:var(--green);font-size:12px;font-weight:700;padding:2px 7px;border-radius:6px;margin-left:6px">✅ 참석</span>`;
-    if (v && v.response === 'absent')
-      return `<span style="background:rgba(255,82,82,0.15);color:var(--red);font-size:12px;font-weight:700;padding:2px 7px;border-radius:6px;margin-left:6px">❌ 불참 회신</span>`;
-    if (_sentOf(nm))
-      return `<span style="background:rgba(244,168,0,0.13);color:var(--gold);font-size:12px;padding:2px 7px;border-radius:6px;margin-left:6px">⏳ 회신 대기</span>`;
-    if (!_loaded)   // v1.4.36: 아직 못 받아왔다 — 「미발송」이라고 단정하지 않는다
-      return `<span style="background:rgba(255,255,255,0.06);color:var(--tx2);font-size:12px;padding:2px 7px;border-radius:6px;margin-left:6px">… 확인 중</span>`;
-    return `<span style="background:rgba(255,255,255,0.06);color:var(--tx2);font-size:12px;padding:2px 7px;border-radius:6px;margin-left:6px">✉️ 안내 미발송</span>`;
+      badge = `<span style="background:rgba(0,201,122,0.15);color:var(--green);font-size:12px;font-weight:700;padding:2px 7px;border-radius:6px;margin-left:6px">✅ 참석${admMark}</span>`;
+    else if (v && v.response === 'absent')
+      badge = `<span style="background:rgba(255,82,82,0.15);color:var(--red);font-size:12px;font-weight:700;padding:2px 7px;border-radius:6px;margin-left:6px">❌ 미참석${admMark}</span>`;
+    else if (_sentOf(nm))
+      badge = `<span style="background:rgba(244,168,0,0.13);color:var(--gold);font-size:12px;padding:2px 7px;border-radius:6px;margin-left:6px">⏳ 회신 대기</span>`;
+    else if (!_loaded)   // v1.4.36: 아직 못 받아왔다 — 「미발송」이라고 단정하지 않는다
+      badge = `<span style="background:rgba(255,255,255,0.06);color:var(--tx2);font-size:12px;padding:2px 7px;border-radius:6px;margin-left:6px">… 확인 중</span>`;
+    else
+      badge = `<span style="background:rgba(255,255,255,0.06);color:var(--tx2);font-size:12px;padding:2px 7px;border-radius:6px;margin-left:6px">✉️ 안내 미발송</span>`;
+    return badge + pick;
   };
   const _targetHtml = `
     <div style="background:rgba(37,99,235,0.07);border:1px solid var(--bd);border-radius:9px;padding:12px 14px;margin-bottom:12px">
@@ -15370,7 +15472,7 @@ function showConfirmArea(results) {
         🔒 기확정 면접 대상자 (${alreadyConfirmed.length}명) <span style="font-size:12px;font-weight:400;color:var(--tx2)">— 체크박스 선택 시 확정 취소 가능</span>
       </div>
       ${alreadyConfirmed.map(r => `
-      <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;background:${(_rsvpOf(r.name)||{}).response === 'absent' ? 'rgba(255,82,82,0.07)' : 'rgba(0,201,122,0.06)'};border-radius:8px;margin-bottom:6px;border:1px solid ${(_rsvpOf(r.name)||{}).response === 'absent' ? 'rgba(255,82,82,0.35)' : 'rgba(0,201,122,0.35)'}">
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;background:${(_effOf(r.name)||{}).response === 'absent' ? 'rgba(255,82,82,0.07)' : 'rgba(0,201,122,0.06)'};border-radius:8px;margin-bottom:6px;border:1px solid ${(_effOf(r.name)||{}).response === 'absent' ? 'rgba(255,82,82,0.35)' : 'rgba(0,201,122,0.35)'}">
         <input type="checkbox" id="cf_${r.name}" checked
           style="width:18px;height:18px;cursor:pointer;flex-shrink:0" title="체크 해제 시 확정 취소">
         <label for="cf_${r.name}" style="flex:1;font-size:15px;font-weight:600;cursor:pointer">
