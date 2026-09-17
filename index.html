@@ -1885,7 +1885,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.56';
+const APP_VERSION = 'v1.4.57';
 const APP_VERSION_DATE = '2026.09.17';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -7458,7 +7458,13 @@ function _copySmsText() {
 }
 
 // ✅ v1.4.50 (2026.09.17) — 드롭다운에서 바꾼다. 취소하면 **원래 값으로 되돌린다.**
+// ⚠️ v1.4.57 (2026.09.17 점검) — **이름을 인자로 받지 않고 data-name에서 읽는다.**
+//   전에는 onchange="_onAttendChange(this,'홍길동')" 이었다. `_escapeHtml`이 `'`을 `&#39;`로
+//   바꾸지만 **HTML 속성은 그걸 다시 `'`로 풀어서 JS에 넘긴다** — O'Brien 같은 이름이면
+//   문자열이 끊겨 SyntaxError가 나고, 드롭다운을 골라도 **아무 일도 안 일어난다.**
+//   외국인 현장직 지원자가 실제로 있으므로 가정이 아니다.
 async function _onAttendChange(el, name) {
+  if (name === undefined) name = el.getAttribute('data-name') || '';
   const prev = el.getAttribute('data-cur') || '';
   const val = el.value;
   if (val === prev) return;
@@ -8608,7 +8614,11 @@ async function refreshIvApplicants() {
   // ⚠️ v1.4.48 (작업자 지시) — **면접 준비 대상은 참석자 + 미응답자.**
   //   「불참자까지 면접 준비 대상으로 올리지 마라」. 미응답은 아직 올지 모르니 **남긴다.**
   //   absentNames(면접 당일 노쇼 처리)와 RSVP 불참은 다른 것이라 둘 다 뺀다.
-  const _rsvpAbsent = done.filter(a => _isIvAbsent(currentRound, a.result?.name)).map(a => a.result?.name);
+  // ⚠️ v1.4.57 (점검) — **확정된 사람만 센다.** 전에는 분석 완료자 전체를 훑어서,
+  //   차순위 충원으로 확정을 해제한 사람까지 「면접 준비 대상에서 제외됨」에 올라왔다.
+  //   애초에 대상이 아니었던 사람을 「뺐다」고 하면 숫자를 못 믿게 된다.
+  const _rsvpAbsent = done.filter(a => confirmedNames.includes(a.result?.name)
+    && _isIvAbsent(currentRound, a.result?.name)).map(a => a.result?.name);
   const confirmedApps = done.filter(a => confirmedNames.includes(a.result?.name)
     && !absentNames.includes(a.result?.name)
     && !_isIvAbsent(currentRound, a.result?.name));
@@ -15547,7 +15557,7 @@ function showConfirmArea(results) {
       const txt = cur === 'attend' ? '✅ 참석' : cur === 'absent' ? '❌ 미참석' : waitLabel;
       return `<span style="background:${st.bg};color:${st.fg};font-size:12px;font-weight:700;padding:2px 7px;border-radius:6px;margin-left:6px">${txt}</span>`;
     }
-    return `<select onchange="_onAttendChange(this,'${_escapeHtml(nm)}')" data-cur="${cur}"
+    return `<select onchange="_onAttendChange(this)" data-name="${_escapeHtml(nm)}" data-cur="${cur}"
         title="참석 여부 — 눌러서 바꿉니다. 미참석으로 바꾸면 면접 준비 대상에서 빠집니다"
         style="margin-left:6px;font-size:12px;font-weight:700;padding:3px 24px 3px 8px;border-radius:6px;cursor:pointer;background:${st.bg};color:${st.fg};border:1px solid ${st.bd};width:auto;min-width:112px;max-width:150px;display:inline-block;vertical-align:middle">
         <option value="attend" ${cur==='attend'?'selected':''}>✅ 참석</option>
