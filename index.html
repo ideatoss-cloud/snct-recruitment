@@ -1885,7 +1885,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.57';
+const APP_VERSION = 'v1.4.58';
 const APP_VERSION_DATE = '2026.09.17';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -7320,10 +7320,14 @@ function _ivRsvpOf(round, email, name) {
   if (email && m.byRecipient[email]) return m.byRecipient[email];
   const nm = String(name || '').replace(/\s+/g, '');
   if (!nm) return null;
-  const k = Object.keys(m.byRecipient).find(function (e) {
+  // ⚠️ v1.4.58 — **마지막 것이 이긴다.** GAS의 다른 읽기(`getIvAttendance`·`getPastHistoryBulk`)는
+  //   전부 나중 행을 쓰는데 여기만 `find`(= 먼저 걸린 것)였다. 재발송으로 행이 둘이던 시절의
+  //   옛 응답이 이길 수 있었다. (@124에서 GAS가 사람당 한 칸으로 묶으므로 평소엔 한 건이지만,
+  //   읽는 규칙은 어디서나 같아야 한다.)
+  const ks = Object.keys(m.byRecipient).filter(function (e) {
     return String(m.byRecipient[e].name || '').replace(/\s+/g, '') === nm;
   });
-  return k ? m.byRecipient[k] : null;
+  return ks.length ? m.byRecipient[ks[ks.length - 1]] : null;
 }
 
 // 이 사람에게 이 템플릿 메일이 이미 나갔는지. 없으면 null.
@@ -7691,6 +7695,21 @@ async function loadAdminResults(opts) {
     if (ivDateArea) ivDateArea.style.display = isAdmin ? 'block' : 'none';
     showIvDateBanner(round);
     _docsumSig = _confirmSelSig();   // v1.4.32: 지금 그린 상태를 기억한다(사람이 건드렸는지 판정용)
+    // ⚠️⚠️ v1.4.58 (2026.09.17 점검) — **관리자 수정값을 이 화면도 받아온다.**
+    //   `showConfirmArea`는 관리자 수정값(`_attendOf`)을 지원자 응답보다 **우선**해 쓰는데,
+    //   정작 그 값을 받아오는 `loadIvAttendance`는 [면접] 탭과 [채용집계] 탭에서만 불렀다.
+    //   새로고침 뒤 [지원서 집계]를 먼저 열면 `__ivAttendance`가 비어 있어
+    //   **(수정됨) 표시·행 강조·참석/미참석 집계가 전부 지원자 응답으로 되돌아가 보였다.**
+    //   ← 관리자가 전화 통보를 받아 고친 값이 화면에서 사라지는 것이므로 조용히 두면 안 된다.
+    //   첫 그리기를 늦추지 않도록 `_fetchPastBulk`와 같은 방식(받아온 뒤 다시 그리기)으로 둔다.
+    //   ⚠️ 다시 그리기 전에 **사람이 확정 체크박스를 건드렸는지** 본다(v1.4.32와 같은 가드).
+    loadIvAttendance(round).then(function () {
+      if (round !== currentRound) return;
+      if (!document.getElementById('adminResultBody')) return;
+      if (_docsumSig !== null && _confirmSelSig() !== _docsumSig) return;   // 고르는 중이면 덮지 않는다
+      showConfirmArea(results);
+      _docsumSig = _confirmSelSig();
+    });
   };
 
   // ── 1) 캐시가 있으면 **기다리지 않고** 먼저 그린다(v1.4.32) ──
@@ -13614,16 +13633,25 @@ function renderFinalDecisionCard(round, confirmedNames, ivResults, isClosed, abs
     </tr>`;
   }).join('');
 
+  // ⚠️ v1.4.58 (2026.09.17 점검) — **대상이 0명이면 표와 안내문을 띄우지 않는다.**
+  //   v1.4.55에서 조기 반환 조건을 `!eligible && !rsvpAbsent`로 풀면서,
+  //   확정자가 **전원 미참석**인 회차에서는 머리글만 있는 빈 표와
+  //   「각 후보자의 최종 결과를 지정하세요」가 같이 떴다(지정할 사람이 없는데).
+  //   제외 안내는 그대로 보여 준다 — 왜 비었는지와 되돌리는 방법이 거기 있다.
   return `<div class="card" style="margin-top:14px;border-left:3px solid var(--ac)">
     <div class="ct" style="margin-bottom:12px">🎯 최종 합격 결정 <span style="font-size:13px;font-weight:400;color:var(--tx2)">(면접 확정자 대상 · 관리자 전용)</span></div>
-    <div style="font-size:14px;color:var(--tx2);margin-bottom:12px;line-height:1.7">
-      면접관 평가를 참고하여 각 후보자의 최종 결과를 지정하세요.<br>
-      저장하면 구글 시트 <b>_면접집계</b> 시트의 result 컬럼에 반영됩니다.
-    </div>
-    <div style="overflow-x:auto"><table class="ctbl" style="width:100%;min-width:400px">
-      <thead><tr><th>이름</th><th>연락처</th><th>면접관 집계</th><th>최종 결정</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table></div>
+    ${!eligibleNames.length ? `
+      <div style="font-size:14px;color:var(--tx2);margin-bottom:4px;line-height:1.7">
+        최종 결정을 내릴 대상이 없습니다. 확정자가 모두 면접에 오지 않았습니다.
+      </div>` : `
+      <div style="font-size:14px;color:var(--tx2);margin-bottom:12px;line-height:1.7">
+        면접관 평가를 참고하여 각 후보자의 최종 결과를 지정하세요.<br>
+        저장하면 구글 시트 <b>_면접집계</b> 시트의 result 컬럼에 반영됩니다.
+      </div>
+      <div style="overflow-x:auto"><table class="ctbl" style="width:100%;min-width:400px">
+        <thead><tr><th>이름</th><th>연락처</th><th>면접관 집계</th><th>최종 결정</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>`}
     ${(_rsvpAbsentNames.length || absentNames.length) ? `
       <div style="margin-top:12px;padding:10px 14px;background:rgba(244,168,0,0.08);border-left:3px solid var(--gold);border-radius:6px;font-size:13px;line-height:1.7;color:var(--gold)">
         <b>최종 합격 판단에서 제외됨</b>
