@@ -1885,7 +1885,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.53';
+const APP_VERSION = 'v1.4.54';
 const APP_VERSION_DATE = '2026.09.17';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -7761,14 +7761,37 @@ function _pastOf(name) {
   return k ? _pastCache[k] : null;
 }
 // 집계 행에 넣을 재지원 뱃지 HTML. 이력이 없으면 빈 문자열.
+// ✅ v1.4.54 (2026.09.17, 작업자 지시) — **면접에 안 온 이력을 재지원 때 눈에 띄게.**
+//   「면접 불참할 거면 왜 지원했나」 — 그 판단을 다음 회차에서 하려면 **보여야** 한다.
+//   재지원 배지 안에 묻어두면 못 본다. **한 줄을 따로 빼고 색을 달리한다.**
+//   ⚠️ 두 가지를 구분한다(무게가 다르다) —
+//     · **면접 미참석** : 미리 「참석 어렵습니다」를 알려온 것. 예의는 지켰다.
+//     · **면접 불참(무단)** : 말도 없이 안 온 것. 훨씬 무겁다.
+//   ⚠️ **점수에는 넣지 않는다.** 화면에 보여 주기만 하고, 판단은 사람이 한다.
 function _pastBadgeHtml(name) {
   const h = _pastOf(name);
   if (!h || !h.length) return '';
   const last = h[0];
   const full = h.map(function(x){ return x.round + ' ' + (x.status||''); }).join(' / ');
-  return '<div style="font-size:13px;color:#e65100;font-weight:700;margin-top:4px" title="' + _escapeHtml(full) + '">'
+  let out = '<div style="font-size:13px;color:#e65100;font-weight:700;margin-top:4px" title="' + _escapeHtml(full) + '">'
        + '⚠️ 재지원 ' + h.length + '회 — 최근 ' + _escapeHtml(last.round||'') + ' '
        + _escapeHtml(last.status||'') + (h.length > 1 ? ' 외 ' + (h.length-1) + '건' : '') + '</div>';
+
+  // 면접에 안 온 회차만 따로 모은다
+  const ns = h.filter(function (x) { return x && x.noShow; });
+  if (ns.length) {
+    const hard = ns.filter(function (x) { return x.noShow === 'noshow'; }).length;
+    const detail = ns.map(function (x) {
+      return x.round + ' ' + (x.noShow === 'noshow' ? '무단 불참' : '미참석 회신');
+    }).join(' / ');
+    out += '<div style="font-size:13px;font-weight:800;margin-top:3px;padding:3px 8px;border-radius:5px;display:inline-block;'
+         + (hard ? 'background:rgba(255,82,82,0.16);color:var(--red)' : 'background:rgba(244,168,0,0.14);color:var(--gold)')
+         + '" title="' + _escapeHtml(detail) + '">'
+         + (hard ? '⛔ 과거 면접 불참(무단) ' + hard + '회' : '❌ 과거 면접 미참석 ' + ns.length + '회')
+         + (hard && ns.length > hard ? ' · 미참석 회신 ' + (ns.length - hard) + '회' : '')
+         + ' <span style="font-weight:400;opacity:0.85">— ' + _escapeHtml(detail) + '</span></div>';
+  }
+  return out;
 }
 // 집계용 일괄 조회 — 이미 캐시에 있는 이름은 빼고 묻는다
 async function _fetchPastBulk(names, round) {
