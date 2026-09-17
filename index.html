@@ -1885,7 +1885,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.51';
+const APP_VERSION = 'v1.4.53';
 const APP_VERSION_DATE = '2026.09.17';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -4632,7 +4632,12 @@ const EMAIL_TEMPLATES = {
     description: '최종 합격자에게만 입사 안내 통지',
     filter: 'final',
     needsVars: ['jobLabel', 'startDate', 'startTime', 'startLocation', 'treatment', 'extraInstructions'],
-    subjectBuilder: (round, vars, app) => `[${SENDER_INFO.companyShort}] 최종 합격 안내`,
+    // ⚠️ v1.4.53 (2026.09.17) — **v1.4.47에서 면접 안내만 고치고 여기는 반만 남겨뒀다.**
+    //   상세 페이지는 @120에서 고쳤는데 **메일 본문·버튼은 그대로**여서,
+    //   버튼이 「📋 입사 상세 안내 확인하기」(읽으라는 뜻)였다. 면접 때와 똑같은 결함이다.
+    //   문자 문구(_smsText)가 「[입사 의향 회신하기]를 눌러」라고 안내하는데
+    //   실제 버튼 이름이 다르면 지원자가 못 찾는다 — 이름을 맞춘다.
+    subjectBuilder: (round, vars, app) => `[${SENDER_INFO.companyShort}] 최종 합격 안내 (입사 의향 회신 요청)`,
     bodyBuilder: (round, vars, app) => {
       const nm = _escapeHtml(app.name);
       const job = _escapeHtml(vars.jobLabel || '');
@@ -4671,19 +4676,25 @@ const EMAIL_TEMPLATES = {
           + `<b style="color:#15803d">최종 합격</b>을 진심으로 축하드립니다. 🎉<br><br>`
           + `서류와 면접까지 긴 과정을 함께해 주셔서 감사합니다.<br>`
           + `그 과정에서 보여주신 준비된 모습을 믿고 함께하게 되었습니다.<br><br>`
-          + `입사와 관련한 안내를 아래와 같이 드립니다.`,
+          + `입사와 관련한 안내를 아래와 같이 드립니다.<br><br>`
+          + `<b style="color:#b91c1c">아래 버튼을 눌러 입사 의향을 꼭 알려주시기 바랍니다.</b><br>`
+          + `<span style="color:#64748b;font-size:14px">입사 준비와 인원 확정에 필요합니다.</span>`,
         detail: `
           <div style="text-align:center;margin:24px 0">
-            <a href="${_escapeHtml(detailsUrl)}" target="_blank" style="display:inline-block;padding:16px 36px;background:#15803d;color:#fff;text-decoration:none;border-radius:8px;font-size:16px;font-weight:700;box-shadow:0 4px 12px rgba(21,128,61,0.30)">📋 입사 상세 안내 확인하기</a>
+            <a href="${_escapeHtml(detailsUrl)}" target="_blank" style="display:inline-block;padding:17px 34px;background:#b91c1c;color:#fff;text-decoration:none;border-radius:8px;font-size:17px;font-weight:800;box-shadow:0 4px 12px rgba(185,28,28,0.30)">🎉 입사 의향 회신하기</a>
           </div>
-          <div style="text-align:center;font-size:12px;color:#94a3b8;margin-bottom:6px">
-            ↑ 위 버튼을 클릭하시면 출근개시일·장소·처우·구비서류 등<br>모든 입사 안내 사항을 확인하실 수 있습니다.
+          <div style="text-align:center;font-size:12.5px;color:#64748b;margin-bottom:6px;line-height:1.7">
+            ↑ 위 버튼을 누르시면 <b style="color:#b91c1c">입사 확정 / 입사 포기를 선택</b>하실 수 있습니다.<br>
+            출근개시일·장소·처우·구비서류 등 안내 사항도 같은 화면에 있습니다.
           </div>
           <div style="margin-top:18px;padding:10px 14px;background:#fef3c7;border-left:3px solid #f59e0b;border-radius:3px;font-size:12px;color:#78350f;line-height:1.7">
             💡 본 메일에 <b>채용구비서류 양식</b>(엑셀)과 <b>안전교육 안내</b>(PDF)가 첨부되어 있습니다. 첨부파일도 함께 확인 부탁드립니다.
           </div>`,
         // ✅ v1.2.67: 마무리 인사 (앞선 두 통과 다른 표현으로)
-        closing: `<div style="line-height:1.9">준비하시며 궁금한 점이 있으시면 언제든 연락 주십시오.<br>`
+        // v1.4.53: 「참석이 어려워도 알려주시면 됩니다」와 같은 취지 —
+        //   입사 포기를 말하기 껄끄러워 침묵하는 경우가 실제로 많다.
+        closing: `<div style="line-height:1.9">입사가 어려우시더라도 <b>위 버튼으로 알려주시면</b> 됩니다 — 불이익은 없습니다.<br>`
+          + `준비하시며 궁금한 점이 있으시면 언제든 연락 주십시오.<br>`
           + `첫 출근일에 뵙겠습니다.</div>`
       });
     }
@@ -7395,6 +7406,55 @@ async function setAttendance(name, response) {
     try { await refreshIvApplicants(); } catch (e) {}
     return true;
   } catch (e) { toast('수정 실패: ' + e.message, 'err'); return false; }
+}
+
+// ✅ v1.4.52 (2026.09.17, 작업자 지시) — **미응답자에게 보낼 문자 문구.**
+//   번호만 복사해 봐야 문구를 매번 새로 쓴다. 회차·면접일시·연락처를 넣어 만들어 준다.
+//   ⚠️ 붙여넣기 전에 **보고 고칠 수 있게** 텍스트 상자로 띄운다 — 그대로 나가면 안 되는 날이 있다.
+function _ivDateText(round) {
+  try {
+    const st = JSON.parse(localStorage.getItem(LS_IV_DATE) || '{}');
+    const info = st[round || currentRound];
+    if (info) return _stripIvLabel(info.display || info.manual
+      || ((info.date || '') + ' ' + (info.time || '')).trim());
+  } catch (e) {}
+  return '';
+}
+
+function _smsText(tplKey, round) {
+  const co = SENDER_INFO.companyFull || 'SNCT';
+  const who = SENDER_INFO.senderRole || (SENDER_INFO.team || '관리팀');
+  const tel = SENDER_INFO.officePhone || '';
+  const iv = _ivDateText(round);
+  if (tplKey === 'finalResult') {
+    return `[${SENDER_INFO.companyShort||'SNCT'}] 안녕하세요, ${co} ${SENDER_INFO.team||'관리팀'}입니다.\n\n`
+      + `최종 합격 안내 메일을 보내드렸는데 입사 의향 회신이 아직 확인되지 않았습니다.\n`
+      + `메일의 [입사 의향 회신하기]를 눌러 입사 확정 / 입사 포기를 알려주시기 바랍니다.\n\n`
+      + `입사가 어려우시더라도 알려주시면 됩니다.\n`
+      + `문의 ${tel} (${who})`;
+  }
+  return `[${SENDER_INFO.companyShort||'SNCT'}] 안녕하세요, ${co} ${SENDER_INFO.team||'관리팀'}입니다.\n\n`
+    + (iv ? `${iv} 면접 안내 메일을 보내드렸는데\n` : `면접 안내 메일을 보내드렸는데\n`)
+    + `참석 여부 회신이 아직 확인되지 않았습니다.\n`
+    + `메일의 [면접 참석 여부 회신하기] 버튼을 눌러 참석 / 불참을 알려주시기 바랍니다.\n\n`
+    + `참석이 어려우시더라도 알려주시면 됩니다 — 불이익은 없습니다.\n`
+    + `문의 ${tel} (${who})`;
+}
+
+// 문구 상자 열고 닫기
+function _toggleSms() {
+  const box = document.getElementById('smsBox');
+  if (!box) return;
+  box.style.display = (box.style.display === 'none' || !box.style.display) ? 'block' : 'none';
+}
+function _copySmsText() {
+  const ta = document.getElementById('smsText');
+  if (!ta || !ta.value.trim()) { toast('복사할 문구가 없습니다', 'err'); return; }
+  const t = ta.value;
+  const done = () => toast('문자 문구 복사 💬 — 번호와 함께 문자 앱에 붙여넣으세요', 'ok');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(t).then(done).catch(() => { _fallbackCopy(t); done(); });
+  } else { _fallbackCopy(t); done(); }
 }
 
 // ✅ v1.4.50 (2026.09.17) — 드롭다운에서 바꾼다. 취소하면 **원래 값으로 되돌린다.**
@@ -13745,10 +13805,18 @@ function showEmailEngagement(round, tplKey) {
       ⚠️ <b>미클릭 ${unclickedCount}명</b> — 메일은 받았지만 상세 페이지를 클릭하지 않은 수신자. SMS/전화 follow-up 권장.
     </div>`;
   }
-  noticeHtml += `<div style="margin-bottom:10px;display:flex;flex-wrap:wrap;align-items:center;gap:4px">
+  noticeHtml += `<div style="margin-bottom:8px;display:flex;flex-wrap:wrap;align-items:center;gap:4px">
     ${_btn('rsvp','미응답', noRsvpCount)}${_btn('click','미확인', unclickedCount)}${_btn('all','전체', rows.length)}
-    <span style="font-size:11px;color:var(--tx2)">쉼표로 이어 복사됩니다 — 문자 앱에 그대로 붙여넣으세요</span>
-  </div>`;
+    ${tplMeta.hasRsvp ? `<button class="btn btn-o" style="font-size:11px;padding:4px 9px;margin-right:5px" onclick="_toggleSms()">💬 문자 문구</button>` : ''}
+    <span style="font-size:11px;color:var(--tx2)">번호는 쉼표로 이어 복사됩니다 — 문자 앱에 그대로 붙여넣으세요</span>
+  </div>
+  ${tplMeta.hasRsvp ? `<div id="smsBox" style="display:none;margin-bottom:10px;background:rgba(255,255,255,0.03);border:1px solid var(--bd);border-radius:8px;padding:10px 12px">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:6px">
+      <span style="font-size:12px;color:var(--tx2)">보내기 전에 고치셔도 됩니다 — 고친 내용 그대로 복사됩니다</span>
+      <button class="btn btn-p" style="font-size:11px;padding:4px 10px" onclick="_copySmsText()">📋 문구 복사</button>
+    </div>
+    <textarea id="smsText" rows="8" style="width:100%;font-size:13px;line-height:1.7;background:var(--bg);color:var(--tx);border:1px solid var(--bd);border-radius:6px;padding:9px 11px;font-family:inherit;resize:vertical">${_escapeHtml(_smsText(tplKey, round))}</textarea>
+  </div>` : ''}`;
 
   const rsvpLabelMap = tplMeta.rsvpLabels || {};
   const tableRows = rows.map(r => {
