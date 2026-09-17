@@ -1885,7 +1885,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.54';
+const APP_VERSION = 'v1.4.56';
 const APP_VERSION_DATE = '2026.09.17';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -12060,6 +12060,9 @@ async function loadResultDetail() {
     //   실패해도 빈 맵이라 나머지 화면은 그대로 뜬다.
     const voteMap = await fetchVoteMap(round);
     window.__currentRoundVoteMap = voteMap; // 엑셀 내보내기에서 재사용
+    // v1.4.55: 최종 합격 결정에서 **면접 미참석자를 빼려면** 그 회차 참석 여부가 있어야 한다.
+    //   ⚠️ 이 탭의 round는 currentRound와 다를 수 있다 — 반드시 round로 받는다.
+    try { await loadIvAttendance(round); } catch (e) {}
     const apps = aData.applicants || [];
     const ivResults2 = ivData2.results || [];
     const ivDetails = ivData2.details || [];
@@ -13561,8 +13564,16 @@ function renderFinalDecisionCard(round, confirmedNames, ivResults, isClosed, abs
   const _fdApps = (String(window.__currentRoundId || '') === String(round) && window.__currentRoundApps)
     ? window.__currentRoundApps : [];
   // ✅ v1.0.39: 면접 불참자는 최종합격결정에서 제외
-  const eligibleNames = confirmedNames.filter(n => !absentNames.includes(n));
-  if (!eligibleNames.length) return '';
+  // ⚠️⚠️ v1.4.55 (2026.09.17, 작업자 지시) — **면접에 안 온 사람은 최종 합격 판단에서 뺀다.**
+  //   면접을 안 봤는데 합격/불합격을 고르는 칸이 떠 있으면, 실수로 고를 수 있다.
+  //   두 가지 모두 뺀다 —
+  //     · absentNames  : 면접 당일 불참 처리(노쇼)  — 종전부터 빼던 것
+  //     · RSVP 미참석  : 「참석 어렵습니다」 회신 또는 관리자 수정 — v1.4.55에서 추가
+  //   ⚠️ 조용히 숨기지 않는다. 뺀 사람을 아래에 밝힌다 —
+  //     「왜 명단에 없지?」가 되면 안 되고, 되돌리는 방법도 같이 적는다.
+  const _rsvpAbsentNames = confirmedNames.filter(n => !absentNames.includes(n) && _isIvAbsent(round, n));
+  const eligibleNames = confirmedNames.filter(n => !absentNames.includes(n) && !_isIvAbsent(round, n));
+  if (!eligibleNames.length && !_rsvpAbsentNames.length) return '';
   // 면접관 집계 결과 + 저장된 최종결과 모두 캐싱
   // ✅ v1.0.39: 우선순위 — 저장된 최종결과(finalResult) → 면접관 집계(result) → 빈값
   const finalMap = {}; // name → 표시할 현재값
@@ -13603,7 +13614,15 @@ function renderFinalDecisionCard(round, confirmedNames, ivResults, isClosed, abs
       <thead><tr><th>이름</th><th>연락처</th><th>면접관 집계</th><th>최종 결정</th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div>
-    ${isClosed
+    ${(_rsvpAbsentNames.length || absentNames.length) ? `
+      <div style="margin-top:12px;padding:10px 14px;background:rgba(244,168,0,0.08);border-left:3px solid var(--gold);border-radius:6px;font-size:13px;line-height:1.7;color:var(--gold)">
+        <b>최종 합격 판단에서 제외됨</b>
+        ${_rsvpAbsentNames.length ? `<br>❌ 면접 미참석 ${_rsvpAbsentNames.length}명 — ${_escapeHtml(_rsvpAbsentNames.join(', '))}` : ''}
+        ${absentNames.length ? `<br>🚫 면접 당일 불참 처리 ${absentNames.length}명 — ${_escapeHtml(absentNames.join(', '))}` : ''}
+        <br><span style="color:var(--tx2)">면접을 보지 않은 분들입니다. 실제로 면접에 오셨다면
+        [지원서 집계]의 확정 목록에서 <b>참석</b>으로 되돌린 뒤 이 화면을 다시 열어 주세요.</span>
+      </div>` : ''}
+    ${!eligibleNames.length ? '' : isClosed
       ? `<div style="margin-top:14px;padding:10px 14px;background:rgba(244,168,0,0.08);border-left:3px solid var(--gold);border-radius:6px;font-size:13px;color:var(--gold);line-height:1.6;margin-bottom:10px">
            🔒 종결된 회차 — 결과 수정 시 <b>회차 연장 처리</b>로 저장됩니다. (예비합격자 추가 채용 등)
          </div>
