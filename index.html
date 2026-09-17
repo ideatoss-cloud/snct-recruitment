@@ -1885,8 +1885,8 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.49';
-const APP_VERSION_DATE = '2026.09.15';
+const APP_VERSION = 'v1.4.51';
+const APP_VERSION_DATE = '2026.09.17';
 let currentRound = ''; // 현재 선택된 회차
 
 const JOBS = {
@@ -7369,8 +7369,8 @@ async function loadIvAttendance(round) {
 
 // 관리자가 참석 여부를 바꾼다. '' 이면 미응답으로 되돌린다.
 async function setAttendance(name, response) {
-  if (!isAdmin) { toast('관리자만 수정할 수 있습니다', 'err'); return; }
-  if (!GAS_URL || !currentRound) { toast('회차를 먼저 불러오세요', 'err'); return; }
+  if (!isAdmin) { toast('관리자만 수정할 수 있습니다', 'err'); return false; }
+  if (!GAS_URL || !currentRound) { toast('회차를 먼저 불러오세요', 'err'); return false; }
   const label = response === 'attend' ? '참석' : response === 'absent' ? '미참석' : '미응답';
   let reason = '';
   if (response === 'absent') {
@@ -7378,22 +7378,32 @@ async function setAttendance(name, response) {
       + `· 면접 준비 대상에서 빠집니다.\n`
       + `· 지원자가 메일로 「참석」을 눌렀더라도 이 값이 우선합니다.\n\n`
       + `사유를 적어 주세요 (예: 유선으로 불참 통보)`, '유선으로 불참 통보');
-    if (reason === null) return;                     // 취소
-  } else if (!confirm(`[${name}] 을(를) ${label}(으)로 바꿀까요?`)) return;
+    if (reason === null) return false;               // 취소
+  } else if (!confirm(`[${name}] 을(를) ${label}(으)로 바꿀까요?`)) return false;
 
   try {
     const res = await fetch(GAS_URL, { method:'POST', headers:{'Content-Type':'text/plain'},
       body: JSON.stringify({ action:'setRsvp', userEmail: currentUserEmail, round: currentRound,
         name: name, templateType: 'interviewSchedule', response: response, reason: reason }) });
     const d = await res.json();
-    if (!d.success) { toast('수정 실패: ' + (d.message||''), 'err'); return; }
+    if (!d.success) { toast('수정 실패: ' + (d.message||''), 'err'); return false; }
     toast(d.message || (name + ' — ' + label), 'ok');
     // 화면 세 곳을 같이 맞춘다 — 확정 목록·면접 대상·발송 상세
     await loadIvAttendance(currentRound);
     delete (window.__emailRsvpStatuses||{})[currentRound];   // 다음 조회 때 다시 받는다
     loadAdminResults();
     try { await refreshIvApplicants(); } catch (e) {}
-  } catch (e) { toast('수정 실패: ' + e.message, 'err'); }
+    return true;
+  } catch (e) { toast('수정 실패: ' + e.message, 'err'); return false; }
+}
+
+// ✅ v1.4.50 (2026.09.17) — 드롭다운에서 바꾼다. 취소하면 **원래 값으로 되돌린다.**
+async function _onAttendChange(el, name) {
+  const prev = el.getAttribute('data-cur') || '';
+  const val = el.value;
+  if (val === prev) return;
+  const ok = await setAttendance(name, val);
+  if (!ok) el.value = prev;      // 취소·실패 — 화면이 거짓말하지 않게 되돌린다
 }
 
 function _ivTargetOf(round) {
@@ -15408,25 +15418,32 @@ function showConfirmArea(results) {
     const v = adm || _rsvpOf(nm);
     const admMark = (adm && adm.byAdmin)
       ? `<span style="font-size:10px;color:var(--tx2);margin-left:3px" title="관리자가 직접 수정한 값입니다">(수정됨)</span>` : '';
-    // v1.4.48: 관리자는 배지를 눌러 바꿀 수 있다
-    const pick = isAdmin
-      ? `<span style="margin-left:5px;white-space:nowrap">`
-        + `<button onclick="setAttendance('${_escapeHtml(nm)}','attend')" title="참석으로" style="font-size:11px;padding:1px 6px;border-radius:5px;border:1px solid rgba(0,201,122,0.45);background:transparent;color:var(--green);cursor:pointer">참석</button>`
-        + `<button onclick="setAttendance('${_escapeHtml(nm)}','absent')" title="미참석으로 — 면접 준비 대상에서 빠집니다" style="font-size:11px;padding:1px 6px;border-radius:5px;border:1px solid rgba(255,82,82,0.45);background:transparent;color:var(--red);cursor:pointer;margin-left:3px">미참석</button>`
-        + `<button onclick="setAttendance('${_escapeHtml(nm)}','')" title="미응답으로 되돌리기" style="font-size:11px;padding:1px 6px;border-radius:5px;border:1px solid var(--bd);background:transparent;color:var(--tx2);cursor:pointer;margin-left:3px">되돌리기</button>`
-        + `</span>` : '';
-    let badge;
-    if (v && v.response === 'attend')
-      badge = `<span style="background:rgba(0,201,122,0.15);color:var(--green);font-size:12px;font-weight:700;padding:2px 7px;border-radius:6px;margin-left:6px">✅ 참석${admMark}</span>`;
-    else if (v && v.response === 'absent')
-      badge = `<span style="background:rgba(255,82,82,0.15);color:var(--red);font-size:12px;font-weight:700;padding:2px 7px;border-radius:6px;margin-left:6px">❌ 미참석${admMark}</span>`;
-    else if (_sentOf(nm))
-      badge = `<span style="background:rgba(244,168,0,0.13);color:var(--gold);font-size:12px;padding:2px 7px;border-radius:6px;margin-left:6px">⏳ 회신 대기</span>`;
-    else if (!_loaded)   // v1.4.36: 아직 못 받아왔다 — 「미발송」이라고 단정하지 않는다
-      badge = `<span style="background:rgba(255,255,255,0.06);color:var(--tx2);font-size:12px;padding:2px 7px;border-radius:6px;margin-left:6px">… 확인 중</span>`;
-    else
-      badge = `<span style="background:rgba(255,255,255,0.06);color:var(--tx2);font-size:12px;padding:2px 7px;border-radius:6px;margin-left:6px">✉️ 안내 미발송</span>`;
-    return badge + pick;
+    // ⚠️ v1.4.50 (2026.09.17) — **버튼 3개를 드롭다운 하나로.**
+    //   v1.4.48은 11px 테두리 버튼 3개를 배지 옆에 욱여넣었다. 배지에 묻혀
+    //   **작업자가 두 번 물어보고도 못 찾았다.** 기능은 정상 동작했는데도.
+    //   → 배지 자체를 고를 수 있는 컨트롤로 만든다. 보이는 것과 바꾸는 것이 같은 자리다.
+    //   (전면 재배치는 회차 종료 후 — 기술인계서 6장 「화면 정리」. 이건 응급 처치다)
+    const cur = v ? String(v.response || '') : '';
+    const st = cur === 'attend'
+      ? { bg:'rgba(0,201,122,0.15)', fg:'var(--green)', bd:'rgba(0,201,122,0.55)' }
+      : cur === 'absent'
+      ? { bg:'rgba(255,82,82,0.15)', fg:'var(--red)', bd:'rgba(255,82,82,0.55)' }
+      : _sentOf(nm)
+      ? { bg:'rgba(244,168,0,0.13)', fg:'var(--gold)', bd:'rgba(244,168,0,0.5)' }
+      : { bg:'rgba(255,255,255,0.06)', fg:'var(--tx2)', bd:'var(--bd)' };
+    const waitLabel = !_loaded ? '… 확인 중' : (_sentOf(nm) ? '⏳ 회신 대기' : '✉️ 안내 미발송');
+
+    if (!isAdmin) {   // 면접관 — 읽기만
+      const txt = cur === 'attend' ? '✅ 참석' : cur === 'absent' ? '❌ 미참석' : waitLabel;
+      return `<span style="background:${st.bg};color:${st.fg};font-size:12px;font-weight:700;padding:2px 7px;border-radius:6px;margin-left:6px">${txt}</span>`;
+    }
+    return `<select onchange="_onAttendChange(this,'${_escapeHtml(nm)}')" data-cur="${cur}"
+        title="참석 여부 — 눌러서 바꿉니다. 미참석으로 바꾸면 면접 준비 대상에서 빠집니다"
+        style="margin-left:6px;font-size:12px;font-weight:700;padding:3px 24px 3px 8px;border-radius:6px;cursor:pointer;background:${st.bg};color:${st.fg};border:1px solid ${st.bd};width:auto;min-width:112px;max-width:150px;display:inline-block;vertical-align:middle">
+        <option value="attend" ${cur==='attend'?'selected':''}>✅ 참석</option>
+        <option value="absent" ${cur==='absent'?'selected':''}>❌ 미참석</option>
+        <option value="" ${!cur?'selected':''}>${waitLabel}</option>
+      </select>${admMark}`;
   };
   const _targetHtml = `
     <div style="background:rgba(37,99,235,0.07);border:1px solid var(--bd);border-radius:9px;padding:12px 14px;margin-bottom:12px">
