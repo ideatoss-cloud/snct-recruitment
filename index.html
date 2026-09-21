@@ -1885,7 +1885,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.59';
+const APP_VERSION = 'v1.4.60';
 const APP_VERSION_DATE = '2026.09.21';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -5025,7 +5025,9 @@ function hideProgressModal() {
 //   - interviewResult: 면접 불합격자 + 예비합격자 (합격자는 검진 안내로 통보)
 //   - healthCheckNotice: 면접 합격자만 (예비합격자는 별도 — 회차 연장 시 합격 승격 후 발송)
 //   - finalResult: 최종 합격자만
-function _extractEmailRecipients(templateType, apps, ivResults, confirmedNames, absentNames, includeReserve) {
+// ⚠️ v1.4.60: `round`를 **인자로** 받는다 — 참석 여부는 회차별이라
+//   전역(currentRound)으로 판정하면 다른 회차 값이 섞인다(기술인계서 0장).
+function _extractEmailRecipients(templateType, apps, ivResults, confirmedNames, absentNames, includeReserve, round) {
   const recipients = [];
   if (templateType === 'docResult') {
     // ✅ v1.0.58: 서류 불합격자만 (합격자는 면접 안내 메일로 합격 통보 대체)
@@ -5039,10 +5041,14 @@ function _extractEmailRecipients(templateType, apps, ivResults, confirmedNames, 
     });
   } else if (templateType === 'interviewSchedule') {
     // 면접 확정자 중 불참 아닌 사람
+    // ⚠️ v1.4.60 — **이미 「참석 어렵습니다」를 회신한 사람에게 다시 보내지 않는다.**
+    //   평소엔 기발송자가 빠져서 안 나갔지만, [전원에게 다시 보내기]를 누르면 나갔다.
+    //   다시 부르려면 확정 목록에서 **참석으로 되돌린 뒤** 보낸다.
     apps.forEach(a => {
       const r = a.result || {};
       if (!r.email || !r.name) return;
-      if (confirmedNames.includes(r.name) && !absentNames.includes(r.name)) {
+      if (confirmedNames.includes(r.name) && !absentNames.includes(r.name)
+          && !_isIvAbsent(round, r.name)) {
         recipients.push({ app:r, type:'interviewSchedule' });
       }
     });
@@ -5052,7 +5058,9 @@ function _extractEmailRecipients(templateType, apps, ivResults, confirmedNames, 
       const r = a.result || {};
       if (!r.email || !r.name) return;
       const iv = ivResults.find(ir => (ir.name||'').replace(/\s+/g,'') === r.name.replace(/\s+/g,''));
-      if (iv && !absentNames.includes(r.name)) {
+      // v1.4.60: 면접을 보지 않은 사람은 면접 이후 단계 메일의 대상이 아니다.
+      //   평소엔 면접 결과가 없어 자연히 빠지지만, 옛 기록이 남아 있으면 나갈 수 있다.
+      if (iv && !absentNames.includes(r.name) && !_isIvAbsent(round, r.name)) {
         const eff = effectiveResult(iv) || '';
         if (eff === '합격') return; // 합격자 제외
         const isReserveR = (typeof isReserve === 'function' && isReserve(eff));
@@ -5067,7 +5075,9 @@ function _extractEmailRecipients(templateType, apps, ivResults, confirmedNames, 
       const r = a.result || {};
       if (!r.email || !r.name) return;
       const iv = ivResults.find(ir => (ir.name||'').replace(/\s+/g,'') === r.name.replace(/\s+/g,''));
-      if (iv && !absentNames.includes(r.name)) {
+      // v1.4.60: 면접을 보지 않은 사람은 면접 이후 단계 메일의 대상이 아니다.
+      //   평소엔 면접 결과가 없어 자연히 빠지지만, 옛 기록이 남아 있으면 나갈 수 있다.
+      if (iv && !absentNames.includes(r.name) && !_isIvAbsent(round, r.name)) {
         const eff = effectiveResult(iv) || '';
         if (eff === '합격') {
           // v1.4.8: 면접관 집계는 예비합격인데 최종결정이 합격 → **TO가 나서 승격된 사람**.
@@ -5083,7 +5093,9 @@ function _extractEmailRecipients(templateType, apps, ivResults, confirmedNames, 
       const r = a.result || {};
       if (!r.email || !r.name) return;
       const iv = ivResults.find(ir => (ir.name||'').replace(/\s+/g,'') === r.name.replace(/\s+/g,''));
-      if (iv && !absentNames.includes(r.name)) {
+      // v1.4.60: 면접을 보지 않은 사람은 면접 이후 단계 메일의 대상이 아니다.
+      //   평소엔 면접 결과가 없어 자연히 빠지지만, 옛 기록이 남아 있으면 나갈 수 있다.
+      if (iv && !absentNames.includes(r.name) && !_isIvAbsent(round, r.name)) {
         const eff = effectiveResult(iv) || '';
         if (eff === '합격') {
           recipients.push({ app:r, resultLabel: '합격', type:'finalResult' });
@@ -5190,7 +5202,7 @@ function openEmailSendModal(templateType, round, opts) {
   if (!apps.length) { toast('회차 데이터가 로드되지 않았습니다','err'); return; }
 
   // ✅ v1.0.58: includeReserve는 더 이상 사용 안 함 (healthCheckNotice는 합격자 전용)
-  let recipients = _extractEmailRecipients(templateType, apps, ivResults, confirmedNames, absentNames, false);
+  let recipients = _extractEmailRecipients(templateType, apps, ivResults, confirmedNames, absentNames, false, round);
   if (!recipients.length) {
     toast('발송 대상이 없습니다 (이메일 누락 또는 단계 미충족)','err');
     return;
@@ -9193,9 +9205,12 @@ function updateInterviewButtons() {
     if (ivHint) ivHint.style.display = 'none';
     return;
   }
-  const total = confirmedList.length;
+  // ⚠️ v1.4.60 — **면접 대상만 센다.** 미참석자를 분모에 넣으면 아무리 준비해도
+  //   「9명 중 5명 준비됨」에서 멈춰, 작업자가 [전원 일괄 준비]를 계속 누르게 된다.
+  const _btnTgt = _ivOnly(confirmedList);
+  const total = _btnTgt.length;
   let cached = 0, partial = 0;
-  for (const c of confirmedList) {
+  for (const c of _btnTgt) {
     const a = applicants.find(x => (x.result?.name||'') === c.name);
     if (!a || !qCache[a.id]) continue;
     // ⚠️ v1.2.69: 여기도 키 개수가 아니라 **실제로 질문이 담긴 유형**을 센다
@@ -12272,7 +12287,7 @@ async function loadResultDetail() {
       ${safeRender('예비합격 그룹', () => renderResultGroup('🟡 예비 합격', reserve, ivDetails, 'var(--gold)', 'rgba(255,193,7,0.06)'))}
       ${safeRender('불합격 그룹', () => renderResultGroup('❌ 불합격 (면접)', failIv, ivDetails, 'var(--red)', 'rgba(255,82,82,0.04)'))}
       ${absent.length ? safeRender('불참자 그룹', () => renderAbsentGroup(absent)) : ''}
-      ${safeRender('전체 지원자 현황', () => renderDocResultTable(apps, confirmedNames, ivMap, aptMap, absent.map(a => a.applicant), voteMap))}
+      ${safeRender('전체 지원자 현황', () => renderDocResultTable(apps, confirmedNames, ivMap, aptMap, absent.map(a => a.applicant), voteMap, round))}
       ${isAdmin ? safeRender('최종 결정 카드', () => renderFinalDecisionCard(round, confirmedNames, ivResults2, isClosed, absent.map(a => a.applicant))) : ''}`;
     // ✅ v1.0.59: 카드 렌더 직후 AI 보고서 캐시 상태 확인 (회차 종결 시에만)
     if (isAdmin && isClosed) {
@@ -12363,7 +12378,10 @@ function renderAbsentGroup(absent) {
   </div>`;
 }
 
-function renderDocResultTable(apps, confirmedNames, ivMap, aptMap = {}, absentNames = [], voteMap = {}) {
+// ⚠️ v1.4.60: `round`를 **인자로** 받는다 — 이 표는 [채용 집계] 탭 소속이라
+//   그 탭의 round가 `currentRound`와 다를 수 있다(기술인계서 0장).
+//   참석 여부는 회차별이므로 전역으로 판정하면 **다른 회차 값이 섞인다.**
+function renderDocResultTable(apps, confirmedNames, ivMap, aptMap = {}, absentNames = [], voteMap = {}, round) {
   if (!apps.length) return '';
   // ✅ v1.0.33: 각 지원자별 총점 사전 계산 후 총점 내림차순 정렬
   const enriched = apps.map(a => {
@@ -12395,7 +12413,8 @@ function renderDocResultTable(apps, confirmedNames, ivMap, aptMap = {}, absentNa
     }
   });
   // ✅ v1.0.28: 면접 응시자 = 면접확정자 − 불참자
-  const interviewedCount = confirmedNames.filter(n => !absentNames.includes(n)).length;
+  // v1.4.60: 미참석 회신자도 응시하지 않았다 — 숫자에서 뺀다
+  const interviewedCount = _ivOnly(confirmedNames.filter(n => !absentNames.includes(n)), round).length;
   return `<div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px">
       <div style="font-size:15px;font-weight:700">📋 전체 지원자 현황 (<span id="docTableCount">${interviewedCount}</span>명)
@@ -12441,7 +12460,13 @@ function renderDocResultTable(apps, confirmedNames, ivMap, aptMap = {}, absentNa
                면접 대상자를 고르는 단계까지의 지표라 최종 순위와 무관하다.
                필요하면 [지원서 검토] 탭과 엑셀 내보내기에 그대로 남아 있다. -->
           <td style="font-family:'DM Mono',monospace;color:${aptColor};font-size:13px">${aptStr}</td>
-          <td>${disq?'<span style="color:var(--red)">탈락</span>':conf?'<span style="color:var(--green)">면접확정</span>':'통과'}</td>
+          <!-- v1.4.60: 확정됐지만 면접에 오지 않은 사람을 「면접확정」이라고만 두면
+               최종 결과가 「미확정」으로 남아 왜 그런지 알 수 없다. 상태를 그대로 적는다.
+               ⚠️ 이 표는 회차 전체 기록이라 **사람을 빼지는 않는다.** 표시만 바꾼다. -->
+          <td>${disq?'<span style="color:var(--red)">탈락</span>'
+              :conf&&_ivSkipMap(round)[String(r.name||'').replace(/\s+/g,'')]
+                ?'<span style="color:var(--gold)" title="면접 확정자였으나 면접을 보지 않았습니다">확정·미참석</span>'
+              :conf?'<span style="color:var(--green)">면접확정</span>':'통과'}</td>
           <td>${iv?iv.ivScore+'점':'-'}</td>
           <td style="font-family:'DM Mono',monospace;font-weight:800;color:${totalColor};font-size:15px">${e.total}점${e.percentile!=null?`<div style="font-size:10px;color:var(--tx2);font-weight:500;font-family:inherit;margin-top:1px">상위 ${e.percentile}%</div>`:''}</td>
           <td style="font-weight:700;color:${fc}">${fin}</td>
@@ -14052,6 +14077,7 @@ async function openHealthCheckListModal(round) {
   const apps = window.__currentRoundApps || [];
   const ivResults = window.__currentRoundIvResults || [];
   const absentNames = window.__currentRoundAbsentNames || [];
+  const _hcRound = window.__currentRoundId || currentRound;   // v1.4.60: 참석 여부는 회차별
   if (!apps.length) { toast('회차 데이터가 로드되지 않았습니다','err'); return; }
 
   const passers = [];
@@ -14059,7 +14085,8 @@ async function openHealthCheckListModal(round) {
     const r = a.result || {};
     if (!r.email || !r.name) return;
     const iv = ivResults.find(ir => (ir.name||'').replace(/\s+/g,'') === r.name.replace(/\s+/g,''));
-    if (iv && !absentNames.includes(r.name)) {
+    // v1.4.60: 이 명단은 **병원에 그대로 넘어간다** — 면접에 오지 않은 사람이 섞이면 안 된다
+    if (iv && !absentNames.includes(r.name) && !_isIvAbsent(_hcRound, r.name)) {
       const eff = effectiveResult(iv) || '';
       if (eff === '합격') {
         // ⚠️ v1.4.8: AI 추출 스키마의 연락처 키는 **contact**다. 여기만 r.phone을 보고 있어
