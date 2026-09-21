@@ -1885,8 +1885,8 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.58';
-const APP_VERSION_DATE = '2026.09.17';
+const APP_VERSION = 'v1.4.59';
+const APP_VERSION_DATE = '2026.09.21';
 let currentRound = ''; // 현재 선택된 회차
 
 const JOBS = {
@@ -7371,6 +7371,58 @@ function _isIvAbsent(round, name) {
   return !!(a && a.response === 'absent');
 }
 
+// ⚠️⚠️ v1.4.59 (2026.09.21, 작업자 지시) — **「면접을 볼 사람」 판정은 한 군데서 한다.**
+//   작업자 실측: 불참 회신한 사람이 **[면접관 순위 일괄 입력] 표에 그대로 떠 있었다.**
+//   v1.4.48~55에서 면접 준비 드롭다운과 최종합격 카드 **두 곳만** 고쳤는데,
+//   확정자 명단을 쓰는 화면이 그것 말고도 **여덟 군데** 더 있었다.
+//   → 확정자 명단을 쓰는 화면은 **반드시 이 함수를 거친다. 각자 거르지 마라.**
+//   빠지는 사유 두 가지(이름이 비슷해 헷갈리니 사유를 같이 돌려준다) —
+//     · **면접 불참 처리** : 면접 당일 노쇼 → `_면접결과`에 기록(absentList)
+//     · **미참석 회신**   : 「참석 어렵습니다」 회신 또는 관리자 수정(RSVP)
+//   ⚠️ 이름 키는 **공백을 지워** 맞춘다 — `getIvAttendance`가 그렇게 돌려준다.
+function _ivSkipMap(round) {
+  const r = round || currentRound;
+  const out = {};
+  const put = function (n, why) {
+    const k = String(n == null ? '' : n).replace(/\s+/g, '');
+    if (k && !out[k]) out[k] = why;
+  };
+  (typeof absentList !== 'undefined' ? absentList : []).forEach(function (a) {
+    put(a && (a.name != null ? a.name : a.applicant), '면접 불참 처리');
+  });
+  const m = (window.__ivAttendance || {})[r] || {};
+  Object.keys(m).forEach(function (k) {
+    if (m[k] && m[k].response === 'absent') put(k, '미참석 회신');
+  });
+  return out;
+}
+const _ivNameOf = function (x) { return (x && x.name != null) ? x.name : x; };
+// 확정자 목록에서 면접 대상만 남긴다. 객체 배열·이름 배열 모두 받는다.
+function _ivOnly(list, round, nameOf) {
+  const skip = _ivSkipMap(round), get = nameOf || _ivNameOf;
+  return (list || []).filter(function (x) {
+    return !skip[String(get(x) == null ? '' : get(x)).replace(/\s+/g, '')];
+  });
+}
+// 빠진 사람을 화면에 밝힐 때 쓴다 — **조용히 숨기지 않는다.**
+function _ivSkipNames(list, round, nameOf) {
+  const skip = _ivSkipMap(round), get = nameOf || _ivNameOf, hit = [];
+  (list || []).forEach(function (x) {
+    const n = get(x), k = String(n == null ? '' : n).replace(/\s+/g, '');
+    if (skip[k]) hit.push(n + '(' + skip[k] + ')');
+  });
+  return hit;
+}
+// 화면 아래에 붙일 한 줄. 빠진 사람이 없으면 빈 문자열.
+function _ivSkipNote(list, round, nameOf) {
+  const hit = _ivSkipNames(list, round, nameOf);
+  if (!hit.length) return '';
+  return '<div style="font-size:12px;line-height:1.6;color:var(--gold);background:rgba(244,168,0,0.08);'
+    + 'border-left:3px solid var(--gold);border-radius:4px;padding:6px 10px;margin-top:8px">'
+    + '면접을 보지 않는 ' + hit.length + '명은 제외했습니다 — ' + _escapeHtml(hit.join(', '))
+    + '<br><span style="color:var(--tx2)">실제로 오셨다면 [지원서 집계]의 확정 목록에서 <b>참석</b>으로 되돌리세요.</span></div>';
+}
+
 async function loadIvAttendance(round) {
   if (!GAS_URL || !round) return;
   try {
@@ -7905,7 +7957,11 @@ function closeTravelFeeModal(){
 }
 
 function _tfData(){
-  const list = (typeof confirmedList !== 'undefined' ? confirmedList : []);
+  // ⚠️⚠️ v1.4.59 — **면접에 오지 않은 사람에게 교통비를 지급하면 안 된다.**
+  //   이 표는 면접 당일 실물 서명을 받아 그대로 비용처리로 넘어간다.
+  //   안 온 사람이 명단에 남아 있으면 **지급되지 않은 금액이 증빙에 섞인다.**
+  const _all = (typeof confirmedList !== 'undefined' ? confirmedList : []);
+  const list = _ivOnly(_all);
   const base = Math.max(0, Number(document.getElementById('tfAmount')?.value) || 0);
   const per = window.__tfPer || {};
   const rows = list.map(c => ({
@@ -7938,6 +7994,9 @@ function renderTravelFeeRows(){
   const warns = [];
   if(!d.date) warns.push('면접일자가 비어 있습니다 — 증빙 서류에 지급 근거가 없으면 곤란합니다.');
   if(d.rows.some(r => !r.amount)) warns.push('금액이 0원인 사람이 있습니다.');
+  // v1.4.59: 누가 왜 빠졌는지 밝힌다 — 비용 서류라 인원이 맞는지 눈으로 확인해야 한다
+  const _tfSkip = _ivSkipNames((typeof confirmedList !== 'undefined' ? confirmedList : []));
+  if(_tfSkip.length) warns.push('면접에 오지 않는 ' + _tfSkip.length + '명은 명단에서 뺐습니다 — ' + _tfSkip.join(', '));
   const w = document.getElementById('travelFeeWarn');
   if(w){
     w.style.display = warns.length ? 'block' : 'none';
@@ -9046,6 +9105,11 @@ async function prepInterviewAll() {
   const ivStr = document.getElementById('ivIv').value.trim();
   if (!ivStr) { toast('면접관 이름을 먼저 입력해주세요', 'err'); return; }
   if (!confirmedList.length) { toast('확정된 면접 대상자가 없습니다', 'err'); return; }
+  // ⚠️ v1.4.59 — **면접을 보지 않을 사람의 질문지를 만들지 않는다.**
+  //   GPT를 사람 수만큼 부르는 작업이라 돈과 시간이 그냥 나간다.
+  const _tgt = _ivOnly(confirmedList);
+  const _skipped = _ivSkipNames(confirmedList);
+  if (!_tgt.length) { toast('면접 대상자가 없습니다 — 확정자 전원이 미참석입니다', 'err'); return; }
 
   const btn = document.getElementById('ivBtnAll');
   const origHtml = btn.innerHTML;
@@ -9053,10 +9117,10 @@ async function prepInterviewAll() {
 
   let ok = 0, ng = 0;
   const ngNames = [];
-  const total = confirmedList.length;
+  const total = _tgt.length;
 
   for (let i = 0; i < total; i++) {
-    const c = confirmedList[i];
+    const c = _tgt[i];
     const a = applicants.find(x => (x.result?.name||'') === c.name);
     btn.innerHTML = `⏳ 일괄 준비 중... (${i+1}/${total}) ${c.name}`;
     if (!a) { ng++; ngNames.push(c.name+'(매칭실패)'); continue; }
@@ -9206,7 +9270,8 @@ async function syncIvQuestionsForConfirmed() {
       try { await checkConfirmed(); } catch(e) {}
     }
     if (!confirmedList.length) { updateInterviewButtons(); return; }
-    const tasks = confirmedList.map(async c => {
+    // v1.4.59: 면접 대상만 — 안 볼 사람 질문지를 미리 받아둘 이유가 없다
+    const tasks = _ivOnly(confirmedList).map(async c => {
       const a = applicants.find(x => (x.result?.name||'') === c.name);
       if (!a || _qFilledTypes(a.id).length) return; // 매칭 실패 또는 이미 캐시
       try {
@@ -9917,6 +9982,7 @@ async function saveIvResults() {
 let rankingData = {};          // { interviewer: { applicantId: rank } }
 let rankingApplicants = [];    // 면접 확정자 [{id, name}] — 면접 불참자 제외됨
 let rankingExcludedCount = 0;  // ✅ v1.0.25: 불참 등으로 제외된 인원 수 (안내문 표시용)
+let rankingExcludedNames = []; // ✅ v1.4.59: 숫자만으로는 누가 빠졌는지 모른다
 
 async function ivRankInit() {
   if (!isAdmin || !currentRound) return;
@@ -9953,7 +10019,11 @@ async function ivRankInit() {
 async function loadConfirmedForRanking() {
   rankingApplicants = [];
   rankingExcludedCount = 0;
+  rankingExcludedNames = [];
   if (!GAS_URL || !currentRound) return;
+  // ⚠️ v1.4.59 — 이 표는 확정자를 **직접 받아온다**(confirmedList를 안 쓴다).
+  //   참석 여부도 여기서 같이 받아야 미참석자를 뺄 수 있다.
+  try { await loadIvAttendance(currentRound); } catch (e) {}
   try {
     // 1) 면접 확정자
     const res = await fetch(GAS_URL + '?action=getConfirmed&userEmail='+encodeURIComponent(currentUserEmail||'')+'&round=' + encodeURIComponent(currentRound));
@@ -9973,7 +10043,16 @@ async function loadConfirmedForRanking() {
     } catch(e) {}
 
     // 3) 불참자 제외 후 매핑
-    const filtered = data.confirmed.filter(c => !absentNames.has(c.name));
+    //   ⚠️⚠️ v1.4.59 — **미참석 회신자도 뺀다.** 여기가 작업자가 잡아낸 자리다.
+    //     종전에는 「면접 당일 노쇼」만 뺐다. 불참 회신한 사람은 순위를 매길 수 없는데
+    //     표에 그대로 떠서, 빈 칸으로 남거나 잘못 매길 수 있었다.
+    const _skip = _ivSkipMap(currentRound);
+    const filtered = data.confirmed.filter(c => !absentNames.has(c.name)
+      && !_skip[String(c.name || '').replace(/\s+/g, '')]);
+    rankingExcludedNames = data.confirmed
+      .filter(c => absentNames.has(c.name) || _skip[String(c.name || '').replace(/\s+/g, '')])
+      .map(c => c.name + '(' + (absentNames.has(c.name) ? '면접 불참 처리'
+            : _skip[String(c.name || '').replace(/\s+/g, '')]) + ')');
     rankingExcludedCount = data.confirmed.length - filtered.length;
     rankingApplicants = filtered.map(c => {
       const a = applicants.find(x => x.result?.name === c.name);
@@ -10024,7 +10103,13 @@ function renderRankingTable() {
     html += `<td style="padding:6px 4px;border-bottom:1px solid rgba(255,255,255,0.06);text-align:center;color:var(--ac);font-weight:700">${avg}</td></tr>`;
   });
   html += '</tbody></table></div>';
-  html += `<div style="font-size:11px;color:var(--tx2);margin-top:6px;text-align:right">면접 확정자 ${M}명${rankingExcludedCount > 0 ? ` <span style="color:var(--red)">(불참 ${rankingExcludedCount}명 자동 제외)</span>` : ''} · 면접관 ${ivs.length}명 · 각 면접관 셀에 1~${M} 순위 입력</div>`;
+  html += `<div style="font-size:11px;color:var(--tx2);margin-top:6px;text-align:right">면접 대상 ${M}명${rankingExcludedCount > 0 ? ` <span style="color:var(--gold)">(면접 미참석 ${rankingExcludedCount}명 제외)</span>` : ''} · 면접관 ${ivs.length}명 · 각 면접관 셀에 1~${M} 순위 입력</div>`;
+  // v1.4.59: 누가 빠졌는지 이름으로 밝힌다 — 숫자만 보면 「어 한 명 없는데?」가 된다
+  if (rankingExcludedNames.length) {
+    html += `<div style="font-size:12px;line-height:1.6;color:var(--gold);background:rgba(244,168,0,0.08);border-left:3px solid var(--gold);border-radius:4px;padding:6px 10px;margin-top:8px">`
+      + `면접을 보지 않는 ${rankingExcludedNames.length}명은 제외했습니다 — ${_escapeHtml(rankingExcludedNames.join(', '))}`
+      + `<br><span style="color:var(--tx2)">실제로 오셨다면 [지원서 집계]의 확정 목록에서 <b>참석</b>으로 되돌린 뒤 이 화면을 다시 여세요.</span></div>`;
+  }
   area.innerHTML = html;
   validateRanking();
   persistRankingLocal();
@@ -10238,13 +10323,19 @@ ${pdfText.slice(0, 8000)}`;
 function renderAptitudeSummary() {
   const summaryEl = document.getElementById('aptSummary');
   if (!aptitudeResults.length) { summaryEl.style.display = 'none'; return; }
-  const confirmed = confirmedList.map(c => c.name);
+  // ⚠️ v1.4.59 — 미참석자를 그냥 빼면 그 사람 인적성 결과가 **「미매칭」으로 떠서**
+  //   검사 결과가 잘못 들어온 것처럼 보인다. **「제외」로 따로 구분해 보여준다.**
+  const confirmed = _ivOnly(confirmedList).map(c => c.name);
+  const _skipNames = _ivSkipNames(confirmedList);
   const matched = aptitudeResults.filter(a => confirmed.includes(a.name));
-  const unmatched = aptitudeResults.filter(a => !confirmed.includes(a.name));
+  const _skipSet = _ivSkipMap(currentRound);
+  const unmatched = aptitudeResults.filter(a => !confirmed.includes(a.name)
+    && !_skipSet[String(a.name || '').replace(/\s+/g, '')]);
 
   summaryEl.style.display = 'block';
   summaryEl.innerHTML = `
-    <div style="font-size:13px;font-weight:700;color:var(--tx2);margin-bottom:7px">매칭 결과 — 확정자 ${confirmed.length}명 중 ${matched.length}명 매칭</div>
+    <div style="font-size:13px;font-weight:700;color:var(--tx2);margin-bottom:7px">매칭 결과 — 면접 대상 ${confirmed.length}명 중 ${matched.length}명 매칭</div>
+    ${_skipNames.length ? `<div style="font-size:12px;color:var(--gold);margin-bottom:6px">면접을 보지 않는 ${_skipNames.length}명은 대상에서 제외 — ${_escapeHtml(_skipNames.join(', '))}</div>` : ''}
     ${matched.map(a => `
       <div style="display:flex;justify-content:space-between;align-items:center;background:rgba(0,201,122,0.06);border:1px solid rgba(0,201,122,0.2);border-radius:8px;padding:7px 11px;margin-bottom:5px">
         <div style="font-size:14px;font-weight:700">${a.name}</div>
@@ -10330,9 +10421,10 @@ function resetAptitude() {
 
 function printAptitude() {
   if (!aptitudeResults.length) { toast('인적성 결과가 없습니다', 'err'); return; }
-  const confirmed = confirmedList.map(c => c.name);
+  // v1.4.59: 면접장에 들고 갈 자료다 — 안 오는 사람 것은 뽑지 않는다
+  const confirmed = _ivOnly(confirmedList).map(c => c.name);
   const targets = aptitudeResults.filter(a => confirmed.includes(a.name));
-  if (!targets.length) { toast('면접 확정자와 매칭된 결과가 없습니다', 'err'); return; }
+  if (!targets.length) { toast('면접 대상자와 매칭된 결과가 없습니다', 'err'); return; }
 
   const w = window.open('', '_blank');
   const rows = targets.map(a => {
@@ -12747,7 +12839,8 @@ let _obsTimer = null;
 
 function obsTargets() {
   const absent = (typeof absentList !== 'undefined' ? absentList : []).map(a => a.name);
-  return (typeof confirmedList !== 'undefined' ? confirmedList : [])
+  // v1.4.59: 미참석 회신자는 대기실에 오지 않는다 — 관찰할 대상이 아니다
+  return _ivOnly((typeof confirmedList !== 'undefined' ? confirmedList : []))
     .map(c => c.name).filter(n => !absent.includes(n))
     .map(n => {
       const a = (typeof applicants !== 'undefined' ? applicants : []).find(x => ((x.result && x.result.name) || '') === n);
@@ -12869,7 +12962,8 @@ let myRankData = {};   // {지원자ID: 순위}
 
 function myRankTargets() {
   const absent = (typeof absentList !== 'undefined' ? absentList : []).map(a => a.name);
-  return (typeof confirmedList !== 'undefined' ? confirmedList : [])
+  // v1.4.59: 면접을 보지 않은 사람에게 순위를 매길 수는 없다
+  return _ivOnly((typeof confirmedList !== 'undefined' ? confirmedList : []))
     .map(c => c.name)
     .filter(n => !absent.includes(n))
     .map(n => {
@@ -12988,7 +13082,8 @@ function _ivMailData() {
   const aptMap = window.__currentRoundAptMap || {};
   const confirmedNames = window.__currentRoundConfirmedNames || [];
   const absentNames = window.__currentRoundAbsentNames || [];
-  const targets = confirmedNames.filter(n => !absentNames.includes(n));
+  // v1.4.59: 면접을 보지 않은 사람에게 면접 결과를 보낼 수는 없다
+  const targets = _ivOnly(confirmedNames.filter(n => !absentNames.includes(n)), round);
 
   const rows = targets.map(name => {
     const app = apps.find(a => ((a.result && a.result.name) || '') === name);
@@ -13331,8 +13426,9 @@ async function printIvEval(blank) {
     ? window.__currentRoundApps
     : (typeof applicants !== 'undefined' ? applicants : []);
 
-  const targets = confirmedNames.filter(n => !absentNames.includes(n));
-  if (!targets.length) { toast('면접 확정자가 없습니다', 'err'); return; }
+  // v1.4.59: 여기도 같다 — 면접 대상만
+  const targets = _ivOnly(confirmedNames.filter(n => !absentNames.includes(n)), round);
+  if (!targets.length) { toast('면접 대상자가 없습니다', 'err'); return; }
 
   let ivDate = '';
   try {
