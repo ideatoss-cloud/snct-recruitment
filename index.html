@@ -1885,7 +1885,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.60';
+const APP_VERSION = 'v1.4.61';
 const APP_VERSION_DATE = '2026.09.21';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -7425,6 +7425,33 @@ function _ivSkipNames(list, round, nameOf) {
   });
   return hit;
 }
+// ⚠️⚠️ v1.4.61 (2026.09.22, 작업자 지시) — **면접 대상자 정렬은 한 가지로 통일한다.**
+//   작업자 말: 「면접을 보면 1명씩 들어가는데 화면마다 정렬이 달라 혼선이 생긴다」.
+//   원인은 **정렬을 아무도 안 해서**다. 화면마다 서로 다른 배열을 그대로 썼다 —
+//     · `confirmedList`(getConfirmed) = **{회차}_집계 시트 순서 = 서류 순위 순**
+//     · `applicants`(getAnalysis)     = **분석 시트 순서 = 업로드 순**
+//   [면접 준비] 드롭다운만 `applicants`를 써서 **혼자 다른 순서**로 떴다.
+//   → 정본은 **집계 순위 순**. 면접위원에게 보낸 메일·인쇄 자료도 이 순서라 **종이와 화면이 맞는다.**
+//   ⚠️ 확정 목록이 아직 없으면(기준을 모르면) **원본 순서를 그대로 둔다.** 멋대로 가나다로 바꾸지 않는다.
+function _ivRank(name) {
+  const k = String(name == null ? '' : name).replace(/\s+/g, '');
+  const list = (typeof confirmedList !== 'undefined' ? confirmedList : []);
+  for (let i = 0; i < list.length; i++) {
+    if (String((list[i] && list[i].name) || '').replace(/\s+/g, '') === k) return i;
+  }
+  return 9999;   // 확정 목록에 없는 사람은 뒤로
+}
+function _ivSort(arr, nameOf) {
+  const list = (typeof confirmedList !== 'undefined' ? confirmedList : []);
+  if (!list.length) return (arr || []).slice();   // 기준이 없으면 원본 순서를 지킨다
+  const get = nameOf || _ivNameOf;
+  return (arr || []).slice().sort(function (a, b) {
+    const d = _ivRank(get(a)) - _ivRank(get(b));
+    if (d !== 0) return d;
+    return String(get(a) || '').localeCompare(String(get(b) || ''), 'ko');
+  });
+}
+
 // 화면 아래에 붙일 한 줄. 빠진 사람이 없으면 빈 문자열.
 function _ivSkipNote(list, round, nameOf) {
   const hit = _ivSkipNames(list, round, nameOf);
@@ -7958,8 +7985,14 @@ function openTravelFeeModal(){
   if(aEl) aEl.value = mine.amount || 50000;
   window.__tfPer = Object.assign({}, mine.per || {}); // 개인별 조정액
 
+  // ⚠️ v1.4.61 — v1.4.59에서 표를 **면접 대상만**으로 거르면서 **부제만 옛 숫자로 남았다.**
+  //   부제는 「확정자 9명」인데 표는 4줄이라, 비용 서류를 만들며 인원이 안 맞아 보였다.
   const sub = document.getElementById('travelFeeSubtitle');
-  if(sub) sub.textContent = `${_roundLabel(currentRound)} · 면접 확정자 ${list.length}명`;
+  if (sub) {
+    const _n = _ivOnly(list).length, _skip = list.length - _n;
+    sub.textContent = `${_roundLabel(currentRound)} · 지급 대상 ${_n}명`
+      + (_skip ? ` (면접 미참석 ${_skip}명 제외 · 확정 ${list.length}명)` : '');
+  }
   document.getElementById('travelFeeModal').classList.add('on');
   renderTravelFeeRows();
 }
@@ -7973,7 +8006,7 @@ function _tfData(){
   //   이 표는 면접 당일 실물 서명을 받아 그대로 비용처리로 넘어간다.
   //   안 온 사람이 명단에 남아 있으면 **지급되지 않은 금액이 증빙에 섞인다.**
   const _all = (typeof confirmedList !== 'undefined' ? confirmedList : []);
-  const list = _ivOnly(_all);
+  const list = _ivSort(_ivOnly(_all));   // v1.4.61: 화면·서류 순서를 면접 순서와 맞춘다
   const base = Math.max(0, Number(document.getElementById('tfAmount')?.value) || 0);
   const per = window.__tfPer || {};
   const rows = list.map(c => ({
@@ -8039,6 +8072,10 @@ function printTravelFee(){
   if(!d.date && !confirm('면접일자가 비어 있습니다.\n지급 근거가 없는 증빙이 됩니다. 그대로 인쇄할까요?')) return;
   const today = new Date();
   const todayStr = `${today.getFullYear()}년 ${today.getMonth()+1}월 ${today.getDate()}일`;
+  // ⚠️ v1.4.61 — **확인서 날짜는 「수령일」이다.** 종전에는 인쇄한 날이 찍혔다.
+  //   이 서류는 보통 **면접 전날 미리 뽑아** 당일 서명을 받으므로, 인쇄일을 찍으면
+  //   서명일과 하루 어긋난 증빙이 된다. 면접일자가 있으면 그것을 쓴다(시각은 떼고).
+  const recvStr = String(d.date || '').replace(/\s*\d{1,2}\s*[:시][^()]*$/, '').trim() || todayStr;
   const w = window.open('', '_blank', 'width=900,height=800');
   if(!w){ toast('팝업이 차단되었습니다','err'); return; }
   const rows = d.rows.map((r,i)=>`
@@ -8089,7 +8126,7 @@ function printTravelFee(){
     </tr></tfoot>
   </table>
   <div class="confirm">위 금액을 면접 교통비로 정히 수령하였음을 확인합니다.</div>
-  <div class="date">${todayStr}</div>
+  <div class="date">${_escapeHtml(recvStr)}</div>
   <div class="org">${_escapeHtml(SENDER_INFO.companyFull)} ${_escapeHtml(SENDER_INFO.team)}</div>
 </body></html>`);
   w.document.close();
@@ -8709,9 +8746,11 @@ async function refreshIvApplicants() {
   //   애초에 대상이 아니었던 사람을 「뺐다」고 하면 숫자를 못 믿게 된다.
   const _rsvpAbsent = done.filter(a => confirmedNames.includes(a.result?.name)
     && _isIvAbsent(currentRound, a.result?.name)).map(a => a.result?.name);
-  const confirmedApps = done.filter(a => confirmedNames.includes(a.result?.name)
+  // ⚠️ v1.4.61 — **집계 순위 순으로 맞춘다.** `done`은 업로드 순이라 혼자 다른 순서로 떴다.
+  //   `_syncQAppSel`이 이 드롭다운을 그대로 복사하므로 질문지 카드 명단도 같이 맞춰진다.
+  const confirmedApps = _ivSort(done.filter(a => confirmedNames.includes(a.result?.name)
     && !absentNames.includes(a.result?.name)
-    && !_isIvAbsent(currentRound, a.result?.name));
+    && !_isIvAbsent(currentRound, a.result?.name)), function (a) { return a.result && a.result.name; });
 
   if (confirmedApps.length) {
     confirmedApps.forEach(a => {
@@ -10069,7 +10108,7 @@ async function loadConfirmedForRanking() {
       .map(c => c.name + '(' + (absentNames.has(c.name) ? '면접 불참 처리'
             : _skip[String(c.name || '').replace(/\s+/g, '')]) + ')');
     rankingExcludedCount = data.confirmed.length - filtered.length;
-    rankingApplicants = filtered.map(c => {
+    rankingApplicants = _ivSort(filtered).map(c => {   // v1.4.61: 같은 기준으로
       const a = applicants.find(x => x.result?.name === c.name);
       return { id: a ? String(a.id) : c.name, name: c.name };
     });
@@ -12865,7 +12904,8 @@ let _obsTimer = null;
 function obsTargets() {
   const absent = (typeof absentList !== 'undefined' ? absentList : []).map(a => a.name);
   // v1.4.59: 미참석 회신자는 대기실에 오지 않는다 — 관찰할 대상이 아니다
-  return _ivOnly((typeof confirmedList !== 'undefined' ? confirmedList : []))
+  // v1.4.61: 정렬도 같은 기준으로
+  return _ivSort(_ivOnly((typeof confirmedList !== 'undefined' ? confirmedList : [])))
     .map(c => c.name).filter(n => !absent.includes(n))
     .map(n => {
       const a = (typeof applicants !== 'undefined' ? applicants : []).find(x => ((x.result && x.result.name) || '') === n);
@@ -12988,7 +13028,8 @@ let myRankData = {};   // {지원자ID: 순위}
 function myRankTargets() {
   const absent = (typeof absentList !== 'undefined' ? absentList : []).map(a => a.name);
   // v1.4.59: 면접을 보지 않은 사람에게 순위를 매길 수는 없다
-  return _ivOnly((typeof confirmedList !== 'undefined' ? confirmedList : []))
+  // v1.4.61: 정렬도 같은 기준으로
+  return _ivSort(_ivOnly((typeof confirmedList !== 'undefined' ? confirmedList : [])))
     .map(c => c.name)
     .filter(n => !absent.includes(n))
     .map(n => {
