@@ -1239,7 +1239,7 @@ kim@gmail.com"
 <!-- ✅ v1.4.62: 면접참석확인서 (관리자 전용, 작업자 지시 2026.09.28).
      지원자가 훈련기관·학교·현 직장에 낼 **회사 직인 날인 증빙**을 1명씩 PDF로 뽑는다.
      ⚠️ 직인 이미지는 **소스에 넣지 않는다** — 이 저장소는 공개(GitHub Pages)라 누구나 내려받는다.
-        관리자가 처음 한 번 올리면 **그 브라우저 localStorage에만** 둔다. -->
+        v1.4.63: GAS(비공개)에 두고 **관리자 세션에만** 받아온다(getCompanySeal). 올리는 절차 없음. -->
 <div class="ov" id="ivCertModal">
   <div class="modal" style="width:96vw;max-width:620px;max-height:92vh;display:flex;flex-direction:column">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-shrink:0">
@@ -1267,10 +1267,7 @@ kim@gmail.com"
       <div style="margin-top:14px;padding:11px 13px;border:1px solid var(--bd);border-radius:9px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
         <div id="icSealPrev" style="width:64px;height:64px;display:flex;align-items:center;justify-content:center;background:#fff;border-radius:6px;font-size:11px;color:#999;flex-shrink:0"></div>
         <div style="flex:1;min-width:200px;font-size:12.5px;color:var(--tx2);line-height:1.7">
-          <b style="color:var(--tx)">회사 직인</b> — 이 PC에만 저장됩니다(서버·소스에 올라가지 않음).<br>
-          <label class="btn btn-o" style="font-size:13px;padding:4px 10px;cursor:pointer;display:inline-block;margin-top:4px">📁 직인 이미지 선택
-            <input type="file" id="icSealFile" accept="image/*" onchange="loadIvSeal(this)" style="display:none"></label>
-          <button class="btn btn-o" id="icSealDel" style="font-size:13px;padding:4px 10px;margin-top:4px" onclick="clearIvSeal()">삭제</button>
+          <b style="color:var(--tx)">회사 직인</b> — <span id="icSealMsg">불러오는 중…</span>
         </div>
       </div>
       <div id="ivCertWarn" style="margin-top:10px"></div>
@@ -1936,7 +1933,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.62';
+const APP_VERSION = 'v1.4.63';
 const APP_VERSION_DATE = '2026.09.28';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -8188,11 +8185,11 @@ function printTravelFee(){
 // ✅ v1.4.62: 면접참석확인서 (관리자 전용, 작업자 지시 2026.09.28)
 //   지원자 요청 — 「국비 훈련기관에 결석 증빙으로 회사 직인 날인 서류를 내야 한다」.
 //   1명씩 뽑는다. 대상은 **면접에 실제로 온 사람**(_ivOnly)만 — 안 온 사람에게 참석 확인은 못 해준다.
-//   ⚠️ 직인 이미지는 소스에 두지 않는다(공개 저장소). LS_IV_SEAL — 이 브라우저에만.
+//   ⚠️ 직인 이미지는 소스에 두지 않는다(공개 저장소). v1.4.63부터 GAS getCompanySeal(관리자 전용)에서 받는다.
 //   PDF 저장 — 인쇄창 제목을 파일명으로 두어 「PDF로 저장」 시 이름이 그대로 붙는다.
 // ══════════════════════════════════════════
 const LS_IV_CERT = 'snct_ivCert';
-const LS_IV_SEAL = 'snct_ivSeal';
+let _icSealSrc = '';   // GAS에서 받은 직인(data URL). 세션 동안 한 번만 받는다
 
 function _icTargets(){
   return _ivSort(_ivOnly((typeof confirmedList !== 'undefined' ? confirmedList : [])))
@@ -8214,6 +8211,11 @@ function _icIvDate(){
       .replace(/\s*\d{1,2}\s*[:시][^()]*$/, '').trim();
   }catch(e){ return ''; }
 }
+// 회차 코드 = {yyyymmdd}_{신입|경력}_{직종} → 확인서 문구의 「신입사원/경력사원」
+function _icEmpType(round){
+  const m = String(round || '').match(/^\d{8}_(신입|경력)_/);
+  return m ? m[1] : '';
+}
 function _icLoad(){ try{ return JSON.parse(localStorage.getItem(LS_IV_CERT)||'{}'); }catch(e){ return {}; } }
 function _icToday(){
   const t = new Date();
@@ -8228,15 +8230,18 @@ function openIvCertModal(){
   sel.innerHTML = names.map(n => `<option value="${_escapeHtml(n)}">${_escapeHtml(n)}</option>`).join('');
   const mine = _icLoad()[currentRound] || {};
   if (mine.last && names.includes(mine.last)) sel.value = mine.last;
-  document.getElementById('icField').value = mine.field || _roundShort(currentRound);
+  // 회차 코드 {yyyymmdd}_{신입|경력}_{직종} → 「신입 전기정비」 (_roundShort는 순서가 반대라 쓰지 않는다)
+  const _rm = String(currentRound || '').match(/^\d{8}_(.+?)_(.+)$/);
+  document.getElementById('icField').value = mine.field || (_rm ? `${_rm[1]} ${_rm[2]}` : '');
   document.getElementById('icDate').value  = mine.date  || _icIvDate();
   document.getElementById('icPlace').value = mine.place || `${SENDER_INFO.companyFull}(주) 본사`;
   document.getElementById('icIssue').value = _icToday();   // 발급일은 매번 오늘
   const sub = document.getElementById('ivCertSubtitle');
   if (sub) sub.textContent = `${_roundLabel(currentRound)} · 면접 참석자 ${names.length}명`;
   onIvCertName();
-  _icSealPreview();
+  _icSealPreview(!_icSealSrc);
   document.getElementById('ivCertModal').classList.add('on');
+  if (!_icSealSrc) _icFetchSeal().then(() => _icSealPreview(false));
 }
 function closeIvCertModal(){ document.getElementById('ivCertModal').classList.remove('on'); }
 
@@ -8269,44 +8274,29 @@ function _icWarn(){
   const v = id => (document.getElementById(id).value || '').trim();
   if (!v('icBirth')) w.push('생년월일이 비어 있습니다 — 제출처가 본인 확인에 씁니다.');
   if (!v('icDate'))  w.push('면접일자가 비어 있습니다 — 증빙의 핵심입니다.');
-  if (!_icSeal())    w.push('직인 이미지가 없습니다 — 이대로 뽑으면 날인 없는 확인서가 됩니다.');
+  const _sm = document.getElementById('icSealMsg');
+  if (!_icSeal() && !(_sm && /불러오는/.test(_sm.textContent)))
+    w.push('직인을 불러오지 못했습니다 — 이대로 뽑으면 날인 없는 확인서가 됩니다.');
   const el = document.getElementById('ivCertWarn');
   if (el) el.innerHTML = w.length ? `<div style="background:rgba(244,168,0,0.10);border:1px solid var(--gold);border-radius:9px;padding:10px 13px;font-size:13px;line-height:1.7;color:var(--gold)">${w.map(x=>'⚠️ '+x).join('<br>')}</div>` : '';
 }
 
-function _icSeal(){ try{ return localStorage.getItem(LS_IV_SEAL) || ''; }catch(e){ return ''; } }
-function _icSealPreview(){
-  const s = _icSeal(), p = document.getElementById('icSealPrev'), d = document.getElementById('icSealDel');
-  if (p) p.innerHTML = s ? `<img src="${s}" style="max-width:100%;max-height:100%">` : '직인 없음';
-  if (d) d.style.display = s ? '' : 'none';
+function _icSeal(){ return _icSealSrc; }
+async function _icFetchSeal(){
+  if (_icSealSrc) return _icSealSrc;
+  try{
+    const res = await fetch(GAS_URL + '?action=getCompanySeal&userEmail=' + encodeURIComponent(currentUserEmail || ''));
+    const d = await res.json();
+    if (d && d.success && /^data:image\//.test(d.seal || '')) _icSealSrc = d.seal;
+  }catch(e){ console.warn('[면접참석확인서] 직인 로드 실패', e); }
+  return _icSealSrc;
+}
+function _icSealPreview(loading){
+  const s = _icSeal(), p = document.getElementById('icSealPrev'), m = document.getElementById('icSealMsg');
+  if (p) p.innerHTML = s ? `<img src="${s}" style="max-width:100%;max-height:100%">` : (loading ? '…' : '직인 없음');
+  if (m) m.textContent = s ? '서버에서 불러왔습니다. 자동으로 날인됩니다.'
+    : (loading ? '불러오는 중…' : '불러오지 못했습니다 — 창을 닫았다 다시 열어 보세요(관리자 로그인 필요).');
   _icWarn();
-}
-function loadIvSeal(inp){
-  const f = inp.files && inp.files[0];
-  inp.value = '';
-  if (!f) return;
-  if (!/^image\//.test(f.type)) { toast('이미지 파일만 됩니다','err'); return; }
-  // 큰 사진을 그대로 담으면 localStorage 한도(약 5MB)를 먹는다 → 긴 변 400px로 줄인다
-  const img = new Image(), url = URL.createObjectURL(f);
-  img.onload = function(){
-    const k = Math.min(1, 400 / Math.max(img.width, img.height));
-    const c = document.createElement('canvas');
-    c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
-    const g = c.getContext('2d');
-    g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
-    g.drawImage(img, 0, 0, c.width, c.height);
-    URL.revokeObjectURL(url);
-    try{ localStorage.setItem(LS_IV_SEAL, c.toDataURL('image/png')); toast('직인을 이 PC에 저장했습니다'); }
-    catch(e){ toast('직인 저장 실패 — 브라우저 저장공간 부족','err'); }
-    _icSealPreview();
-  };
-  img.onerror = function(){ URL.revokeObjectURL(url); toast('이미지를 읽지 못했습니다','err'); };
-  img.src = url;
-}
-function clearIvSeal(){
-  if (!confirm('이 PC에 저장된 직인 이미지를 지울까요?')) return;
-  try{ localStorage.removeItem(LS_IV_SEAL); }catch(e){}
-  _icSealPreview();
 }
 
 function printIvCert(){
@@ -8315,7 +8305,7 @@ function printIvCert(){
   if (!name) { toast('대상자를 고르세요','err'); return; }
   if (!v('icDate') && !confirm('면접일자가 비어 있습니다. 그대로 만들까요?')) return;
   const seal = _icSeal();
-  if (!seal && !confirm('직인 이미지가 없습니다.\n날인 없는 확인서로 만들까요?')) return;
+  if (!seal && !confirm('직인을 불러오지 못했습니다.\n날인 없는 확인서로 만들까요?')) return;
   const iss = v('icIssue') || _icToday();
   const [y, m, d] = iss.split('-');
   const issStr = `${y}년 ${+m}월 ${+d}일`;
@@ -8351,7 +8341,7 @@ th{background:#f0f0f0;font-weight:700;width:26%}
 <tr><th>면 접 일 자</th><td>${E(v('icDate'))}</td></tr>
 <tr><th>면 접 장 소</th><td>${E(v('icPlace'))}</td></tr>
 </table>
-<p class="txt">위 사람은 당사 신입사원 채용 면접에 참석하였음을 확인합니다.</p>
+<p class="txt">위 사람은 당사 ${_icEmpType(currentRound) ? _icEmpType(currentRound) + '사원 ' : ''}채용 면접에 참석하였음을 확인합니다.</p>
 <p class="date">${E(issStr)}</p>
 <div class="org"><div class="addr">인천광역시 연수구 인천신항대로 707</div>
 <div class="nm">${E(SENDER_INFO.companyFull)} 주식회사</div>
