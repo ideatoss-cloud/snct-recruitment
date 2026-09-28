@@ -1933,7 +1933,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.63';
+const APP_VERSION = 'v1.4.64';
 const APP_VERSION_DATE = '2026.09.28';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -7576,8 +7576,16 @@ function _smsText(tplKey, round) {
       + `입사가 어려우시더라도 알려주시면 됩니다.\n`
       + `문의 ${tel} (${who})`;
   }
+  // ✅ v1.4.64 (작업자 지시) — RSVP가 없는 메일도 「메일 보냈으니 확인해 달라」 문자를 공통으로 보낸다
+  const _plain = { docResult:'서류전형 결과 안내', interviewResult:'면접 결과 안내', healthCheckNotice:'채용검진 안내' };
+  if (tplKey !== 'interviewSchedule') {
+    return `[${SENDER_INFO.companyShort||'SNCT'}] 안녕하세요, ${co} ${SENDER_INFO.team||'관리팀'}입니다.\n\n`
+      + `${_plain[tplKey] || '채용 관련 안내'} 메일을 보내드렸습니다.\n`
+      + `메일함을 확인해 주시기 바랍니다. 보이지 않으면 스팸함도 확인 부탁드립니다.\n\n`
+      + `문의 ${tel} (${who})`;
+  }
   return `[${SENDER_INFO.companyShort||'SNCT'}] 안녕하세요, ${co} ${SENDER_INFO.team||'관리팀'}입니다.\n\n`
-    + (iv ? `${iv} 면접 안내 메일을 보내드렸는데\n` : `면접 안내 메일을 보내드렸는데\n`)
+    + (iv ?`${iv} 면접 안내 메일을 보내드렸는데\n` : `면접 안내 메일을 보내드렸는데\n`)
     + `참석 여부 회신이 아직 확인되지 않았습니다.\n`
     + `메일의 [면접 참석 여부 회신하기] 버튼을 눌러 참석 / 불참을 알려주시기 바랍니다.\n\n`
     + `참석이 어려우시더라도 알려주시면 됩니다 — 불이익은 없습니다.\n`
@@ -14270,16 +14278,16 @@ function showEmailEngagement(round, tplKey) {
   }
   noticeHtml += `<div style="margin-bottom:8px;display:flex;flex-wrap:wrap;align-items:center;gap:4px">
     ${_btn('rsvp','미응답', noRsvpCount)}${_btn('click','미확인', unclickedCount)}${_btn('all','전체', rows.length)}
-    ${tplMeta.hasRsvp ? `<button class="btn btn-o" style="font-size:11px;padding:4px 9px;margin-right:5px" onclick="_toggleSms()">💬 문자 문구</button>` : ''}
+    <button class="btn btn-o" style="font-size:11px;padding:4px 9px;margin-right:5px" onclick="_toggleSms()">💬 문자 문구</button>
     <span style="font-size:11px;color:var(--tx2)">번호는 쉼표로 이어 복사됩니다 — 문자 앱에 그대로 붙여넣으세요</span>
   </div>
-  ${tplMeta.hasRsvp ? `<div id="smsBox" style="display:none;margin-bottom:10px;background:rgba(255,255,255,0.03);border:1px solid var(--bd);border-radius:8px;padding:10px 12px">
+  <div id="smsBox" style="display:none;margin-bottom:10px;background:rgba(255,255,255,0.03);border:1px solid var(--bd);border-radius:8px;padding:10px 12px">
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:6px">
       <span style="font-size:12px;color:var(--tx2)">보내기 전에 고치셔도 됩니다 — 고친 내용 그대로 복사됩니다</span>
       <button class="btn btn-p" style="font-size:11px;padding:4px 10px" onclick="_copySmsText()">📋 문구 복사</button>
     </div>
     <textarea id="smsText" rows="8" style="width:100%;font-size:13px;line-height:1.7;background:var(--bg);color:var(--tx);border:1px solid var(--bd);border-radius:6px;padding:9px 11px;font-family:inherit;resize:vertical">${_escapeHtml(_smsText(tplKey, round))}</textarea>
-  </div>` : ''}`;
+  </div>`;   // v1.4.64: 문자 문구는 모든 메일 종류에 연다(작업자 지시)
 
   const rsvpLabelMap = tplMeta.rsvpLabels || {};
   const tableRows = rows.map(r => {
