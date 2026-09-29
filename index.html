@@ -1933,7 +1933,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.69';
+const APP_VERSION = 'v1.4.70';
 const APP_VERSION_DATE = '2026.09.29';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -5944,6 +5944,7 @@ async function callOpenAIConsensus(prompt, n = 3) {
   rep._fit_raw = Number(rep.fit_score) || 0; // 대표회차 원점수
   rep._fit_n = scores.length;                // 호출 횟수
   rep.fit_score = Math.round(avg);           // 평균(반올림)을 메인 점수로
+  try { rep._fit_diff = _fitRunDiff(valid.map(x => x.r)); } catch (e) { rep._fit_diff = null; }
   // ✅ v1.2.34: 결과 스키마 최소 검증. score_breakdown이 없으면 후처리(recalcLicenseScore·
   //   applyGpaScore)가 조기 return으로 통째로 스킵되어, 자격증·학점 코드보정이 빠진
   //   AI 원점수가 경고 없이 순위에 들어갔다. 여기서 throw해야 호출부가 error 처리 → 재분석 유도.
@@ -6074,6 +6075,54 @@ function _fitSignal(sd) {
   if (v < 1.5) return { tier:'stable',  label:'안정',  color:'#10b981', dot:'●' };
   if (v < 3)   return { tier:'caution', label:'주의',  color:'#f59e0b', dot:'●' };
   return         { tier:'review',  label:'재검토', color:'#dc2626', dot:'●' };
+}
+
+// ✅ v1.4.70 (2026.09.29, 작업자 지시) — **빨간불 다음에 할 일을 알려준다.**
+//   종전엔 ±SD만 보여줘서 「흔들렸다」는 것만 알고 무엇을 확인해야 할지 몰랐다 → 보고 넘어갔다.
+//   흔들림의 원인은 대부분 **AI가 서류에서 사실을 다르게 읽은 것**이다(경력 4년/6년, 자격증 누락).
+//   3회 채점을 비교해 ① 읽어낸 사실이 다른 항목 ② 항목 점수가 갈린 곳만 남긴다.
+//   → 사실이 갈렸으면 **그 항목만 PDF에서 확인**하면 된다. 사실이 같고 점수만 갈렸으면 원본 확인은 필요 없다.
+//   ⚠️ 새로 분석한 사람부터 생긴다. 옛 분석분은 회차별 내역을 저장하지 않았다.
+function _fitRunDiff(runs) {
+  if (!Array.isArray(runs) || runs.length < 2) return null;
+  const cut = v => String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, 60);
+  const facts = [];
+  const lic = r => (Array.isArray(r.licenses) ? r.licenses : String(r.licenses || '').split(','))
+    .map(x => String(x).trim()).filter(Boolean).sort().join(', ');
+  [['자격증', lic], ['총경력', r => cut(r.career_years)], ['최종학력', r => cut(r.education)],
+   ['학점', r => (r.gpa == null || r.gpa === '') ? '' : cut(r.gpa) + (r.gpa_scale ? '/' + r.gpa_scale : '')]]
+    .forEach(([label, get]) => {
+      const vals = runs.map(r => { try { return get(r || {}) || '(없음)'; } catch (e) { return '(없음)'; } });
+      if (new Set(vals).size > 1) facts.push({ item: label, vals: vals.map(v => String(v).slice(0, 80)) });
+    });
+  const items = [];
+  const keys = new Set();
+  runs.forEach(r => Object.keys((r && r.score_breakdown) || {}).forEach(k => keys.add(k)));
+  keys.forEach(k => {
+    const vals = runs.map(r => { const b = r && r.score_breakdown && r.score_breakdown[k]; return b && b.score != null ? Number(b.score) : null; });
+    const nums = vals.filter(v => Number.isFinite(v));
+    if (nums.length && Math.max(...nums) - Math.min(...nums) >= 2) items.push({ item: String(k).slice(0, 30), vals: vals });
+  });
+  return { facts: facts, items: items };
+}
+function _fitDiffHtml(r) {
+  const sig = _fitSignal(r._fit_sd);
+  if (!sig || sig.tier === 'stable') return '';
+  const d = r._fit_diff;
+  if (!d) return `<div style="font-size:11.5px;color:var(--tx2);margin-top:3px;opacity:.8">갈린 항목 내역 없음 — 이 기능(v1.4.70) 이전에 분석한 지원자입니다</div>`;
+  const E = _escapeHtml;
+  const line = x => `<div style="margin-top:2px"><b style="color:var(--tx)">${E(x.item)}</b> : ${x.vals.map(v => E(v == null ? '-' : String(v))).join(' <span style="opacity:.5">/</span> ')}</div>`;
+  if (d.facts.length) {
+    return `<div style="font-size:12.5px;margin-top:6px;padding:8px 11px;border-radius:8px;background:rgba(220,38,38,0.07);border:1px solid rgba(220,38,38,0.35);color:var(--tx2);line-height:1.6">
+      <b style="color:${sig.color}">▶ 원본 PDF에서 이 항목만 확인하세요</b> — AI가 ${d.facts.length}개 항목을 채점마다 다르게 읽었습니다
+      ${d.facts.map(line).join('')}
+      ${d.items.length ? `<div style="margin-top:5px;opacity:.85">점수가 갈린 곳 — ${d.items.map(x => E(x.item) + ' ' + x.vals.map(v => v == null ? '-' : v).join('·') + '점').join(' · ')}</div>` : ''}
+    </div>`;
+  }
+  return `<div style="font-size:12.5px;margin-top:6px;padding:8px 11px;border-radius:8px;background:rgba(255,255,255,0.03);border:1px solid var(--bd);color:var(--tx2);line-height:1.6">
+    <b style="color:var(--tx)">읽어낸 사실은 3회 모두 같습니다</b> — 같은 사실을 두고 점수 판단만 흔들렸습니다. 원본 확인은 필요 없습니다.
+    ${d.items.length ? `<div style="margin-top:3px">갈린 곳 — ${d.items.map(x => E(x.item) + ' ' + x.vals.map(v => v == null ? '-' : v).join('·') + '점').join(' · ')}</div>` : ''}
+  </div>`;
 }
 
 // ══════════════════════════════════════════
@@ -6981,7 +7030,7 @@ function showResult(id, sopts) {
         <div style="font-size:14px;color:var(--tx2)">${r.fit_comment||''}</div>
         ${bonus>0?`<div style="font-size:13px;color:var(--gold);margin-top:4px">기본 ${r.fit_score}점 + 가산점 ${bonus}점</div>`:''}
         ${r._scoring_version?`<div style="font-size:11px;color:var(--tx2);opacity:.7;margin-top:5px;font-family:'DM Mono',monospace" title="채점기준 = 모델 / 프롬프트 해시 / 자격증표 해시 / 루브릭 판 / 앱 버전. 다른 회차와 이 값이 다르면 같은 저울이 아닙니다.">🏷 ${_escapeHtml(r._scoring_version)}</div>`:''}
-        ${(r._fit_sd!=null && !r._disqualified)?(()=>{const sig=_fitSignal(r._fit_sd);return sig?`<div style="font-size:12px;margin-top:6px;color:var(--tx2)">🎯 AI 채점 신뢰도 <span style="color:${sig.color};font-weight:700">${sig.dot} ${sig.label}</span> <span style="opacity:0.65">(${r._fit_n||3}회 채점 ±${r._fit_sd})</span></div>`:'';})():''}
+        ${(r._fit_sd!=null && !r._disqualified)?(()=>{const sig=_fitSignal(r._fit_sd);return sig?`<div style="font-size:12px;margin-top:6px;color:var(--tx2)">🎯 AI 채점 신뢰도 <span style="color:${sig.color};font-weight:700">${sig.dot} ${sig.label}</span> <span style="opacity:0.65">(${r._fit_n||3}회 채점 ±${r._fit_sd})</span></div>${_fitDiffHtml(r)}`:'';})():''}
       </div>
     </div>
     ${breakdownHtml}
