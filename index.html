@@ -1933,8 +1933,8 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.65';
-const APP_VERSION_DATE = '2026.09.28';
+const APP_VERSION = 'v1.4.66';
+const APP_VERSION_DATE = '2026.09.29';
 let currentRound = ''; // 현재 선택된 회차
 
 const JOBS = {
@@ -8438,7 +8438,9 @@ function _voteMailData(){
   // 화면 토글과 무관하게 투표 점수 순으로 다시 세운다(동점은 서류점수)
   const list = [...src].sort((a,b) =>
     ((b.total||0)-(a.total||0)) || ((b.score||0)-(a.score||0)));
-  const n = Math.max(1, Math.min(99, Number(document.getElementById('vmCount')?.value) || 5));
+  // ⚠️ v1.4.66 — **후보 수를 넘지 않게.** 1명 회차(추천 채용)에서 기본값 5가 그대로 들어가
+  //   메일에 「상위 5명을 면접 대상자로 확정」이라고 나가고 확정 버튼도 「5명 확정」이 됐다.
+  const n = Math.max(1, Math.min(99, list.length || 99, Number(document.getElementById('vmCount')?.value) || 5));
   return {
     round: vr.round || '',
     list, n,
