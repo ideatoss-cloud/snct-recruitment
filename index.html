@@ -1933,7 +1933,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.66';
+const APP_VERSION = 'v1.4.67';
 const APP_VERSION_DATE = '2026.09.29';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -12782,17 +12782,18 @@ const JOB_TEAM_MAP = {
   '인사노무':    { team: '관리팀', part: '인사노무' },
   '총무':       { team: '관리팀', part: '총무' },
   '법무':       { team: '관리팀', part: '법무' },
-  '재무회계':    { team: '관리팀', part: '재무회계' },
   '경리':       { team: '관리팀', part: '경리' },
   '안전보안':    { team: '관리팀', part: '안전보안' },
+  // 재무 — v1.4.67 작업자 지적: 「재무회계면 재무팀」. 관리팀으로 잘못 들어가 있었다
+  '재무회계':    { team: '재무팀', part: '재무회계' },
   // 영업·통관
   '영업관리':    { team: '영업팀', part: '영업관리' },
   '정산':       { team: '영업팀', part: '정산' },
   '세관':       { team: '영업팀', part: '통관' },
   'CFS':       { team: '영업팀', part: 'CFS' },
   // 통합 이전 구 직종
-  '재무':       { team: '관리팀', part: '재무회계' },
-  '회계':       { team: '관리팀', part: '재무회계' }
+  '재무':       { team: '재무팀', part: '재무회계' },
+  '회계':       { team: '재무팀', part: '재무회계' }
 };
 function _jobTeam(job) { return JOB_TEAM_MAP[String(job || '').trim()] || null; }
 
