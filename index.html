@@ -1933,8 +1933,8 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.70';
-const APP_VERSION_DATE = '2026.09.29';
+const APP_VERSION = 'v1.4.71';
+const APP_VERSION_DATE = '2026.10.02';
 let currentRound = ''; // 현재 선택된 회차
 
 const JOBS = {
@@ -1963,7 +1963,7 @@ const REQUIRED_LICENSES = {
 //     R  : 루브릭 판. 자격증·학점·학력 계산식(recalcLicenseScore·applyGpaScore·checkEduDisqualify)을
 //          손댈 때 **사람이 올린다.** 자동 계산 대상이 아니라 잊기 쉬우니 함수 주석에 함께 적어둔다.
 //   ⚠️ 이 값은 **비교용 꼬리표**다. 다르다고 점수가 틀렸다는 뜻이 아니라 「같은 저울이 아니다」는 뜻이다.
-const SCORING_RUBRIC_VER = 'R1';   // 2026.09.07 기준 — 자격증(recalcLicenseScore)·학점(applyGpaScore)·학력(checkEduDisqualify v1.4.14)
+const SCORING_RUBRIC_VER = 'R2';   // 2026.10.02 R2 — 전기정비 전기설비보전 가산(applyElecMaintBonus v1.4.71) 추가 · R1(2026.09.07) 자격증·학점·학력
 function _hash6(str) {
   let h = 5381; str = String(str || '');
   for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) | 0;
@@ -3597,6 +3597,7 @@ async function analyzeAll(skipConfirm) {
           a.result = recalcLicenseScore(a.result, RELATED_LICENSES[a.job]||[]);
           // ✅ 학점 점수 코드 직접 계산으로 덮어쓰기 (AI 계산 오류 방지)
           a.result = applyGpaScore(a.result, empType, job);
+          a.result = applyElecMaintBonus(a.result, a.job || job);   // v1.4.71
         }
         // ✅ v1.2.40: 사진 기반 성별 판별(별도 호출). 실패·사진없음이면 병역 기반 값 유지.
         await applyPhotoGender(a);
@@ -3925,6 +3926,7 @@ async function reanalyzeOne(id) {
         a.result = recalcLicenseScore(a.result, RELATED_LICENSES[a.job]||[]);
         // ✅ 학점 점수 코드 직접 계산으로 덮어쓰기 (AI 계산 오류 방지)
         a.result = applyGpaScore(a.result, empType, job);
+        a.result = applyElecMaintBonus(a.result, a.job || job);   // v1.4.71
       }
       // ✅ v1.2.40: 사진 기반 성별 판별 — 일괄분석(analyzeAll)과 동일하게 개별 재분석에도 적용
       await applyPhotoGender(a);
@@ -6196,6 +6198,21 @@ function applyGpaScore(result, empType, job) {
   return result;
 }
 
+// ✅ v1.4.71 — 전기설비보전 가산은 **표에 있는 값만** 쓴다(0·2·4·6). AI가 3·5점을 주거나
+//   다른 직종에 이 항목을 넣으면 고친다. 학점(applyGpaScore)과 같은 방식으로 fit_score를 보정한다.
+function applyElecMaintBonus(result, job) {
+  if (!result || !result.score_breakdown) return result;
+  const bd = result.score_breakdown;
+  const key = Object.keys(bd).find(k => /전기\s*설비\s*보전/.test(k));
+  if (!key) return result;
+  const old = Number(bd[key].score) || 0;
+  const v = job === '전기정비기사' ? [6, 4, 2, 0].find(x => x <= old) : 0;
+  if (job !== '전기정비기사') delete bd[key];
+  else bd[key] = { score: v, max: 6, reason: String(bd[key].reason || '') + (v !== old ? ` [코드보정 ${old}→${v}점]` : '') };
+  if (v !== old) result.fit_score = Math.max(0, Math.min(100, (result.fit_score || 0) - old + v));
+  return result;
+}
+
 // ══════════════════════════════════════════
 // 평가 프롬프트
 // ══════════════════════════════════════════
@@ -6306,14 +6323,22 @@ function makePrompt(empType, job, pdfText) {
   const majNote = relMaj
     ? `관련학과=+3점 가산(학과명에 [${relMaj}] 중 하나가 포함되면 인정. 예: 세무학과·경영학전공·회계정보학과. 단 해당 항목 배점 상한 초과 불가)`
     : '학과 무관';
+  // ✅ v1.4.71 (2026.10.02, 작업자 확정) — **전기정비기사 「전기설비 보전」 경력 가산.**
+  //   발단: 9월 전기정비 입사자 김원석 — 전 직장(식품공장) 전기 설비보전 업무가 「전기정비에 많이 도움되고
+  //   적응에도 좋았다」. 신입 기준표엔 경력 배점이 없고, 경력 기준표는 크레인 중심이라 이런 경력을 셀 자리가 없었다.
+  //   작업자 확정: 연수별 최대 +6 (1년미만 +2 · 1~3년 +4 · 3년↑ +6) / 신입·경력 모두 /
+  //   인정 = 공장·플랜트 전기설비 보전, 발전·태양광 설비 운영 · 불인정 = 빌딩·시설 전기관리, 전기공사·시공.
+  //   점수는 applyElecMaintBonus가 허용값(0·2·4·6)으로 다시 맞춘다.
+  const isElec = job === '전기정비기사';
+  const elecBonus = isElec ? `전기설비보전 경력 가산 (최대+6점, 위 항목 배점과 겹치지 않는 별도 가산항목): 인정 경력 = 공장·플랜트의 전기설비 보전(생산설비 전기 유지보수·점검·고장수리), 발전소·태양광 등 발전설비 운영·점검. ⚠️불인정 = 빌딩·아파트·시설 전기 유지관리, 전기공사·배선·설치 시공, 전기 무관 업무. 경력사항의 담당업무 기재로만 판단하고 회사명만으로 추측 금지. 인정 경력의 재직기간 합산: 3년↑=+6, 1~3년=+4, 1년미만=+2, 없음=0. score_breakdown에 "전기설비보전가산" 항목으로 넣고 reason에 "<회사명> <기간> <담당업무> → N점"을 남길 것` : '';
   let criteria = '';
   if (isField && empType==='경력') {
     criteria=`【현장직 경력 점수 기준 (100점)】
-1. 경력관련성×연수 (40점): 항만/컨테이너터미널 직접경험=100%, 중공업/조선/제조크레인=70%, 물류/창고중장비=50%, 건설장비=40%, 무관=0%. 유효경력 10년↑=36, 7~10=30, 5~7=24, 3~5=17, 1~3=10, 1년미만=4, 0=0. ⚠️평균재직1년미만 -8점. ⚠️10년↑이어도 직접관련 아니면 만점불가
+1. 경력관련성×연수 (40점): 항만/컨테이너터미널 직접경험=100%, 중공업/조선/제조크레인=70%, 물류/창고중장비=50%, 건설장비=40%, 무관=0%.${isElec ? ' (전기정비기사: 공장·플랜트 전기설비 보전, 발전·태양광 설비 운영=70%)' : ''} 유효경력 10년↑=36, 7~10=30, 5~7=24, 3~5=17, 1~3=10, 1년미만=4, 0=0. ⚠️평균재직1년미만 -8점. ⚠️10년↑이어도 직접관련 아니면 만점불가
 2. 직무관련자격증 (30점): 관련목록[${relLic}]만 인정. 3개↑=27, 2개=20, 1개=11, 0개=0. ⚠️만점은 3개이상+고난도자격증 보유시만
 3. 물류/항만업계경험 (20점): 5년↑=17, 3~5=13, 1~3=9, 1년미만=4, 없음=0. ⚠️단순 물류창고는 3점 감산
 4. 학력 (10점): 아래 [학력 티어 정의] 기준 채점. ${eduScale(10)}. ${majNote} ${EDU_FIELD_NOTE}
-5. 학점 가산 (최대+5점, 위 항목 배점과 겹치지 않는 별도 가산항목): ${gpaNote}`;
+5. 학점 가산 (최대+5점, 위 항목 배점과 겹치지 않는 별도 가산항목): ${gpaNote}${elecBonus ? '\n6. ' + elecBonus : ''}`;
   } else if (isField && empType==='신입') {
     criteria=`【현장직 신입 점수 기준 (100점)】
 1. 직무관련자격증 (30점): 관련목록[${relLic}]만 인정. 3개↑=27, 2개=20, 1개=11, 0개=0. ⚠️만점은 3개이상 보유시만
@@ -6328,7 +6353,7 @@ function makePrompt(empType, job, pdfText) {
      · 18점: 검증가능 근거 2개↑ AND 그중 직무관련 1개↑
      · 12점: 검증가능 근거 1~2개, 직무관련 없거나 약함
      · 7점: 동아리·봉사 정도만, 차별성·직무관련성 없음
-     · 3점: 추상적 표현만, 검증가능 근거 없음`;
+     · 3점: 추상적 표현만, 검증가능 근거 없음${elecBonus ? '\n5. ' + elecBonus : ''}`;
   } else if (!isField && empType==='경력') {
     criteria=`【사무직 경력 점수 기준 (100점)】
 1. 경력관련성×연수 (35점): 항만/물류/해운동일직무=100%, 타업종동일직무=70%, 유사직무=40%, 무관=0%. 유효경력 10년↑=32, 7~10=26, 5~7=21, 3~5=15, 1~3=9, 1년미만=3, 0=0. ⚠️평균재직1년미만 -7점. ⚠️만점은 동일직무 10년↑인 경우만
