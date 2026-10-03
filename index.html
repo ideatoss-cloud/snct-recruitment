@@ -1932,7 +1932,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.74';
+const APP_VERSION = 'v1.4.75';
 const APP_VERSION_DATE = '2026.10.03';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -2062,6 +2062,20 @@ function renderReserveRankBadge(result) {
 // ✅ v1.0.40: 효과 결과(effective result) — 저장된 최종결정 우선, 없으면 면접관 집계
 // saveFinalResult가 _면접집계의 9번째 컬럼(finalResult)에 저장한 마스터 결정값을
 // 모든 분류·렌더에 일관 적용. 마스터가 결정 안 했으면 면접관 verdict 집계(result)로 폴백.
+// ✅ v1.4.75 (점검) — **예비 → 합격 승격 판정은 한 곳에서.**
+//   종전 기준은 「면접관 집계(r.result)가 예비 + 최종 합격」이었다. 그래서 ① 처음부터 마스터가 합격으로
+//   정한 사람이 「결원이 발생하여」 메일을 받고 ② 순위 입력 회차(집계가 늘 「보류」)에선 진짜 승격자가
+//   일반 문구를 받았다. 최종 결과 변경 이력(GAS @126 {회차}_결과이력)이 있으면 그것만 본다.
+//   이력이 없는 옛 회차만 종전 기준으로 추정한다.
+function _wasPromoted(round, name, iv, eff) {
+  if (eff !== '합격') return false;
+  const same = String(window.__currentRoundId || '') === String(round || '');
+  const hs = (same && window.__currentRoundResultHistory) || [];
+  const nm = String(name || '').replace(/\s+/g, '');
+  const mine = hs.filter(h => String(h.name || '').replace(/\s+/g, '') === nm);
+  if (mine.length) return mine.some(h => isReserve(h.before) && h.after === '합격');
+  return !!(iv && isReserve(iv.result));
+}
 function effectiveResult(r) {
   if (!r) return '';
   const f = r.finalResult && String(r.finalResult).trim();
@@ -3712,7 +3726,9 @@ async function reanalyzeAll() {
   msg += `\n\n계속할까요?`;
   if (!confirm(msg)) return;
 
-  ready.forEach(a => { a.status = 'wait'; a.result = null; a.analysisError = null; a.pdfText = null; });
+  // v1.4.75 (점검): 재분석이 실패하면 저장 때 이 사람 행이 시트에서 통째로 빠졌다(저장은 완료자만 보내 시트를 새로 쓴다).
+  //   기존 결과를 보관해 두고, 실패하면 saveToSheet가 이 값으로 저장한다.
+  ready.forEach(a => { if (a.result) a._prevResult = a.result; a.status = 'wait'; a.result = null; a.analysisError = null; a.pdfText = null; });
   analysisSaved = false;
   renderAlist(); updateBadge();
   toast(`전체 재분석 시작 — ${ready.length}명`, 'ok');
@@ -3880,7 +3896,9 @@ async function saveMemoLocal(appId) {
 async function reanalyzeOne(id) {
   if (!isAdmin) return;
   if (!API_KEY) { openApi(); return; }
-  const a = applicants.find(x => x.id === id);
+  // v1.4.75 (점검): 업로드 직후 id는 숫자(Date.now()+Math.random())인데 버튼은 '${a.id}' 문자열을 넘긴다
+  //   → 엄격 비교로 못 찾아 [이 사람만 재분석]이 아무 반응 없이 끝났다. 다른 함수처럼 값으로 비교한다.
+  const a = applicants.find(x => String(x.id) === String(id));
   if (!a) return;
   // 수동입력 항목은 PDF 없음 → 수동 입력 폼으로 리다이렉트
   if (a._manual || !a.b64) { showManualInput(a); return; }
@@ -3968,8 +3986,14 @@ let _saving = false;
 async function saveToSheet() {
   if (_saving) { toast('이미 저장 중입니다 — 끝날 때까지 기다려 주세요','err'); return; }
   if (!GAS_URL) { toast('GAS URL을 먼저 설정해주세요','err'); openApi(); return; }
+  // ⚠️⚠️ v1.4.75 (2026.10.03 점검) — **분석 실패자를 시트에서 지우지 않는다.**
+  //   GAS saveAnalysis는 보낸 명단으로 회차 시트를 통째로 새로 쓴다. 종전엔 완료자만 보내서,
+  //   재분석 중 실패한 사람(전체 재분석은 시작 때 결과를 비운다)은 기존 점수·가산점·PDF 링크째 사라졌다.
+  //   → 실패했어도 이전 결과가 있으면 그 결과로 함께 저장한다. 처음 올린 뒤 실패한 사람은 원래 시트에 없었다.
   const done = applicants.filter(a=>a.status==='done');
-  if (!done.length) { toast('분석 완료된 지원자가 없습니다','err'); return; }
+  const _kept = applicants.filter(a => a.status !== 'done' && (a.result || a._prevResult));
+  if (!done.length && !_kept.length) { toast('분석 완료된 지원자가 없습니다','err'); return; }
+  if (_kept.length) toast(`분석 실패 ${_kept.length}명은 이전 결과로 저장합니다 — ${_kept.map(a => (a.result||a._prevResult).name || a.name).join(', ')}`, 'warn');
   // 회차명: 이미 있으면 유지, 없으면 날짜+직종으로 자동생성
   const empType = document.getElementById('empType').value;
   const job = document.getElementById('jobSel').value;
@@ -3993,7 +4017,7 @@ async function saveToSheet() {
   try {
     const res = await fetch(GAS_URL, {method:'POST', headers:{'Content-Type':'text/plain'}, body:JSON.stringify({action:'saveAnalysis', userEmail: currentUserEmail, round:currentRound, empType, job,
       // pdfText 제외, b64는 GAS에서 Drive에 저장하기 위해 포함
-      applicants:done.map(a => ({...a, pdfText:undefined, b64:a.driveUrl?null:a.b64, _bonus:bonusScores[a.id]||{}}))})});
+      applicants:done.concat(_kept).map(a => ({...a, status:'done', result: a.status === 'done' ? a.result : (a.result || a._prevResult), _prevResult:undefined, analysisError:undefined, pdfText:undefined, b64:a.driveUrl?null:a.b64, _bonus:bonusScores[a.id]||{}}))})});
     const data = await res.json();
     if (data.success) {
       analysisSaved = true;
@@ -5131,7 +5155,7 @@ function _extractEmailRecipients(templateType, apps, ivResults, confirmedNames, 
         if (eff === '합격') {
           // v1.4.8: 면접관 집계는 예비합격인데 최종결정이 합격 → **TO가 나서 승격된 사람**.
           //   이미 유선으로 의향까지 확인한 뒤 보내는 메일이라 문구를 달리한다.
-          const promoted = isReserve(iv.result) && eff === '합격';
+          const promoted = _wasPromoted(round, r.name, iv, eff);   // v1.4.75: 이력 기준
           recipients.push({ app:r, type:'healthCheckNotice', currentResult: eff, promoted: promoted });
         }
       }
@@ -10210,16 +10234,19 @@ async function markAbsent() {
 
 async function cancelAbsent(name) {
   if (!confirm(`[${name}] 불참 처리를 취소하고 면접 대상자로 복원할까요?`)) return;
-  absentList = absentList.filter(x => x.name !== name);
-  // GAS에서 해당 기록 삭제
+  // v1.4.75 (점검): 서버가 거절해도(종결 회차 등) 화면은 「복원됩니다」를 띄우고 목록에서 먼저 지웠다.
+  //   서버 결과를 보고 나서 처리한다.
   if (GAS_URL && currentRound) {
     try {
-      await fetch(GAS_URL, {
+      const res = await fetch(GAS_URL, {
         method: 'POST', headers: {'Content-Type':'text/plain'},
         body: JSON.stringify({ action: 'cancelAbsent', userEmail: currentUserEmail, round: currentRound, applicantName: name })
       });
-    } catch(e) {}
+      const d = await res.json();
+      if (!d.success) { toast('복원 실패: ' + (d.message || ''), 'err'); return; }
+    } catch(e) { toast('복원 실패: ' + e.message, 'err'); return; }
   }
+  absentList = absentList.filter(x => x.name !== name);
   toast(`[${name}] 불참 취소 — 면접 대상자로 복원됩니다`, 'ok');
   renderAbsentList();
   await refreshIvApplicants();
@@ -12517,6 +12544,18 @@ async function loadResultDetail() {
     try { await loadIvAttendance(round); } catch (e) {}
     const apps = aData.applicants || [];
     const ivResults2 = ivData2.results || [];
+    // ⚠️ v1.4.75 (2026.10.03 점검) — **종합점수를 받는 순간 공통 식으로 바꿔 둔다.**
+    //   GAS _면접집계의 「종합점수」는 옛 식(서류 40 · 면접 60)이다. 이 탭의 결과 카드·예비 정렬과
+    //   이 배열을 이어 쓰는 화면들이 그 값을 그대로 찍어, 같은 사람이 전체 현황 표(인적성 50 · 면접 50)와
+    //   다른 점수로 보였다. 옛 값은 _gasTotal로 남긴다.
+    ivResults2.forEach(r => {
+      r._gasTotal = r.total;
+      const _apt = aptMap[r.name];
+      const _a = _apt && _apt.score !== '' && _apt.score != null ? Number(_apt.score) : null;
+      const _i = (Number(r.cnt) > 0 && r.ivScore !== '' && r.ivScore != null) ? Number(r.ivScore) : null;
+      r.aptScore = _a;
+      r.total = (_a == null && _i == null) ? 0 : calcWeightedTotal(null, _a, _i);
+    });
     const ivDetails = ivData2.details || [];
     // ✅ v1.0.47: PDF 교차검증 모달이 합격자의 driveUrl/연락처/이메일 조회용으로 사용
     // ✅ v1.0.49: 이메일 발송 모달도 confirmedNames/absentNames 필요 — 같이 캐시
@@ -12649,7 +12688,7 @@ function renderResultGroup(title, items, details, color, bg) {
           </div>
           <div style="text-align:right">
             <div style="font-size:16px;font-weight:800;color:${color};font-family:'DM Mono',monospace">${r.total||0}점</div>
-            <div style="font-size:12px;color:var(--tx2)">지원서${r.docScore||0} · 면접${r.ivScore||0}</div>
+            <div style="font-size:12px;color:var(--tx2)">인적성${r.aptScore==null?'-':r.aptScore} · 면접${r.ivScore||0}</div>
           </div>
         </div>
         ${myDetails.length ? `<div style="border-top:1px solid var(--bd);padding-top:8px;margin-top:4px">
@@ -14409,7 +14448,9 @@ async function openHealthCheckListModal(round) {
   const passers = [];
   apps.forEach(a => {
     const r = a.result || {};
-    if (!r.email || !r.name) return;
+    // v1.4.75 (점검): 메일 대상 조건(이메일 필수)을 그대로 가져와, 이메일이 없는 합격자가 병원 명단에서
+    //   조용히 빠졌다(품의서엔 들어가 인원이 안 맞았다). 병원 명단엔 이메일이 필요 없다.
+    if (!r.name) return;
     const iv = ivResults.find(ir => (ir.name||'').replace(/\s+/g,'') === r.name.replace(/\s+/g,''));
     // v1.4.60: 이 명단은 **병원에 그대로 넘어간다** — 면접에 오지 않은 사람이 섞이면 안 된다
     if (iv && !absentNames.includes(r.name) && !_isIvAbsent(_hcRound, r.name)) {
