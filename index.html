@@ -1932,7 +1932,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.76';
+const APP_VERSION = 'v1.4.77';
 const APP_VERSION_DATE = '2026.10.03';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -5132,11 +5132,22 @@ function hideProgressModal() {
 //   전역(currentRound)으로 판정하면 다른 회차 값이 섞인다(기술인계서 0장).
 function _extractEmailRecipients(templateType, apps, ivResults, confirmedNames, absentNames, includeReserve, round) {
   const recipients = [];
+  // ⚠️⚠️ v1.4.77 (2026.10.03 점검) — **동명이인은 자동 대상에서 뺀다.**
+  //   확정 명단·면접 결과·참석 여부는 **이름으로만** 남아 있어, 같은 회차에 같은 이름이 둘이면
+  //   서로의 판정이 섞인다(서류 불합격자가 최종합격·검진 안내를 받을 수 있다). 메일은 되돌릴 수 없으므로
+  //   구별할 근거가 없는 사람은 보내지 않고, 발송 창에 이름을 밝혀 직접 확인하게 한다.
+  const _nk = v => String(v || '').replace(/\s+/g, '');
+  const _cnt = {};
+  (apps || []).forEach(a => { const n = _nk(a && a.result && a.result.name); if (n) _cnt[n] = (_cnt[n] || 0) + 1; });
+  const _dupSkip = [];
+  const _isDup = r => { if ((_cnt[_nk(r.name)] || 0) > 1) { if (_dupSkip.indexOf(r.name) < 0) _dupSkip.push(r.name); return true; } return false; };
+  recipients._dupSkipped = _dupSkip;
   if (templateType === 'docResult') {
     // ✅ v1.0.58: 서류 불합격자만 (합격자는 면접 안내 메일로 합격 통보 대체)
     apps.forEach(a => {
       const r = a.result || {};
       if (!r.email || !r.name) return;
+      if (_isDup(r)) return;   // v1.4.77
       const isFail = r._disqualified || !confirmedNames.includes(r.name);
       if (isFail) {
         recipients.push({ app:r, isPass:false, type:'docResult' });
@@ -5150,6 +5161,7 @@ function _extractEmailRecipients(templateType, apps, ivResults, confirmedNames, 
     apps.forEach(a => {
       const r = a.result || {};
       if (!r.email || !r.name) return;
+      if (_isDup(r)) return;   // v1.4.77
       if (confirmedNames.includes(r.name) && !absentNames.includes(r.name)
           && !_isIvAbsent(round, r.name)) {
         recipients.push({ app:r, type:'interviewSchedule' });
@@ -5160,6 +5172,7 @@ function _extractEmailRecipients(templateType, apps, ivResults, confirmedNames, 
     apps.forEach(a => {
       const r = a.result || {};
       if (!r.email || !r.name) return;
+      if (_isDup(r)) return;   // v1.4.77
       const iv = ivResults.find(ir => (ir.name||'').replace(/\s+/g,'') === r.name.replace(/\s+/g,''));
       // v1.4.60: 면접을 보지 않은 사람은 면접 이후 단계 메일의 대상이 아니다.
       //   평소엔 면접 결과가 없어 자연히 빠지지만, 옛 기록이 남아 있으면 나갈 수 있다.
@@ -5177,6 +5190,7 @@ function _extractEmailRecipients(templateType, apps, ivResults, confirmedNames, 
     apps.forEach(a => {
       const r = a.result || {};
       if (!r.email || !r.name) return;
+      if (_isDup(r)) return;   // v1.4.77
       const iv = ivResults.find(ir => (ir.name||'').replace(/\s+/g,'') === r.name.replace(/\s+/g,''));
       // v1.4.60: 면접을 보지 않은 사람은 면접 이후 단계 메일의 대상이 아니다.
       //   평소엔 면접 결과가 없어 자연히 빠지지만, 옛 기록이 남아 있으면 나갈 수 있다.
@@ -5195,6 +5209,7 @@ function _extractEmailRecipients(templateType, apps, ivResults, confirmedNames, 
     apps.forEach(a => {
       const r = a.result || {};
       if (!r.email || !r.name) return;
+      if (_isDup(r)) return;   // v1.4.77
       const iv = ivResults.find(ir => (ir.name||'').replace(/\s+/g,'') === r.name.replace(/\s+/g,''));
       // v1.4.60: 면접을 보지 않은 사람은 면접 이후 단계 메일의 대상이 아니다.
       //   평소엔 면접 결과가 없어 자연히 빠지지만, 옛 기록이 남아 있으면 나갈 수 있다.
@@ -5306,8 +5321,9 @@ function openEmailSendModal(templateType, round, opts) {
 
   // ✅ v1.0.58: includeReserve는 더 이상 사용 안 함 (healthCheckNotice는 합격자 전용)
   let recipients = _extractEmailRecipients(templateType, apps, ivResults, confirmedNames, absentNames, false, round);
+  const _dupSkipped = recipients._dupSkipped || [];   // v1.4.77
   if (!recipients.length) {
-    toast('발송 대상이 없습니다 (이메일 누락 또는 단계 미충족)','err');
+    toast('발송 대상이 없습니다 (이메일 누락 또는 단계 미충족)' + (_dupSkipped.length ? ' · 동명이인 제외: ' + _dupSkipped.join(', ') : ''),'err');
     return;
   }
 
@@ -5498,6 +5514,13 @@ function openEmailSendModal(templateType, round, opts) {
   // ✅ v1.0.52: 회차 종료 시 안내 + healthCheckNotice의 예비합격자 토글
   // v1.4.35: 걸러낸 사실을 숨기지 않는다. 전원에게 보내려면 여기서 바꾼다.
   let sentNotice = '';
+  if (_dupSkipped.length) {
+    sentNotice += `<div style="background:rgba(255,82,82,0.09);border-left:3px solid var(--red);padding:9px 12px;border-radius:4px;margin-bottom:10px;font-size:12.5px;line-height:1.7;color:var(--red)">
+      ⚠️ <b>동명이인 ${_dupSkipped.length}명은 자동 발송에서 뺐습니다</b> — ${_escapeHtml(_dupSkipped.join(', '))}<br>
+      <span style="color:var(--tx2)">이 회차에 같은 이름의 지원자가 둘 이상이라, 누가 이 메일의 대상인지 시스템이 구별할 수 없습니다.
+      결과를 직접 확인한 뒤 해당하는 분께만 개별로 보내 주세요.</span>
+    </div>`;
+  }
   if (_wasInvited.length) {
     sentNotice += `<div style="background:rgba(244,168,0,0.10);border-left:3px solid var(--gold);padding:9px 12px;border-radius:4px;margin-bottom:10px;font-size:12.5px;line-height:1.7;color:var(--gold)">
       ⚠️ <b>면접 안내를 이미 받은 ${_wasInvited.length}명을 제외했습니다</b> — ${_escapeHtml(_wasInvited.join(', '))}<br>
