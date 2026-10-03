@@ -1932,7 +1932,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.81';
+const APP_VERSION = 'v1.4.82';
 const APP_VERSION_DATE = '2026.10.03';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -5837,22 +5837,34 @@ async function confirmEmailSend() {
   showProgressModal('📧 이메일 발송 진행 중', `<b>${recipients.length}명</b>에게 이메일을 발송 중입니다.<br><br><span style="color:var(--gold)">수신자당 약 0.5~1초</span> 소요됩니다.${attachmentNames.length ? `<br>📎 첨부 ${attachmentNames.length}개 포함` : ''}<br>중간에 창을 닫지 마세요.`);
 
   try {
-    const res = await fetch(GAS_URL, {
-      method:'POST', headers:{'Content-Type':'text/plain'},
-      body: JSON.stringify({
-        action: 'sendApplicantEmail',
-        userEmail: currentUserEmail,
-        round: pending.round,
-        templateType: pending.templateType,
-        recipients,
-        // ✅ v1.0.55: 회신 메일 (GAS의 replyTo 옵션)
-        replyToEmail: SENDER_INFO.replyToEmail || '',
-        // ✅ v1.0.57: 자동 첨부 파일명 (GAS가 Drive 폴더에서 검색)
-        attachmentNames,
-        attachmentFolderName: SENDER_INFO.attachmentFolderName
-      })
-    });
-    const data = await res.json();
+    const _sendBody = {
+      action: 'sendApplicantEmail',
+      userEmail: currentUserEmail,
+      round: pending.round,
+      templateType: pending.templateType,
+      recipients,
+      // ✅ v1.0.55: 회신 메일 (GAS의 replyTo 옵션)
+      replyToEmail: SENDER_INFO.replyToEmail || '',
+      // ✅ v1.0.57: 자동 첨부 파일명 (GAS가 Drive 폴더에서 검색)
+      attachmentNames,
+      attachmentFolderName: SENDER_INFO.attachmentFolderName
+    };
+    const _post = async b => (await fetch(GAS_URL, { method:'POST', headers:{'Content-Type':'text/plain'}, body: JSON.stringify(b) })).json();
+    let data = await _post(_sendBody);
+    // ⚠️ v1.4.82 (GAS @133): 첨부를 못 찾으면 서버가 **보내기 전에** 멈춘다. 여기서 확인을 받는다.
+    //   본문이 「첨부된 서류를 참조하여」라고 말하므로, 첨부 없이 나가는 것은 사람이 정해야 한다.
+    if (data && !data.success && data.needConfirm) {
+      hideProgressModal();
+      const miss = (data.missingAttachments || []).join('\n• ');
+      if (!confirm('⚠️ 첨부 파일을 찾지 못해 아직 아무에게도 보내지 않았습니다.\n\n• ' + miss + '\n\n'
+        + "('" + (SENDER_INFO.attachmentFolderName || 'SNCT_메일_첨부') + "' 폴더에 같은 이름으로 올린 뒤 다시 보내는 것을 권합니다)\n\n"
+        + '본문에 「첨부 참조」 문구가 있습니다. 그래도 첨부 없이 지금 보낼까요?')) {
+        toast('발송을 취소했습니다 — 첨부 파일을 올린 뒤 다시 보내 주세요', 'warn');
+        return;
+      }
+      showProgressModal('📧 이메일 발송 진행 중', `<b>${recipients.length}명</b>에게 첨부 없이 발송 중입니다.<br>중간에 창을 닫지 마세요.`);
+      data = await _post(Object.assign({}, _sendBody, { allowMissingAttachments: true }));
+    }
     hideProgressModal();
     if (data.success) {
       // ✅ v1.0.57: 첨부 누락 안내
