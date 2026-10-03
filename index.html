@@ -1933,7 +1933,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.83';
+const APP_VERSION = 'v1.4.84';
 const APP_VERSION_DATE = '2026.10.03';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -12006,6 +12006,7 @@ async function saveEmployment(name, empId) {
     const data = await res.json();
     if (data.success) {
       window._employmentData[name] = {joinDate, leaveDate};
+      _empStale = true;   // v1.4.84: 입사자 관리 목록을 다음에 열 때 다시 받는다
       if (msgEl) msgEl.innerHTML = `<span style="color:var(--green)">✅ 저장 완료${joinDate ? ' · 입사 '+joinDate : ''}${leaveDate ? ' · 퇴사 '+leaveDate : ' · 재직 중'}</span>`;
       toast(name + ' 입퇴사 기록 저장', 'ok');
     } else {
@@ -13065,9 +13066,18 @@ let empList = [];          // 서버에서 받은 전체
 let _empTimer = null;
 let _empDirty = {};        // {round|name: true}
 
+// ⚠️ v1.4.84 (2026.10.03, 작업자: 「입사자 집계에 입사일자가 채용집계에서 입력한 거랑 연동이 안 된다」)
+//   두 화면은 같은 시트(_입퇴사, 회차|이름)를 쓴다 — 저장은 맞게 되고 있었다. 문제는 이 화면이
+//   **처음 받은 목록을 들고 있다가 탭을 다시 열어도 다시 받지 않은 것**이다. 채용 집계에서 입사일을
+//   넣거나 예비합격자를 합격으로 올려도 여기엔 옛 목록(입사일 빈칸·명단 누락)이 보였다.
+//   → 채용 집계 쪽 저장이 _empStale을 세우고, 탭을 열 때 그 표시가 있으면 다시 받는다.
+//     단 여기서 고치는 중인 칸(_empDirty)이 있으면 덮어쓰지 않는다(2초 자동 저장이 끝난 뒤 받는다).
+let _empStale = false;
 async function loadEmployees(force) {
   if (!isAdmin) return;
-  if (empList.length && !force) { renderEmployees(); return; }
+  const _dirty = Object.keys(_empDirty || {}).length > 0;
+  if (empList.length && !force && !(_empStale && !_dirty)) { renderEmployees(); return; }
+  _empStale = false;
   const box = document.getElementById('empList');
   if (box) box.innerHTML = '<div class="loading"><div class="spinner"></div><div style="font-size:13px;color:var(--tx2)">입사자 명단 불러오는 중...</div></div>';
   try {
@@ -16189,6 +16199,7 @@ async function saveFinalResult(round, preCollectedResults, forceClosed) {
       const writeInfo = (data.written !== undefined) ? ` [시트 ${data.written}건 작성]` : '';
       if (msg) msg.innerHTML = '<span style="color:var(--green)">✅ ' + (data.message||'저장 완료') + '</span>';
       toast('최종 결과 저장 완료 ✅' + writeInfo, 'ok');
+      _empStale = true;   // v1.4.84: 합격자가 바뀌면 입사자 명단도 바뀐다
       setTimeout(() => loadResultDetail(), 800);
     } else {
       if (msg) msg.innerHTML = '<span style="color:var(--red)">❌ '+data.message+'</span>';
