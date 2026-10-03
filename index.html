@@ -1932,7 +1932,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.80';
+const APP_VERSION = 'v1.4.81';
 const APP_VERSION_DATE = '2026.10.03';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -12078,16 +12078,44 @@ function showPdfModal(id) {
       link.click();
     };
   } else if (a.driveUrl) {
-    // GAS Drive에 저장된 경우 — iframe 미리보기 + 새 탭 다운로드
-    const previewUrl = a.driveUrl.replace('/view', '/preview');
-    document.getElementById('pdfFrame').src = previewUrl;
-    btn.style.display = 'inline-flex';
-    btn.onclick = () => { window.open(a.driveUrl, '_blank'); };
+    // ⚠️ v1.4.81 (작업자 결정 2026.10.03): 드라이브 링크를 직접 열지 않는다 — 이제 비공개다(GAS @131).
+    //   서버가 회차 권한을 확인하고 파일을 내준다(getResumePdf). 받은 파일을 이 창에서 띄운다.
+    const frame = document.getElementById('pdfFrame');
+    frame.src = 'about:blank';
+    btn.style.display = 'none';
+    document.getElementById('pdfModal').classList.add('on');
+    _fetchResumeBlob(_applicantsRound || currentRound, a.id).then(function (blob) {
+      const url = URL.createObjectURL(blob);
+      frame.src = url;
+      btn.style.display = 'inline-flex';
+      btn.onclick = () => { const l = document.createElement('a'); l.href = url; l.download = (a.name || name + '.pdf'); l.click(); };
+    }).catch(function (e) { toast('원본 PDF를 열지 못했습니다: ' + e.message, 'err'); });
+    return;
   } else {
     toast('원본 PDF를 불러올 수 없습니다', 'err');
     return;
   }
   document.getElementById('pdfModal').classList.add('on');
+}
+// v1.4.81: 서버(getResumePdf — 회차 권한 확인)를 거쳐 원본 PDF를 받는다
+async function _fetchResumeBlob(round, appId) {
+  if (!GAS_URL || !round || appId == null) throw new Error('회차 정보가 없습니다');
+  const r = await gasJson(GAS_URL + '?action=getResumePdf&userEmail=' + encodeURIComponent(currentUserEmail || '')
+    + '&round=' + encodeURIComponent(round) + '&appId=' + encodeURIComponent(appId), null, 'getResumePdf');
+  const d = r.data;
+  if (!d || !d.success || !d.b64) throw new Error((d && d.message) || '원본 PDF를 받지 못했습니다');
+  const bin = atob(d.b64), u8 = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  return new Blob([u8], { type: 'application/pdf' });
+}
+// 새 탭에서 연다 — 팝업 차단을 피하려고 창을 먼저 열고, 받은 뒤 주소를 넣는다
+function openResumeTab(round, appId) {
+  const w = window.open('', '_blank');
+  if (!w) { toast('팝업이 차단되었습니다','err'); return; }
+  try { w.document.write('<p style="font-family:Malgun Gothic,sans-serif;padding:20px">원본 PDF 불러오는 중…</p>'); } catch (e) {}
+  _fetchResumeBlob(round, appId)
+    .then(function (blob) { w.location.href = URL.createObjectURL(blob); })
+    .catch(function (e) { try { w.document.body.innerHTML = '<p style="font-family:Malgun Gothic,sans-serif;padding:20px;color:#b91c1c">원본 PDF를 열지 못했습니다: ' + _escapeHtml(e.message) + '</p>'; } catch (x) {} });
 }
 function closePdfModal() {
   document.getElementById('pdfModal').classList.remove('on');
@@ -16057,7 +16085,7 @@ function preFinalSaveCheck(round) {
         <td style="font-family:'DM Mono',monospace;color:${phoneV.valid?'var(--tx)':'var(--red)'}">${contact||'<span style="color:var(--red)">미입력</span>'}</td>
         <td style="font-family:'DM Mono',monospace;font-size:12px;color:${emailV.valid?'var(--tx)':'var(--gold)'}">${email||'<span style="color:var(--gold)">미입력</span>'}</td>
         <td style="text-align:center">${hasPdf
-          ? `<button class="btn btn-o" style="padding:3px 10px;font-size:12px" onclick="window.open('${driveUrl.replace(/'/g,"\\'")}','_blank')">📄 보기</button>`
+          ? `<button class="btn btn-o" style="padding:3px 10px;font-size:12px" onclick="openResumeTab('${String(round).replace(/'/g,'')}','${String(app && app.id != null ? app.id : '').replace(/'/g,'')}')">📄 보기</button>`
           : '<span style="color:var(--gold);font-size:12px">PDF 없음</span>'
         }</td>
         <td style="text-align:center" title="${issuesText}">
