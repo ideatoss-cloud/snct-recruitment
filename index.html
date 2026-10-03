@@ -1932,7 +1932,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.75';
+const APP_VERSION = 'v1.4.76';
 const APP_VERSION_DATE = '2026.10.03';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -2062,6 +2062,36 @@ function renderReserveRankBadge(result) {
 // ✅ v1.0.40: 효과 결과(effective result) — 저장된 최종결정 우선, 없으면 면접관 집계
 // saveFinalResult가 _면접집계의 9번째 컬럼(finalResult)에 저장한 마스터 결정값을
 // 모든 분류·렌더에 일관 적용. 마스터가 결정 안 했으면 면접관 verdict 집계(result)로 폴백.
+// ✅ v1.4.76 (2026.10.03 점검) — **지원서에서 나온 글자는 입구에서 거른다.**
+//   AI가 이력서에서 옮겨 적은 값(이름·최근직장·강점·요약…)은 지원자가 정할 수 있는 글자다.
+//   그런데 화면 29곳 이상이 이 값을 그대로 HTML로 그린다. 이력서에 `<img onerror=…>` 같은 문장을
+//   심어 AI가 그대로 옮기면, 관리자가 그 지원자를 여는 순간 스크립트가 돌아 세션이 샐 수 있었다.
+//   화면마다 막으면 새 화면에서 또 빠진다 → **데이터가 들어오는 곳(분석 직후·불러오기)에서 한 번에.**
+//   · 모든 글자: < > 를 같은 모양의 전각 ＜ ＞ 로 (보기엔 같고 태그가 되지 않는다)
+//   · 이름: 따옴표·백틱·역슬래시도 뺀다 — onclick="…('${이름}')" 속에도 들어가기 때문
+function _cleanStr(v) { return typeof v === 'string' ? v.replace(/</g, '＜').replace(/>/g, '＞') : v; }
+function _cleanName(v) { return typeof v === 'string' ? _cleanStr(v).replace(/['"`\\]/g, '') : v; }
+function _cleanResult(r, depth) {
+  if (!r || typeof r !== 'object' || (depth || 0) > 6) return r;
+  if (Array.isArray(r)) { for (let i = 0; i < r.length; i++) r[i] = typeof r[i] === 'object' ? _cleanResult(r[i], (depth || 0) + 1) : _cleanStr(r[i]); return r; }
+  Object.keys(r).forEach(k => {
+    const v = r[k];
+    if (k === 'name') r[k] = _cleanName(v);
+    else if (v && typeof v === 'object') _cleanResult(v, (depth || 0) + 1);
+    else r[k] = _cleanStr(v);
+  });
+  // score_breakdown 의 「항목명」(키)도 화면에 그대로 찍힌다
+  if (r.score_breakdown && typeof r.score_breakdown === 'object' && !Array.isArray(r.score_breakdown)) {
+    const bd = {}; Object.keys(r.score_breakdown).forEach(k => { bd[_cleanName(k)] = r.score_breakdown[k]; });
+    r.score_breakdown = bd;
+  }
+  return r;
+}
+function _cleanApps(list) {
+  (list || []).forEach(a => { if (!a) return; if (a.result) _cleanResult(a.result); if (typeof a.name === 'string') a.name = _cleanName(a.name); });
+  return list;
+}
+
 // ✅ v1.4.75 (점검) — **예비 → 합격 승격 판정은 한 곳에서.**
 //   종전 기준은 「면접관 집계(r.result)가 예비 + 최종 합격」이었다. 그래서 ① 처음부터 마스터가 합격으로
 //   정한 사람이 「결원이 발생하여」 메일을 받고 ② 순위 입력 회차(집계가 늘 「보류」)에선 진짜 승격자가
@@ -3595,7 +3625,7 @@ async function analyzeAll(skipConfirm) {
           break;
         }
         a.pdfText = pdfText; // 면접 질문 생성에 재사용
-        a.result = await callOpenAIConsensus(makePrompt(empType, job, pdfText), 3);
+        a.result = _cleanResult(await callOpenAIConsensus(makePrompt(empType, job, pdfText), 3));   // v1.4.76
         a.result._scoring_version = scoringVersion(empType, job);   // ✅ v1.4.18 채점기준 꼬리표
         // 이름 공백 제거 (이 상 구 → 이상구)
         if (a.result?.name) a.result.name = a.result.name.replace(/\s+/g, '');
@@ -3929,7 +3959,7 @@ async function reanalyzeOne(id) {
         return;
       }
       a.pdfText = pdfText;
-      a.result  = await callOpenAIConsensus(makePrompt(empType, job, pdfText), 3);
+      a.result  = _cleanResult(await callOpenAIConsensus(makePrompt(empType, job, pdfText), 3));   // v1.4.76
       a.result._scoring_version = scoringVersion(empType, job);   // ✅ v1.4.18 채점기준 꼬리표
       if (a.result && a.result.name) a.result.name = a.result.name.replace(/\s+/g, '');
       const eduCheck = checkEduDisqualify(a.result.education||'', job, a.result.education_status, a.result.education_all);
@@ -4241,7 +4271,7 @@ async function loadFromSheet(opts) {
     if (lsRaw) {
       const lsData = JSON.parse(lsRaw);
       if (lsData && lsData.d && lsData.d.length) {
-        applicants = lsData.d;
+        applicants = _cleanApps(lsData.d);   // v1.4.76
         applicants.forEach(a=>{ 
           if(a._bonus && Object.keys(a._bonus).length) bonusScores[a.id]=a._bonus;
           else if(!bonusScores[a.id]) bonusScores[a.id]={};
@@ -4307,7 +4337,7 @@ async function loadFromSheet(opts) {
       setPanel(`<div class="empty"><div class="empty-ic">📋</div><div style="font-size:15px">저장된 분석결과가 없습니다</div></div>`);
       return;
     }
-    applicants = data.applicants;
+    applicants = _cleanApps(data.applicants);   // v1.4.76
     applicants.forEach(a=>{ 
       if(a._bonus && Object.keys(a._bonus).length) bonusScores[a.id]=a._bonus;
       else if(!bonusScores[a.id]) bonusScores[a.id]={};
@@ -6827,7 +6857,7 @@ ${intro}` : '',
     result._eduMismatch = eduJudgeMismatch(result, jobF);
 
     result._scoring_version = '수동입력 / ' + SCORING_RUBRIC_VER + ' / ' + APP_VERSION;   // ✅ v1.4.18
-    a.result   = result;
+    a.result   = _cleanResult(result);   // v1.4.76
     a.status   = 'done';
     a.empType  = empTypeF;
     a.job      = jobF;
@@ -11506,7 +11536,7 @@ async function _sdFetchDoc(round, name) {
     const r = await fetch(GAS_URL + '?action=getAnalysis&userEmail=' + encodeURIComponent(currentUserEmail || '')
       + '&round=' + encodeURIComponent(round) + '&email=' + encodeURIComponent(currentUserEmail || ''));
     const j = await r.json();
-    _sdCache.doc[round] = j.applicants || [];
+    _sdCache.doc[round] = _cleanApps(j.applicants || []);   // v1.4.76
   }
   const a = _sdCache.doc[round].find(x => ((x.result && x.result.name) || '') === name);
   return (a && a.result && a.result.score_breakdown) || null;
@@ -12542,7 +12572,7 @@ async function loadResultDetail() {
     // v1.4.55: 최종 합격 결정에서 **면접 미참석자를 빼려면** 그 회차 참석 여부가 있어야 한다.
     //   ⚠️ 이 탭의 round는 currentRound와 다를 수 있다 — 반드시 round로 받는다.
     try { await loadIvAttendance(round); } catch (e) {}
-    const apps = aData.applicants || [];
+    const apps = _cleanApps(aData.applicants || []);   // v1.4.76
     const ivResults2 = ivData2.results || [];
     // ⚠️ v1.4.75 (2026.10.03 점검) — **종합점수를 받는 순간 공통 식으로 바꿔 둔다.**
     //   GAS _면접집계의 「종합점수」는 옛 식(서류 40 · 면접 60)이다. 이 탭의 결과 카드·예비 정렬과
