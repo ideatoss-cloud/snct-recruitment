@@ -1933,7 +1933,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.85';
+const APP_VERSION = 'v1.4.86';
 const APP_VERSION_DATE = '2026.10.03';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -6077,6 +6077,45 @@ async function callOpenAIConsensus(prompt, n = 3) {
 //   ⚠️채점과 완전히 분리된 호출이다. 여기서 얻은 값은 표시용이며 점수에 반영되지 않는다.
 //   실패해도 절대 분석을 중단시키지 않고 null을 돌려준다(호출부에서 병역 기반 값 유지).
 // ══════════════════════════════════════════
+// ✅ v1.4.86 (2026.10.03 점검, 작업자 결정) — **PDF를 읽는 AI 호출은 gpt-4o가 멈춰도 계속 돈다.**
+//   사진 성별 판정·검진 결과 PDF 추출은 PDF 파일 입력이 검증된 gpt-4o로 고정돼 있었다. 앱 스스로
+//   「gpt-4o 계열 곧 단종」이라 적어 둔 모델이라, 단종되는 날 두 기능이 소리 없이 멈춘다.
+//   → 평소에는 지금처럼 gpt-4o(결과가 검증된 모델). 거절되면(단종·모델 없음·파라미터 거부) 설정의 분석 모델로
+//     다시 시도한다. 추론형 모델은 생각에도 토큰을 쓰므로 출력 길이를 넉넉히 주고, temperature·seed는 뺀다.
+//   ⚠️ 새 모델의 결과 품질은 이 PC에서 대조하지 못했다(키가 서버에만 있다). 콘솔의 [PDF AI] 줄로 어느 모델이 답했는지 남긴다.
+async function _proxyPdfJson(contentParts, opts) {
+  opts = opts || {};
+  const models = ['gpt-4o'];
+  if (MODEL && MODEL !== 'gpt-4o') models.push(MODEL);
+  let lastErr = null;
+  for (const m of models) {
+    const legacy = /^gpt-4o/.test(m);
+    const body = {
+      model: m,
+      messages: [{ role: 'user', content: contentParts }],
+      response_format: { type: 'json_object' },
+      max_completion_tokens: legacy ? (opts.maxTokens || 300) : 4000
+    };
+    if (legacy) { body.temperature = opts.temperature != null ? opts.temperature : 0; body.seed = 42; }
+    try {
+      const res = await fetch(GAS_URL, {
+        method: 'POST', headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ action: 'proxyOpenAI', userEmail: currentUserEmail || '', body: body })
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error((data.error && data.error.message) || data.message || ('HTTP ' + res.status));
+      const content = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '';
+      if (!content.trim()) throw new Error('빈 응답 (' + m + ')');
+      console.log('[PDF AI] ' + (opts.label || '') + ' — ' + m + '이(가) 답함');
+      return JSON.parse(content);
+    } catch (e) {
+      lastErr = e;
+      console.warn('[PDF AI] ' + (opts.label || '') + ' — ' + m + ' 실패: ' + e.message + (models.indexOf(m) < models.length - 1 ? ' → 다음 모델로' : ''));
+    }
+  }
+  throw lastErr || new Error('PDF AI 호출 실패');
+}
+
 async function detectGenderFromPhoto(b64) {
   if (!GAS_URL || !b64) return null;
   const prompt = `이 PDF는 한국 기업 입사지원서입니다. 인적사항란의 증명사진만 보고 지원자의 성별을 판단하세요. JSON만 반환하고 다른 텍스트는 일체 쓰지 마세요.
@@ -6089,28 +6128,11 @@ async function detectGenderFromPhoto(b64) {
 - 조금이라도 불확실하면 confidence="낮음"으로 표기하고, 전혀 판단이 안 되면 gender=""
 - 성별 외의 외모 평가·인상 묘사는 절대 하지 말 것`;
 
-  const res = await fetch(GAS_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain' },
-    body: JSON.stringify({
-      action: 'proxyOpenAI',
-      userEmail: currentUserEmail || '',
-      body: {
-        model: 'gpt-4o',
-        messages: [{ role: 'user', content: [
-          { type: 'text', text: prompt },
-          { type: 'file', file: { filename: 'application.pdf', file_data: 'data:application/pdf;base64,' + b64 } }
-        ]}],
-        temperature: 0,
-        max_completion_tokens: 120,
-        seed: 42,
-        response_format: { type: 'json_object' }
-      }
-    })
-  });
-  const data = await res.json();
-  if (!res.ok || data.error) throw new Error(data.error?.message || data.message || ('HTTP ' + res.status));
-  const o = JSON.parse(data.choices?.[0]?.message?.content || '{}');
+  // v1.4.86: gpt-4o가 멈추면 설정 모델로 자동 재시도(_proxyPdfJson)
+  const o = await _proxyPdfJson([
+    { type: 'text', text: prompt },
+    { type: 'file', file: { filename: 'application.pdf', file_data: 'data:application/pdf;base64,' + b64 } }
+  ], { label: '사진 성별', maxTokens: 120, temperature: 0 }) || {};
   const g = String(o.gender || '').trim();
   if (!g) return null;
   return { gender: g.startsWith('남') ? '남' : (g.startsWith('여') ? '여' : ''), confidence: o.confidence || '' };
@@ -15783,29 +15805,11 @@ async function _parseHealthCheckPdf(b64) {
   //   - 실제 키는 GAS Script Properties.openai_key (서버측 보관)
   //   - 관리자 권한은 GAS가 currentUserEmail 로 검증
   //   - file content part 형식은 OpenAI 공식 chat/completions PDF 입력 사양 그대로
-  const res = await fetch(GAS_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain' },
-    body: JSON.stringify({
-      action: 'proxyOpenAI',
-      userEmail: currentUserEmail || '',
-      body: {
-        model: 'gpt-4o',
-        messages: messages,
-        temperature: 0.1,
-        max_completion_tokens: 300,
-        seed: 42,
-        response_format: { type: 'json_object' }
-      }
-    })
-  });
-  const data = await res.json();
-  if (!res.ok || data.error) throw new Error(data.error?.message || data.message || ('HTTP ' + res.status));
-  const content = data.choices?.[0]?.message?.content || '{}';
+  // v1.4.86: gpt-4o가 멈추면 설정 모델로 자동 재시도(_proxyPdfJson)
   try {
-    return JSON.parse(content);
-  } catch(e) {
-    return null;
+    return await _proxyPdfJson(messages[0].content, { label: '검진 PDF', maxTokens: 300, temperature: 0.1 });
+  } catch (e) {
+    throw e;
   }
 }
 
