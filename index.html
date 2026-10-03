@@ -1932,7 +1932,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.78';
+const APP_VERSION = 'v1.4.79';
 const APP_VERSION_DATE = '2026.10.03';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -4051,6 +4051,8 @@ async function saveToSheet() {
     const data = await res.json();
     if (data.success) {
       analysisSaved = true;
+      _applicantsRound = currentRound;   // v1.4.79: 방금 저장한 명단은 이 회차 것
+      delete _adminPoolCache[currentRound];
       const sb=document.getElementById('saveBtn');
       if(sb){
         sb.style.animation='';
@@ -4272,6 +4274,7 @@ async function loadFromSheet(opts) {
       const lsData = JSON.parse(lsRaw);
       if (lsData && lsData.d && lsData.d.length) {
         applicants = _cleanApps(lsData.d);   // v1.4.76
+        _applicantsRound = round;            // v1.4.79
         applicants.forEach(a=>{ 
           if(a._bonus && Object.keys(a._bonus).length) bonusScores[a.id]=a._bonus;
           else if(!bonusScores[a.id]) bonusScores[a.id]={};
@@ -4338,6 +4341,7 @@ async function loadFromSheet(opts) {
       return;
     }
     applicants = _cleanApps(data.applicants);   // v1.4.76
+    _applicantsRound = round;                    // v1.4.79
     applicants.forEach(a=>{ 
       if(a._bonus && Object.keys(a._bonus).length) bonusScores[a.id]=a._bonus;
       else if(!bonusScores[a.id]) bonusScores[a.id]={};
@@ -7785,6 +7789,24 @@ function sortVoteResults(results){
 //      ① 캐시로 그린 동안 상단에 「○분 전 집계 · 최신 받는 중」 띠를 띄운다
 //      ② **확정 체크박스를 하나라도 건드렸으면 조용한 갱신이 덮어쓰지 않는다**
 //      ③ 그 사이 회차가 바뀌었으면 받아온 결과를 버린다
+// ✅ v1.4.79 (2026.10.03 점검) — **확정 후보 명단은 「그 회차」의 지원서에서, 0표인 사람까지.**
+//   ① 투표가 1건이라도 있으면 후보가 _집계(투표 행)로만 만들어져, 표를 못 받은 지원자는 확정 체크리스트·
+//      상위 N명·차순위 어디에도 없었다. 불참 회신이 이어져 차순위가 바닥나면 충원할 수 없었다.
+//   ② 투표가 없을 때 쓰던 `applicants`는 [지원서 검토]에 열린 회차 것이라, 집계 탭에서 다른 회차를
+//      고르면 **다른 회차 지원자가 후보로 떴다**(확정하면 그 회차 _집계에 남의 회차 사람이 들어갔다).
+//   → `_applicantsRound`로 applicants가 어느 회차 것인지 기억하고, 다르면 그 회차 분석을 받아 쓴다.
+let _applicantsRound = '';
+const _adminPoolCache = {};
+function _poolFor(round) {
+  if (round && _applicantsRound === round && Array.isArray(applicants))
+    return applicants.filter(a => a && a.status === 'done' && a.result && !a.result._disqualified);
+  return _adminPoolCache[round] || null;   // null = 아직 모른다(받아오는 중)
+}
+function _poolBonus(a) {
+  if (a && a._bonus && typeof a._bonus === 'object' && Object.keys(a._bonus).length)
+    return Object.values(a._bonus).reduce((s, v) => s + (Number(v) || 0), 0);
+  return getTotalBonus(a.id);
+}
 async function loadAdminResults(opts) {
   opts = opts || {};
   const silent = !!opts.silent;
@@ -7837,30 +7859,36 @@ async function loadAdminResults(opts) {
     //   아래 showConfirmArea까지 도달하지 못해 "면접 대상자 확정" 화면 자체가 렌더링되지 않았다.
     //   면접관 투표를 생략하고 AI 서류점수 상위 N명을 직권 확정하는 운영에서는 이 경로가 정상 경로다.
     //   → 메모리에 로드된 분석완료 지원자로 후보 목록을 구성해 확정이 가능하게 한다.
-    if(!results.length){
-      const pool = (typeof applicants !== 'undefined' ? applicants : [])
-        .filter(a => a.status === 'done' && a.result && !a.result._disqualified);
-      if(!pool.length){
-        document.getElementById('adminResultBody').innerHTML =
-          '<div style="font-size:14px;color:var(--tx2);text-align:center;padding:30px;line-height:1.8">'
-          + '투표 결과가 없습니다.<br>'
-          + '<span style="font-size:13px">투표 없이 서류점수로 확정하시려면 <b>[지원서 검토] 탭에서 해당 회차를 먼저 불러온 뒤</b> 이 탭으로 오세요.</span></div>';
-        return;
-      }
-      pool.forEach(a => {
-        const nm = a.result.name || a.name.replace('.pdf','');
+    // v1.4.79: 이 회차 지원서 중 투표 명단에 없는 사람(0표)을 붙인다 — 투표가 있든 없든
+    const _hadVotes = results.length > 0;
+    const _pool = _poolFor(round);
+    if (_pool) {
+      const _nk = v => String(v || '').replace(/\s+/g, '');
+      const _have = new Set(results.map(r => _nk(r.name)));
+      let _added = 0;
+      _pool.forEach(a => {
+        const nm = a.result.name || String(a.name || '').replace('.pdf','');
+        if (!nm || _have.has(_nk(nm))) return;
+        _have.add(_nk(nm)); _added++;
         results.push({
           name: nm,
           age: fmtAge(a.result.age, a.result.birth),
-          score: Math.min(100, (a.result.fit_score||0) + getTotalBonus(a.id)),
+          score: Math.min(100, (a.result.fit_score||0) + _poolBonus(a)),
           total: 0, rank1: 0, rank2: 0, voters: '',
           summary: a.result.summary || '',
           empType: a.empType || '', job: a.job || '',
           confirmed: confirmedNames.includes(nm)
         });
       });
-      sortVoteResults(results); // 전원 total=0이라 결과적으로 서류점수 순
-      toast(`투표 기록이 없어 서류점수 순으로 표시합니다 (${results.length}명) — 관리자 직권 확정`, 'ok');
+      if (_added) sortVoteResults(results);   // 0표는 맨 아래 서류점수순
+      if (!_hadVotes && results.length && staleMs === 0)
+        toast(`투표 기록이 없어 서류점수 순으로 표시합니다 (${results.length}명) — 관리자 직권 확정`, 'ok');
+    }
+    if(!results.length){
+      document.getElementById('adminResultBody').innerHTML =
+        '<div style="font-size:14px;color:var(--tx2);text-align:center;padding:30px;line-height:1.8">'
+        + (_pool ? '이 회차에 분석된 지원자가 없습니다.' : '지원서 명단을 불러오는 중입니다…') + '</div>';
+      return;
     }
     const medals=['🥇','🥈','🥉'];
     // ✅ v1.2.54: 중복을 조용히 고치지 않는다 — 관리자가 원인을 알 수 있게 표시
@@ -8011,7 +8039,19 @@ async function loadAdminResults(opts) {
       _reqs.push(gasJson(GAS_URL+'?action=getRsvpStatus&userEmail='+_u+'&round='+_rd, null, 'getRsvpStatus').catch(function(){ return {data:{}}; }));
       _reqs.push(gasJson(GAS_URL+'?action=getEmailSentStatus&userEmail='+_u+'&round='+_rd, null, 'getEmailSentStatus').catch(function(){ return {data:{}}; }));
     }
+    // v1.4.79: 이 회차 지원서가 메모리에 없으면 같은 왕복에 얹어 받는다(순차로 부르지 않는다)
+    const _needPool = !_poolFor(round);
+    const _poolReq = _needPool
+      ? gasJson(GAS_URL+'?action=getAnalysis&userEmail='+_u+'&round='+_rd+'&email='+_u, null, 'getAnalysis').catch(function(){ return {data:{}}; })
+      : null;
     const _all = await Promise.all(_reqs);
+    if (_poolReq) {
+      try {
+        const _pa = await _poolReq;
+        const _list = (_pa && _pa.data && _pa.data.applicants) || null;
+        if (_list) _adminPoolCache[round] = _cleanApps(_list).filter(a => a && a.result && !a.result._disqualified);
+      } catch (e) {}
+    }
     const _rr = _all[0], _rc = _all[1];
     if (isAdmin) {
       window.__emailRsvpStatuses = window.__emailRsvpStatuses || {};
