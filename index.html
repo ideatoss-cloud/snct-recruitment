@@ -1461,11 +1461,10 @@ kim@gmail.com"
 <!-- ✅ v1.0.48: AI 채용 결과 보고서 모달 — 경영진 결재용 풀스크린 임팩트 디자인 -->
 <div class="ov" id="aiReportModal">
   <div class="modal" style="width:96vw;max-width:980px;height:95vh;padding:0;display:flex;flex-direction:column;overflow:hidden">
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 22px;border-bottom:1px solid var(--bd);background:linear-gradient(135deg,rgba(125,71,233,0.18),rgba(37,99,235,0.10));flex-shrink:0">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 22px;border-bottom:1px solid var(--bd);flex-shrink:0">
       <div style="display:flex;align-items:center;gap:10px">
-        <span style="font-size:20px">📊</span>
         <div>
-          <div style="font-size:15px;font-weight:700">AI 채용 결과 보고서</div>
+          <div style="font-size:15px;font-weight:700">채용 결과 보고서</div>
           <div style="font-size:12px;color:var(--tx2);margin-top:2px" id="aiReportSubtitle">생성 중...</div>
         </div>
       </div>
@@ -1475,7 +1474,7 @@ kim@gmail.com"
         <button class="btn btn-o" style="padding:6px 12px;font-size:14px" onclick="closeAiReport()">✕</button>
       </div>
     </div>
-    <div id="aiReportBody" style="flex:1;overflow-y:auto;padding:0;background:#0a0e1a"></div>
+    <div id="aiReportBody" style="flex:1;overflow-y:auto;padding:22px 0;background:#d9dde3"></div>
   </div>
 </div>
 
@@ -1933,8 +1932,8 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.72';
-const APP_VERSION_DATE = '2026.10.02';
+const APP_VERSION = 'v1.4.73';
+const APP_VERSION_DATE = '2026.10.03';
 let currentRound = ''; // 현재 선택된 회차
 
 const JOBS = {
@@ -12606,8 +12605,8 @@ async function loadResultDetail() {
       ${absent.length ? safeRender('불참자 그룹', () => renderAbsentGroup(absent)) : ''}
       ${safeRender('전체 지원자 현황', () => renderDocResultTable(apps, confirmedNames, ivMap, aptMap, absent.map(a => a.applicant), voteMap, round))}
       ${isAdmin ? safeRender('최종 결정 카드', () => renderFinalDecisionCard(round, confirmedNames, ivResults2, isClosed, absent.map(a => a.applicant))) : ''}`;
-    // ✅ v1.0.59: 카드 렌더 직후 AI 보고서 캐시 상태 확인 (회차 종결 시에만)
-    if (isAdmin && isClosed) {
+    // ✅ v1.0.59: 카드 렌더 직후 AI 보고서 캐시 상태 확인 (v1.4.73: 종결 여부와 무관)
+    if (isAdmin) {
       setTimeout(() => { try { _checkAiReportStatus(round); } catch(e) {} }, 100);
     }
     // ✅ v1.0.62: 5개 메일 카드의 발송 상태 확인 (관리자만)
@@ -14144,12 +14143,13 @@ function renderFinalDecisionCard(round, confirmedNames, ivResults, isClosed, abs
         <span style="font-size:24px">📊</span>
         <div>
           <div style="font-size:15px;font-weight:700;color:var(--tx)">AI 채용 결과 보고서</div>
-          <div style="font-size:12px;color:var(--tx2);margin-top:2px">경영진 결재용 · GPT 분석 · 통계 + 인사이트 자동 생성</div>
+          <div style="font-size:12px;color:var(--tx2);margin-top:2px">경영진 보고용 · 단계별 인원·합격자 현황·검토 의견 · ${isClosed ? '최종' : '진행 중이면 중간 보고'}</div>
           <div id="aiReportStatus_${round}" style="font-size:11px;color:var(--tx2);margin-top:4px"></div>
         </div>
       </div>
-      <button id="aiReportBtn_${round}" class="btn btn-p" style="background:${isClosed?'linear-gradient(135deg,#7d47e9,#2563eb)':'#374151'};border:none;font-size:14px;${isClosed?'':'cursor:not-allowed;opacity:0.55'}" ${isClosed?'':'disabled'} onclick="${isClosed?`generateAiReport('${round}')`:`toast('회차 종결 후 사용 가능합니다','err')`}">
-        ${isClosed ? '⏳ 확인 중...' : '🔒 회차 종결 필요'}
+      <!-- v1.4.73: 종결 전에도 연다(작업자 지시). 진행 중이면 보고서에 「중간 보고」로 표시된다 -->
+      <button id="aiReportBtn_${round}" class="btn btn-p" style="background:#1f3864;border:none;font-size:14px" onclick="generateAiReport('${round}')">
+        ⏳ 확인 중...
       </button>
     </div>
   </div>
@@ -14791,12 +14791,12 @@ async function _checkAiReportStatus(round) {
     const data = await res.json();
     if (data.success && data.exists) {
       btn.textContent = '📊 보고서 조회';
-      btn.style.background = 'linear-gradient(135deg,#15803d,#10b981)';
+      btn.style.background = '#1f3864';
       if (statusEl) statusEl.textContent = `✅ 저장됨 · ${data.regeneratedAt || data.savedAt || ''}`;
     } else {
       btn.textContent = '✨ 보고서 생성';
-      btn.style.background = 'linear-gradient(135deg,#7d47e9,#2563eb)';
-      if (statusEl) statusEl.textContent = '⏳ 아직 생성되지 않음 — 클릭하여 첫 생성 (GPT 호출)';
+      btn.style.background = '#1f3864';
+      if (statusEl) statusEl.textContent = '아직 생성되지 않음 · 누르면 검토 의견을 처음 작성합니다(AI 호출)';
     }
   } catch(e) {
     btn.textContent = '✨ 보고서 생성';
@@ -14836,10 +14836,12 @@ async function generateAiReport(round, forceRegenerate = false) {
       if (data.success && data.exists && data.report) {
         // 캐시 사용 — API 호출 없이 즉시 표시
         await timelinePromise; // ✅ v1.0.60: 타임라인 데이터 도착 대기
-        const stats = _buildAiReportStats(apps, ivResults);
-        document.getElementById('aiReportSubtitle').textContent = round + ' · 저장본 조회 · ' + (data.regeneratedAt || data.savedAt || '');
+        const stats = _buildAiReportStats(apps, ivResults, round);
+        document.getElementById('aiReportSubtitle').textContent = _roundLabel(round) + ' · 검토 의견 저장본 ' + (data.regeneratedAt || data.savedAt || '');
         window.__currentAiReportRound = round;
-        _renderAiReport(round, stats, apps, ivResults, data.report, /*fromCache*/true);
+        const _rep = Object.assign({}, data.report);
+        if (!_rep._at) _rep._at = data.regeneratedAt || data.savedAt || '';
+        _renderAiReport(round, stats, apps, ivResults, _rep, /*fromCache*/true);
         return;
       }
     } catch(e) {
@@ -14864,9 +14866,10 @@ async function generateAiReport(round, forceRegenerate = false) {
   window.__currentAiReportRound = round;
 
   // 데이터 가공 + GPT 호출
-  const stats = _buildAiReportStats(apps, ivResults);
+  const stats = _buildAiReportStats(apps, ivResults, round);
   try {
     const aiData = await _callAiReport(round, stats, apps, ivResults);
+    try { aiData._at = new Date().toLocaleString('ko-KR', {year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}); } catch (e) {}
     // ✅ v1.0.59: GAS 시트에 저장
     if (GAS_URL) {
       try {
@@ -14882,7 +14885,7 @@ async function generateAiReport(round, forceRegenerate = false) {
       }
     }
     await timelinePromise; // ✅ v1.0.60: 타임라인 도착 대기
-    document.getElementById('aiReportSubtitle').textContent = round + (forceRegenerate ? ' · 재생성 완료' : ' · 신규 생성 완료');
+    document.getElementById('aiReportSubtitle').textContent = _roundLabel(round) + (forceRegenerate ? ' · 검토 의견 다시 작성함' : ' · 검토 의견 새로 작성함');
     _renderAiReport(round, stats, apps, ivResults, aiData, /*fromCache*/false);
     // 회차 상세 카드의 버튼 상태 갱신
     _checkAiReportStatus(round);
@@ -14898,7 +14901,7 @@ async function generateAiReport(round, forceRegenerate = false) {
   }
 }
 
-function _buildAiReportStats(apps, ivResults) {
+function _buildAiReportStats(apps, ivResults, round) {
   // 직종 분포
   const jobMap = {};
   apps.forEach(a => { const k = (a.empType||'')+' '+(a.job||''); jobMap[k] = (jobMap[k]||0)+1; });
@@ -14913,12 +14916,36 @@ function _buildAiReportStats(apps, ivResults) {
     const idx = Math.min(4, Math.floor(s/20));
     buckets[idx]++;
   });
-  // 합격/예비/불합격
-  const passN = ivResults.filter(r => effectiveResult(r) === '합격').length;
-  const reserveN = ivResults.filter(r => isReserve(effectiveResult(r))).length;
-  const failN = ivResults.filter(r => effectiveResult(r) === '불합격').length;
-  // 면접 응시자 수
-  const interviewedN = ivResults.length;
+  // ⚠️ v1.4.73 — **면접을 실제로 본 사람**만 센다.
+  //   _면접집계에는 당일 불참자도 「시스템(불참)」 행(cnt 0, 결과 불합격)으로 들어 있다.
+  //   종전엔 그 행까지 면접 응시·불합격으로 세어 숫자가 부풀었다.
+  const _sameRound = String(window.__currentRoundId || '') === String(round || window.__currentRoundId || '');
+  const _absent = (_sameRound && window.__currentRoundAbsentNames) || [];
+  const confirmedN = ((_sameRound && window.__currentRoundConfirmedNames) || []).length;
+  const _aptMap = (_sameRound && window.__currentRoundAptMap) || {};
+  const _norm = v => String(v || '').replace(/\s+/g, '');
+  const people = ivResults
+    .filter(r => Number(r.cnt) > 0 && !_absent.includes(r.name) && !String(r.interviewers || '').includes('불참'))
+    .map(r => {
+      const app = apps.find(a => _norm(a.result && a.result.name) === _norm(r.name));
+      const rd = (app && app.result) || {};
+      const apt = _aptMap[r.name];
+      const aptScore = apt && apt.score !== '' && apt.score != null ? Number(apt.score) : null;
+      const ivScore = r.ivScore !== '' && r.ivScore != null ? Number(r.ivScore) : null;
+      const docScore = Math.min(100, (Number(rd.fit_score) || 0) + (app ? getTotalBonus(app.id) : 0));
+      // 종합점수 = 채용 집계 표와 같은 함수(calcWeightedTotal, 인적성 50 · 면접 50).
+      //   종전 보고서는 서버 옛 식(서류 40 · 면접 60) 값을 그대로 찍으면서 설명은 인적성 50 · 면접 50이라 적었다.
+      return { name: r.name, eff: effectiveResult(r), docScore, aptScore, ivScore,
+               total: calcWeightedTotal(docScore, aptScore, ivScore), app,
+               strengths: (rd.strengths || []).slice(0, 2), concerns: (rd.concerns || []).slice(0, 1) };
+    })
+    .sort((a, b) => b.total - a.total);
+  const passN = people.filter(p => p.eff === '합격').length;
+  const reserveN = people.filter(p => isReserve(p.eff)).length;
+  const failN = people.filter(p => p.eff === '불합격').length;
+  const undecidedN = people.filter(p => !p.eff).length;
+  const interviewedN = people.length;
+  const isClosed = !!(rounds || []).find(r => r.id === round && r.closed);
   // 지원서 탈락
   const disqN = apps.filter(a => a.result?._disqualified).length;
   // 학력 분포
@@ -14943,8 +14970,8 @@ function _buildAiReportStats(apps, ivResults) {
   return {
     totalN: apps.length,
     disqN,
-    interviewedN,
-    passN, reserveN, failN,
+    confirmedN, interviewedN,
+    passN, reserveN, failN, undecidedN, isClosed, people,
     avgScore, maxScore, minScore,
     avgSd, reviewN, cautionN, sdN,
     buckets,
@@ -14954,275 +14981,246 @@ function _buildAiReportStats(apps, ivResults) {
 }
 
 async function _callAiReport(round, stats, apps, ivResults) {
-  // 합격자 강점/우려 요약 (AI에 전달)
-  const passers = ivResults.filter(r => {
-    const e = effectiveResult(r); return e === '합격' || isReserve(e);
-  });
-  const passerSummary = passers.map(r => {
-    const app = apps.find(a => (a.result?.name||'').replace(/\s+/g,'') === (r.name||'').replace(/\s+/g,''));
-    const rd = app?.result || {};
-    return {
-      name: r.name,
-      result: effectiveResult(r),
-      docScore: rd.fit_score || 0,
-      ivScore: r.ivScore || 0,
-      total: r.total || 0,
-      strengths: (rd.strengths || []).slice(0,3),
-      concerns: (rd.concerns || []).slice(0,2),
-      summary: rd.summary || ''
-    };
-  });
+  // v1.4.73: 합격·예비 요약은 통계(people)에서 — 점수가 보고서 표와 같은 값이어야 한다
+  const passerSummary = stats.people.filter(p => p.eff === '합격' || isReserve(p.eff)).map(p => ({
+    name: p.name, result: p.eff, docScore: p.docScore, aptScore: p.aptScore, ivScore: p.ivScore, total: p.total,
+    strengths: p.strengths, concerns: p.concerns, summary: (p.app && p.app.result && p.app.result.summary) || ''
+  }));
+  const status = stats.isClosed ? '종결(최종 결과 확정)'
+    : `진행 중 (면접 응시 ${stats.interviewedN}명 중 최종 결과 미정 ${stats.undecidedN}명)`;
 
-  const prompt = `다음은 채용 회차 통계와 합격자 정보입니다. 경영진 결재용 보고서의 분석 인사이트를 JSON으로 작성하세요.
+  const prompt = `다음은 채용 회차 결과입니다. 경영진에게 올리는 채용 결과 보고서의 검토 의견을 JSON으로 작성하세요.
 
-【회차 정보】 회차ID: ${round}, 지원자: ${stats.totalN}명, 지원서탈락: ${stats.disqN}명, 면접응시: ${stats.interviewedN}명, 최종합격: ${stats.passN}명, 예비합격: ${stats.reserveN}명, 불합격: ${stats.failN}명
-【점수 통계】 평균: ${stats.avgScore}점, 최고: ${stats.maxScore}점, 최저: ${stats.minScore}점
-【점수 분포】 0~20: ${stats.buckets[0]}명, 20~40: ${stats.buckets[1]}명, 40~60: ${stats.buckets[2]}명, 60~80: ${stats.buckets[3]}명, 80~100: ${stats.buckets[4]}명
-【직종】 ${Object.entries(stats.jobMap).map(([k,v])=>`${k}: ${v}명`).join(', ')}
-【학력 분포】 ${Object.entries(stats.eduMap).map(([k,v])=>`${k}: ${v}명`).join(', ')}
-【합격자 요약】 ${JSON.stringify(passerSummary)}
+【회차】 ${_roundShort(round)} · ${_roundLabel(round)} · 상태: ${status}
+【단계별 인원】 지원 ${stats.totalN}명, 서류 탈락(최저학력 등) ${stats.disqN}명, 면접 대상 확정 ${stats.confirmedN}명, 면접 응시 ${stats.interviewedN}명, 합격 ${stats.passN}명, 예비합격 ${stats.reserveN}명, 불합격 ${stats.failN}명
+【서류점수(AI 보조 분석)】 평균 ${stats.avgScore}점, 최고 ${stats.maxScore}점, 최저 ${stats.minScore}점 / 구간: 80점 이상 ${stats.buckets[4]}명, 60~79점 ${stats.buckets[3]}명, 40~59점 ${stats.buckets[2]}명, 20~39점 ${stats.buckets[1]}명, 20점 미만 ${stats.buckets[0]}명
+【학력 분포】 ${Object.entries(stats.eduMap).map(([k,v])=>`${k} ${v}명`).join(', ')}
+【합격·예비 요약】 ${JSON.stringify(passerSummary)}
+※ 종합점수 = 인적성 50% + 면접 50%. 서류점수는 면접 대상 선발까지의 지표이며 종합점수에 들어가지 않음.
 
 JSON 형식:
 {
-  "executive_summary": "경영진을 위한 3~4문장 핵심 요약. 채용 성공 여부와 가장 중요한 인사이트 포함",
-  "pool_quality": "지원자 풀의 전반적 품질 평가 2~3문장. 점수 분포·학력·직종 매칭 기반",
-  "selection_rationale": "선발된 합격자가 회차에 적합한 이유 3~4문장. 강점 요약 기반",
-  "concerns": ["주요 우려사항 1~3개 (1문장씩, 합격자 우려·풀 부족·통계상 이슈 등)"],
-  "recommendations": ["다음 회차 개선 제안 2~4개 (1문장씩, 구체적·실행 가능)"],
-  "key_metrics_insight": "주요 지표(평균점수·합격률·경쟁률 등)에 대한 1~2문장 해석"
+  "executive_summary": "핵심 요약 3~4줄",
+  "pool_quality": "지원자 풀 평가 2~3줄",
+  "selection_rationale": "선발 근거 2~4줄",
+  "key_metrics_insight": "주요 지표 해석 1~2줄",
+  "concerns": ["유의사항 1~3개"],
+  "recommendations": ["다음 회차 개선 2~4개"]
 }
 
 작성 규칙:
-- 통계 수치를 본문에 인용 (예: "평균 ${stats.avgScore}점으로 ...")
-- 추상적 표현 금지. 구체적 사실 기반
-- 한국어로 작성
-- 경영진 어조 (간결·정중·전문적)
-- JSON만 출력, 다른 텍스트 금지`;
+- 모든 항목을 보고서 개조식으로 쓴다. 문장 끝은 「~함」「~임」「~됨」. 여러 줄이면 줄바꿈(\\n)으로 나눈다
+- 대시 기호(—, –), 이모지, 영어 표현을 쓰지 않는다
+- 면접위원·담당자·지원자 개인의 태만이나 잘못으로 서술하지 않는다. 원인은 제도·절차·구조로 서술한다
+- 위에 주어진 수치만 인용한다. 주어지지 않은 비율·수치를 만들지 않는다
+- ${stats.isClosed ? '종결된 회차다.' : '진행 중인 회차다. 최종 결과를 단정하지 말고 「현재까지」로 서술한다.'}
+- 합격자 이름은 선발 근거에만 쓴다
+- JSON만 출력한다`;
 
-  const result = await callOpenAI(prompt, true);
-  return result;
+  return await callOpenAI(prompt, true);
 }
 
-// ✅ v1.0.60: 채용 회차 타임라인 카드 빌더
-//   - 가로 스텝 (점 + 선) 시각화 + 세로 상세 (날짜·라벨·이벤트)
-//   - 완료된 단계는 녹색, 미완료는 회색
-function _buildTimelineCard(tl) {
+// ══════════════════════════════════════════
+// ✅ v1.4.73 (2026.10.03, 작업자: 「보고서 너무 촌스럽고 구리다, 싹 봐줘」) — 결재 문서형으로 새로 짰다.
+//   종전: 검은 배경 + 보라 그라데이션 + 이모지 + 「AI ANALYSIS REPORT」 영문 띠. 인쇄하면 강제로
+//   검정 글씨가 돼 박스만 남았다.
+//   지금: 흰 A4 한 장 흐름, 색은 남색 하나. 숫자가 먼저(단계별 인원 → 일정 → 면접 결과 → 지원자 풀),
+//   AI 글은 뒤에 「검토 의견」으로. 화면과 인쇄가 같은 모양이다.
+//   표 규칙(CLAUDE.md §6-2): 비고 열 없음 · 병합 없음 · 수치 우정렬 · 첫 열 라벨 · colgroup 고정.
+// ══════════════════════════════════════════
+const RPT_CSS = `
+.rp{width:794px;max-width:100%;margin:0 auto;background:#fff;color:#1f2937;font-family:"Malgun Gothic","맑은 고딕",system-ui,sans-serif;font-size:13px;line-height:1.65;box-shadow:0 4px 24px rgba(0,0,0,.18)}
+.rp *{box-sizing:border-box}
+.rp-top{background:#1f3864;color:#fff;padding:26px 40px 22px;display:flex;justify-content:space-between;align-items:flex-start;gap:20px}
+.rp-top .k{font-size:11px;letter-spacing:3px;opacity:.75;font-weight:700}
+.rp-top h1{font-size:25px;font-weight:800;margin:6px 0 6px;letter-spacing:-.3px;color:#fff}
+.rp-top .m{font-size:12px;opacity:.85}
+.rp-top .logo{background:#fff;border-radius:6px;padding:4px;width:46px;height:46px;flex-shrink:0}
+.rp-top .logo img{width:100%;height:100%;object-fit:contain;display:block}
+.rp-st{display:inline-block;margin-top:10px;padding:3px 10px;border-radius:3px;font-size:11.5px;font-weight:700}
+.rp-st.fin{background:#fff;color:#1f3864}
+.rp-st.mid{background:#f4b400;color:#1f2937}
+.rp-in{padding:26px 40px 30px}
+.rp-h{display:flex;align-items:center;gap:9px;font-size:15px;font-weight:800;color:#1f3864;margin:26px 0 11px;page-break-after:avoid;break-after:avoid}
+.rp-h:first-child{margin-top:0}
+.rp-h b{display:inline-flex;width:22px;height:22px;border-radius:3px;background:#1f3864;color:#fff;font-size:12px;align-items:center;justify-content:center}
+.rp-ul{margin:0;padding-left:18px}
+.rp-ul li{margin:2px 0}
+.rp-sum{border:1px solid #c9d2e3;border-left:4px solid #1f3864;background:#f5f7fb;padding:13px 18px;font-size:14px}
+.rp-fun{display:flex;align-items:stretch;gap:0;page-break-inside:avoid;break-inside:avoid}
+.rp-fun .s{flex:1;border:1px solid #c9d2e3;padding:12px 6px 10px;text-align:center;background:#fff}
+.rp-fun .s+.s{border-left:none}
+.rp-fun .s .n{font-size:27px;font-weight:800;color:#1f3864;line-height:1.1;font-variant-numeric:tabular-nums}
+.rp-fun .s .n small{font-size:12px;font-weight:600;color:#6b7280;margin-left:2px}
+.rp-fun .s .l{font-size:11.5px;color:#4b5563;margin-top:5px;font-weight:600}
+.rp-fun .s.hi{background:#1f3864}
+.rp-fun .s.hi .n,.rp-fun .s.hi .n small,.rp-fun .s.hi .l{color:#fff}
+.rp-sub{display:flex;flex-wrap:wrap;gap:6px 22px;margin-top:9px;font-size:12px;color:#4b5563}
+.rp-sub b{color:#1f2937}
+.rp table{width:100%;border-collapse:collapse;font-size:12.5px;page-break-inside:avoid;break-inside:avoid}
+.rp th{background:#1f3864;color:#fff;font-weight:700;padding:7px 9px;border:1px solid #1f3864;text-align:left}
+.rp td{padding:7px 9px;border:1px solid #d5dbe6;vertical-align:top}
+.rp td.lb{background:#f1f3f7;font-weight:700}
+.rp .r{text-align:right;font-variant-numeric:tabular-nums}
+.rp tr.hl td{background:#eef3fb;font-weight:700}
+.rp .ok{color:#15803d;font-weight:700}.rp .rv{color:#b45309;font-weight:700}.rp .ng{color:#b91c1c;font-weight:700}.rp .un{color:#6b7280}
+.rp .bar{height:9px;background:#1f3864;border-radius:1px;display:inline-block;vertical-align:middle}
+.rp .note{font-size:11px;color:#6b7280;margin-top:6px}
+.rp-2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.rp-box{border:1px solid #d5dbe6;padding:12px 16px;page-break-inside:avoid;break-inside:avoid}
+.rp-box .t{font-weight:800;color:#1f3864;margin-bottom:5px;font-size:13px}
+.rp-ft{border-top:1px solid #d5dbe6;margin-top:26px;padding-top:10px;font-size:10.5px;color:#6b7280;line-height:1.6}
+.rp-chip{display:inline-block;border:1px solid #c9d2e3;border-radius:3px;padding:2px 9px;margin:0 6px 6px 0;font-size:12px}
+.rp-chip b{color:#1f3864}
+.rp-tl{display:flex;page-break-inside:avoid;break-inside:avoid}
+.rp-tl .st{flex:1;position:relative;text-align:center;padding-top:16px;min-width:0}
+.rp-tl .st:before{content:"";position:absolute;top:5px;left:0;right:0;height:2px;background:#d5dbe6}
+.rp-tl .st:first-child:before{left:50%}.rp-tl .st:last-child:before{right:50%}
+.rp-tl .st.on:before{background:#1f3864}
+.rp-tl .st i{position:absolute;top:0;left:50%;margin-left:-6px;width:12px;height:12px;border-radius:50%;background:#fff;border:2px solid #c3cad6}
+.rp-tl .st.on i{background:#1f3864;border-color:#1f3864}
+.rp-tl .l{font-size:11.5px;font-weight:700;margin-top:4px;word-break:keep-all;line-height:1.3}
+.rp-tl .d{font-size:11px;color:#4b5563;margin-top:2px;font-variant-numeric:tabular-nums}
+.rp-tl .st:not(.on) .l,.rp-tl .st:not(.on) .d{color:#9ca3af}
+@media (max-width:700px){.rp-top,.rp-in{padding-left:18px;padding-right:18px}.rp-2{grid-template-columns:1fr}.rp-fun{flex-wrap:wrap}.rp-fun .s{flex:1 1 33%;border-left:1px solid #c9d2e3!important}}
+`;
+
+// AI 글을 안전하게 + 대시를 쉼표로 (작업자 규칙: 산출물에 — 쓰지 않음)
+function _rptTxt(v) { return _escapeHtml(String(v == null ? '' : v)).replace(/\s*[—–]\s*/g, ', '); }
+// 개조식 목록으로 — 줄바꿈이 있으면 줄 단위, 한 문단이면 문장 단위
+function _rptList(v) {
+  let items = Array.isArray(v) ? v.slice() : String(v || '').split(/\n+/);
+  items = items.map(x => String(x).replace(/^\s*[-·•▪◦*]\s*/, '').trim()).filter(Boolean);
+  if (items.length === 1) items = items[0].split(/(?<=[.다함됨임음])\s+(?=\S)/).map(x => x.trim()).filter(Boolean);
+  if (!items.length) return '<div class="note">작성된 내용 없음</div>';
+  return '<ul class="rp-ul">' + items.map(x => '<li>' + _rptTxt(x) + '</li>').join('') + '</ul>';
+}
+// 회차 코드 {yyyymmdd}_{신입|경력}_{직종} → 「신입 전기정비」 (_roundShort는 「전기정비 신입」 순서라 제목엔 안 맞다)
+function _rptTitle(round) {
+  const m = String(round || '').match(/^\d{8}_(.+?)_(.+)$/);
+  return m ? `${m[1]} ${m[2]}` : String(round || '');
+}
+function _rptTimeline(tl) {
   if (!tl) return '';
   const days = ['일','월','화','수','목','금','토'];
-  const fmtKo = (s) => {
-    if (!s) return '';
-    // 'yyyy-MM-dd' → 'M월 D일(요일)'
-    const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if (!m) return s;
+  const ko = v => {
+    const m = String(v || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!m) return _escapeHtml(String(v || ''));
     const d = new Date(`${m[1]}-${m[2]}-${m[3]}T00:00:00`);
-    if (isNaN(d.getTime())) return s;
-    return `${parseInt(m[2])}월 ${parseInt(m[3])}일(${days[d.getDay()]})`;
+    return `${+m[1]}.${+m[2]}.${+m[3]}(${isNaN(d) ? '' : days[d.getDay()]})`;
   };
-  const steps = [
-    { key:'roundCreatedAt',           label:'서류 전형 개시',   icon:'📂', date: tl.roundCreatedAt },
-    { key:'docResultSentAt',          label:'서류 결과 통보',   icon:'📋', date: tl.docResultSentAt },
-    { key:'interviewScheduleSentAt',  label:'면접 일정 안내',   icon:'📅', date: tl.interviewScheduleSentAt },
-    { key:'interviewDate',            label:'면접 실시',        icon:'🎤', date: tl.interviewDate },
-    { key:'interviewResultSentAt',    label:'면접 결과 통보',   icon:'📤', date: tl.interviewResultSentAt },
-    { key:'healthCheckNoticeSentAt',  label:'채용검진 안내',    icon:'🏥', date: tl.healthCheckNoticeSentAt },
-    { key:'finalResultSentAt',        label:'최종 합격 통보',   icon:'🏆', date: tl.finalResultSentAt }
-  ];
-  const filledN = steps.filter(s => s.date).length;
-  const progressPct = Math.round((filledN / steps.length) * 100);
-
-  // 가로 스텝 (점 + 선)
-  const horiSteps = steps.map((s, i) => {
-    const done = !!s.date;
-    const dotColor = done ? '#10b981' : '#374151';
-    const dotBorder = done ? '#10b981' : '#4b5563';
-    const labelColor = done ? '#f1f5f9' : '#64748b';
-    const dateText = s.date ? (s.key === 'interviewDate' ? s.date : fmtKo(s.date)) : (s.key === 'finalResultSentAt' ? '품의 결재 득 후' : '미정');
-    return `
-      <div style="flex:1;display:flex;flex-direction:column;align-items:center;min-width:0;position:relative">
-        ${i > 0 ? `<div style="position:absolute;top:18px;left:-50%;right:50%;height:2px;background:${done && steps[i-1].date ? '#10b981' : '#374151'};z-index:0"></div>` : ''}
-        <div style="width:38px;height:38px;border-radius:50%;background:${dotColor};border:2px solid ${dotBorder};display:flex;align-items:center;justify-content:center;font-size:17px;position:relative;z-index:1;box-shadow:${done?'0 0 10px rgba(16,185,129,0.40)':'none'}">${s.icon}</div>
-        <div style="font-size:10px;font-weight:600;color:${labelColor};margin-top:6px;text-align:center;line-height:1.3;word-break:keep-all;min-height:26px;padding:0 2px">${s.label}</div>
-        <div style="font-size:10px;color:${done?'#10b981':'#64748b'};margin-top:2px;text-align:center;font-family:'DM Mono',monospace">${dateText}</div>
-      </div>`;
-  }).join('');
-
-  return `
-    <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:18px 20px;margin-bottom:24px" class="timelineCard">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
-        <div style="font-size:13px;font-weight:700;color:#fff">📅 채용 회차 타임라인</div>
-        <div style="font-size:11px;color:#94a3b8">진행률 <b style="color:${progressPct>=80?'#10b981':progressPct>=40?'#f59e0b':'#94a3b8'}">${progressPct}%</b> · ${filledN}/${steps.length} 단계 완료</div>
-      </div>
-      <!-- 진행 바 -->
-      <div style="height:4px;background:rgba(255,255,255,0.06);border-radius:2px;margin-bottom:20px;overflow:hidden">
-        <div style="height:100%;width:${progressPct}%;background:linear-gradient(90deg,#10b981,#3b82f6);transition:width 0.5s"></div>
-      </div>
-      <!-- 가로 스텝 -->
-      <div style="display:flex;align-items:flex-start;gap:0;overflow-x:auto;padding-bottom:6px">
-        ${horiSteps}
-      </div>
-    </div>`;
+  const steps = [['서류 전형 개시', tl.roundCreatedAt], ['서류 결과 통보', tl.docResultSentAt], ['면접 일정 안내', tl.interviewScheduleSentAt],
+    ['면접 실시', tl.interviewDate], ['면접 결과 통보', tl.interviewResultSentAt], ['채용검진 안내', tl.healthCheckNoticeSentAt], ['최종 합격 통보', tl.finalResultSentAt]];
+  // 7단계라 세로 표로 두면 반 쪽을 먹는다 → 한 줄 단계 표시. 진행한 단계는 남색, 남은 단계는 회색
+  return `<div class="rp-tl">${steps.map(([l, d]) => `<div class="st${d ? ' on' : ''}"><i></i><div class="l">${l}</div><div class="d">${d ? ko(d) : '미실시'}</div></div>`).join('')}</div>`;
 }
 
 function _renderAiReport(round, stats, apps, ivResults, ai, fromCache) {
-  // ✅ v1.0.59: 부제목 — 캐시 조회 / 신규 생성 구분
-  if (!fromCache) {
-    document.getElementById('aiReportSubtitle').textContent = round + ' · ' + (new Date()).toLocaleDateString('ko-KR') + ' 신규 생성';
-  }
+  ai = ai || {};
+  const E = _escapeHtml;
+  const closed = stats.isClosed;
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}. ${today.getMonth() + 1}. ${today.getDate()}.`;
+  const logo = (document.querySelector('.logo-icon img') || {}).src || '';
+  const rate = stats.passN ? (stats.totalN / stats.passN).toFixed(1) + ' : 1' : '-';
 
-  // 합격자 강점 카드 데이터
-  const passers = ivResults.filter(r => {
-    const e = effectiveResult(r); return e === '합격' || isReserve(e);
-  }).map(r => {
-    const app = apps.find(a => (a.result?.name||'').replace(/\s+/g,'') === (r.name||'').replace(/\s+/g,''));
-    return { ...r, app, eff: effectiveResult(r) };
-  });
+  // 단계별 인원 — 마지막 칸(최종 합격)만 진하게
+  const fun = [
+    ['지원', stats.totalN], ['서류 적격', stats.totalN - stats.disqN], ['면접 대상', stats.confirmedN],
+    ['면접 응시', stats.interviewedN], ['최종 합격', stats.passN]
+  ].map(([l, n], i, a) => `<div class="s${i === a.length - 1 ? ' hi' : ''}"><div class="n">${n}<small>명</small></div><div class="l">${l}</div></div>`).join('');
 
-  // SVG 점수 분포 차트
-  const maxBucket = Math.max(...stats.buckets, 1);
-  const barChart = `
-    <svg viewBox="0 0 500 180" style="width:100%;height:auto;max-height:200px">
-      ${stats.buckets.map((v, i) => {
-        const h = (v / maxBucket) * 130;
-        const x = 30 + i * 90;
-        const y = 150 - h;
-        const labels = ['0~20','20~40','40~60','60~80','80~100'];
-        const colors = ['#dc2626','#f59e0b','#94a3b8','#3b82f6','#10b981'];
-        return `
-          <rect x="${x}" y="${y}" width="60" height="${h}" fill="${colors[i]}" opacity="0.85" rx="4" />
-          <text x="${x+30}" y="${y-6}" text-anchor="middle" fill="#94a3b8" font-size="13" font-weight="700">${v}</text>
-          <text x="${x+30}" y="170" text-anchor="middle" fill="#64748b" font-size="11">${labels[i]}</text>
-        `;
-      }).join('')}
-    </svg>`;
+  // 면접 결과 표 — 종합점수 순. 합격자 가운데 1위 한 줄만 강조
+  const resCls = v => v === '합격' ? 'ok' : isReserve(v) ? 'rv' : v === '불합격' ? 'ng' : 'un';
+  const num = v => (v == null || isNaN(v)) ? '<span class="un">-</span>' : v;
+  let hlDone = false;
+  const ivRows = stats.people.map((p, i) => {
+    const hl = !hlDone && p.eff === '합격'; if (hl) hlDone = true;
+    return `<tr${hl ? ' class="hl"' : ''}><td class="r">${i + 1}</td><td class="lb">${E(p.name || '')}</td>
+      <td><span class="${resCls(p.eff)}">${E(p.eff || '미정')}</span></td>
+      <td class="r">${num(p.aptScore)}</td><td class="r">${num(p.ivScore)}</td><td class="r"><b>${p.total}</b></td><td class="r">${p.docScore}</td></tr>`;
+  }).join('');
 
-  // 직종 분포 (원형 통계)
-  const jobItems = Object.entries(stats.jobMap)
-    .sort((a,b) => b[1]-a[1])
-    .map(([k,v]) => `
-      <div style="display:flex;justify-content:space-between;padding:8px 12px;background:rgba(255,255,255,0.04);border-radius:6px;margin-bottom:6px">
-        <span style="font-size:13px;color:#cbd5e1">${k}</span>
-        <span style="font-size:13px;color:#fff;font-weight:700">${v}명</span>
-      </div>`).join('');
+  // 합격·예비 주요 강점 — 표 안에 문장을 넣지 않고 따로 뺀다(§6-2 비고 열 금지)
+  const picks = stats.people.filter(p => p.eff === '합격' || isReserve(p.eff));
+  const pickHtml = picks.map(p => `<div class="rp-box"><div class="t">${E(p.name)} <span class="${resCls(p.eff)}" style="font-size:12px;margin-left:4px">${E(p.eff)}</span>
+      <span style="float:right;font-size:12px;color:#4b5563;font-weight:600">종합 ${p.total}점</span></div>
+      ${p.strengths.length ? _rptList(p.strengths) : '<div class="note">서류 분석 강점 기록 없음</div>'}</div>`).join('');
 
-  const html = `
-  <div id="aiReportPrintArea" style="background:#0a0e1a;color:#e2e8f0;padding:32px 36px;font-family:system-ui,'맑은 고딕',sans-serif;line-height:1.6">
+  // 서류점수 분포 — 높은 구간부터
+  const B = stats.buckets, maxB = Math.max(1, ...B);
+  const distRows = [['80점 이상', B[4]], ['60~79점', B[3]], ['40~59점', B[2]], ['20~39점', B[1]], ['20점 미만', B[0]]]
+    .map(([l, n]) => `<tr><td class="lb">${l}</td><td class="r">${n}</td><td><span class="bar" style="width:${Math.round(n / maxB * 100)}%"></span></td></tr>`).join('');
+  const eduOrder = ['대학원', '대졸', '전문대', '고졸', '기타', '미기재'];
+  const eduChips = eduOrder.filter(k => stats.eduMap[k]).map(k => `<span class="rp-chip">${k} <b>${stats.eduMap[k]}</b></span>`).join('');
+  const sig = stats.avgSd != null ? _fitSignal(stats.avgSd) : null;
 
-    <!-- 헤더 -->
-    <div class="ai-report-header" style="text-align:center;margin-bottom:28px;padding-bottom:24px;border-bottom:1px solid rgba(255,255,255,0.10)">
-      <div style="display:inline-block;padding:4px 14px;background:linear-gradient(135deg,#7d47e9,#2563eb);border-radius:20px;font-size:11px;font-weight:700;letter-spacing:2px;color:#fff;margin-bottom:14px">AI ANALYSIS REPORT</div>
-      <h1 style="font-size:26px;font-weight:800;margin:0 0 10px 0;color:#fff">${round} 채용 결과 보고서</h1>
-      <div style="font-size:13px;color:#94a3b8">선광신컨테이너터미널 관리팀 · ${(new Date()).toLocaleDateString('ko-KR',{year:'numeric',month:'long',day:'numeric',weekday:'long'})}</div>
+  const html = `<style>${RPT_CSS}</style>
+  <div id="aiReportPrintArea" class="rp">
+    <div class="rp-top">
+      <div>
+        <div class="k">RECRUITMENT REPORT</div>
+        <h1>${E(_rptTitle(round))} 채용 결과 보고</h1>
+        <div class="m">${E(_roundLabel(round))} &nbsp;·&nbsp; ${E(SENDER_INFO.companyFull || '')} ${E(SENDER_INFO.team || '')} &nbsp;·&nbsp; ${todayStr}</div>
+        <span class="rp-st ${closed ? 'fin' : 'mid'}">${closed ? '최종 보고 · 회차 종결' : '중간 보고 · 회차 진행 중' + (stats.undecidedN ? ` · 최종 결과 미정 ${stats.undecidedN}명` : '')}</span>
+      </div>
+      ${logo ? `<div class="logo"><img src="${logo}" alt=""></div>` : ''}
     </div>
+    <div class="rp-in">
+      <div class="rp-h"><b>1</b>핵심 요약</div>
+      <div class="rp-sum">${_rptList(ai.executive_summary)}</div>
 
-    <!-- 경영진 요약 (가장 임팩트 큰 박스) -->
-    <div style="background:linear-gradient(135deg,rgba(125,71,233,0.20),rgba(37,99,235,0.10));border:1px solid rgba(125,71,233,0.40);border-radius:14px;padding:24px 28px;margin-bottom:24px;position:relative;overflow:hidden">
-      <div style="position:absolute;top:18px;right:22px;font-size:64px;opacity:0.08">📊</div>
-      <div style="font-size:11px;color:#a78bfa;letter-spacing:2px;font-weight:700;margin-bottom:10px">EXECUTIVE SUMMARY</div>
-      <div style="font-size:16px;line-height:1.85;color:#f1f5f9;font-weight:500">${(ai.executive_summary||'요약 없음').replace(/\n/g,'<br>')}</div>
-    </div>
+      <div class="rp-h"><b>2</b>전형 단계별 인원</div>
+      <div class="rp-fun">${fun}</div>
+      <div class="rp-sub">
+        <span>예비합격 <b>${stats.reserveN}명</b></span><span>불합격 <b>${stats.failN}명</b></span>
+        ${stats.undecidedN ? `<span>결과 미정 <b>${stats.undecidedN}명</b></span>` : ''}
+        <span>서류 탈락 <b>${stats.disqN}명</b></span><span>경쟁률 <b>${rate}</b></span>
+      </div>
 
-    <!-- KPI 4개 카드 -->
-    <div class="rgrid rgrid-4" style="gap:12px;margin-bottom:24px">
-      ${[
-        {label:'총 지원자', value:stats.totalN, unit:'명', color:'#3b82f6', icon:'👥'},
-        {label:'면접 응시', value:stats.interviewedN, unit:'명', color:'#f59e0b', icon:'🎤'},
-        {label:'최종 합격', value:stats.passN, unit:'명', color:'#10b981', icon:'🏆'},
-        {label:'경쟁률', value:stats.passN ? (stats.totalN/stats.passN).toFixed(1) : '-', unit:': 1', color:'#a78bfa', icon:'⚖️'}
-      ].map(k => `
-        <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:14px;text-align:center">
-          <div style="font-size:18px;margin-bottom:4px">${k.icon}</div>
-          <div style="font-size:11px;color:#64748b;letter-spacing:1px;font-weight:600;margin-bottom:6px">${k.label}</div>
-          <div style="font-size:24px;font-weight:800;color:${k.color}">${k.value}<span style="font-size:13px;color:#64748b;font-weight:500;margin-left:2px">${k.unit}</span></div>
-        </div>`).join('')}
-    </div>
+      ${window.__currentAiReportTimeline ? `<div class="rp-h"><b>3</b>진행 일정</div>${_rptTimeline(window.__currentAiReportTimeline)}` : ''}
 
-    <!-- ✅ v1.0.60: 채용 회차 타임라인 (timeline 데이터 있을 때만 렌더) -->
-    ${window.__currentAiReportTimeline ? _buildTimelineCard(window.__currentAiReportTimeline) : ''}
+      <div class="rp-h"><b>${window.__currentAiReportTimeline ? 4 : 3}</b>면접 결과</div>
+      ${stats.people.length ? `<table>
+        <colgroup><col style="width:7%"><col style="width:19%"><col style="width:17%"><col style="width:13%"><col style="width:13%"><col style="width:15%"><col style="width:16%"></colgroup>
+        <thead><tr><th class="r">순위</th><th>성명</th><th>결과</th><th class="r">인적성</th><th class="r">면접</th><th class="r">종합</th><th class="r">서류(참고)</th></tr></thead>
+        <tbody>${ivRows}</tbody></table>
+        <div class="note">종합 = 인적성 50% + 면접 50%. 서류점수는 면접 대상 선발까지의 지표로 종합점수에 들어가지 않음.</div>`
+        : '<div class="note">면접 평가 기록이 아직 없음.</div>'}
+      ${picks.length ? `<div style="margin-top:12px" class="rp-2">${pickHtml}</div>` : ''}
 
-    <!-- 점수 분포 차트 + 직종 분포 -->
-    <div class="rgrid rgrid-split" style="gap:18px;margin-bottom:24px">
-      <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:18px 20px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-          <div style="font-size:13px;font-weight:700;color:#fff">📈 AI 서류점수 분포</div>
-          <div style="font-size:12px;color:#94a3b8">평균 <b style="color:#fff">${stats.avgScore}점</b> · 최고 <b style="color:#10b981">${stats.maxScore}</b> · 최저 <b style="color:#dc2626">${stats.minScore}</b></div>
+      <div class="rp-h"><b>${window.__currentAiReportTimeline ? 5 : 4}</b>지원자 풀</div>
+      <div class="rp-2">
+        <div>
+          <table><colgroup><col style="width:30%"><col style="width:16%"><col></colgroup>
+            <thead><tr><th>서류점수</th><th class="r">인원</th><th>분포</th></tr></thead><tbody>${distRows}</tbody></table>
+          <div class="note">평균 ${stats.avgScore}점 · 최고 ${stats.maxScore}점 · 최저 ${stats.minScore}점 (서류 탈락자 제외)</div>
         </div>
-        ${barChart}
-        ${stats.avgSd != null ? (()=>{const sig=_fitSignal(stats.avgSd);return `<div style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.08);font-size:12px;color:#94a3b8;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px"><span>🎯 AI 채점 안정성 <b style="color:${sig?sig.color:'#94a3b8'}">${sig?sig.dot+' '+sig.label:'-'}</b> <span style="opacity:0.7">평균 ±${stats.avgSd} · ${stats.sdN}명 기준</span></span>${stats.reviewN>0?`<span style="color:#dc2626;font-weight:700">⚠ 재검토 권고 ${stats.reviewN}명</span>`:(stats.cautionN>0?`<span style="color:#f59e0b">주의 ${stats.cautionN}명</span>`:`<span style="color:#10b981">전원 안정</span>`)}</div>`;})() : ''}
-      </div>
-      <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:18px 20px">
-        <div style="font-size:13px;font-weight:700;color:#fff;margin-bottom:14px">💼 직종별 지원</div>
-        ${jobItems || '<div style="color:#64748b;font-size:13px">데이터 없음</div>'}
-      </div>
-    </div>
-
-    <!-- AI 인사이트 박스들 -->
-    <div style="margin-bottom:24px">
-      <div style="font-size:12px;color:#a78bfa;letter-spacing:2px;font-weight:700;margin-bottom:14px">✨ AI 인사이트</div>
-
-      <div style="background:rgba(16,185,129,0.06);border-left:3px solid #10b981;border-radius:8px;padding:16px 20px;margin-bottom:12px">
-        <div style="font-size:13px;font-weight:700;color:#10b981;margin-bottom:8px">📊 지원자 풀 품질</div>
-        <div style="font-size:14px;color:#cbd5e1;line-height:1.75">${(ai.pool_quality||'').replace(/\n/g,'<br>')}</div>
+        <div>
+          <div style="font-weight:700;margin-bottom:6px">학력</div>
+          ${eduChips || '<div class="note">자료 없음</div>'}
+          ${sig ? `<div style="font-weight:700;margin:12px 0 4px">AI 서류 채점 안정성</div>
+            <div style="font-size:12.5px">평균 편차 ±${stats.avgSd} (${E(sig.label)}) · 재검토 ${stats.reviewN}명 · 주의 ${stats.cautionN}명 · 대상 ${stats.sdN}명</div>` : ''}
+          <div style="font-weight:700;margin:12px 0 4px">검토 의견</div>
+          ${_rptList(ai.pool_quality)}
+        </div>
       </div>
 
-      <div style="background:rgba(59,130,246,0.06);border-left:3px solid #3b82f6;border-radius:8px;padding:16px 20px;margin-bottom:12px">
-        <div style="font-size:13px;font-weight:700;color:#3b82f6;margin-bottom:8px">🎯 선발 근거</div>
-        <div style="font-size:14px;color:#cbd5e1;line-height:1.75">${(ai.selection_rationale||'').replace(/\n/g,'<br>')}</div>
+      <div class="rp-h"><b>${window.__currentAiReportTimeline ? 6 : 5}</b>선발 근거 및 지표 해석</div>
+      ${_rptList(ai.selection_rationale)}
+      <div style="margin-top:6px">${_rptList(ai.key_metrics_insight)}</div>
+
+      <div class="rp-h"><b>${window.__currentAiReportTimeline ? 7 : 6}</b>유의사항 및 다음 회차 개선</div>
+      <div class="rp-2">
+        <div class="rp-box"><div class="t">유의사항</div>${_rptList(ai.concerns)}</div>
+        <div class="rp-box"><div class="t">다음 회차 개선</div>${_rptList(ai.recommendations)}</div>
       </div>
 
-      <div style="background:rgba(167,139,250,0.06);border-left:3px solid #a78bfa;border-radius:8px;padding:16px 20px">
-        <div style="font-size:13px;font-weight:700;color:#a78bfa;margin-bottom:8px">📈 주요 지표 해석</div>
-        <div style="font-size:14px;color:#cbd5e1;line-height:1.75">${(ai.key_metrics_insight||'').replace(/\n/g,'<br>')}</div>
+      <div class="rp-ft">
+        인원·점수·일정은 보고서를 연 시점의 시트 값임. 핵심 요약·검토 의견·개선 항목은 AI 보조 작성(${E(ai._at || '작성 시각 미기록')} 기준)이며
+        ${closed ? '' : '진행 중 회차라 이후 결과가 바뀌면 [재생성]으로 다시 작성해야 함. '}서류점수는 AI 보조 분석 결과이고 채용 여부는 채용 담당자가 최종 판단함.
+        &nbsp;·&nbsp; SNCT 채용 에이전트 ${E(APP_VERSION)}
       </div>
-    </div>
-
-    <!-- 합격자 카드 -->
-    ${passers.length ? `
-    <div class="ai-passers-section" style="margin-bottom:24px">
-      <div style="font-size:13px;color:#10b981;letter-spacing:2px;font-weight:700;margin-bottom:6px">🏆 최종 합격자 (${passers.length}명)</div>
-      <div style="font-size:11px;color:#64748b;margin-bottom:14px">※ 종합점수 = 인적성 50% · 면접 50% (각 100점 만점을 50점씩으로 환산해 합산) · 서류·투표점수는 면접 대상자 선발까지의 지표라 종합점수에 들어가지 않는다</div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px">
-        ${passers.map(p => {
-          const r = p.app?.result || {};
-          const strList = (r.strengths||[]).slice(0,2).map(s => `<li style="font-size:12px;color:#cbd5e1;margin-bottom:3px">${s}</li>`).join('');
-          const resultColor = p.eff === '합격' ? '#10b981' : '#f59e0b';
-          return `
-          <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:14px 16px">
-            <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px">
-              <div>
-                <div style="font-size:16px;font-weight:700;color:#fff">${p.name||'-'}</div>
-                <div style="font-size:11px;color:#64748b;margin-top:2px">${p.app?.empType||''} ${p.app?.job||''}</div>
-              </div>
-              <div style="padding:3px 10px;background:rgba(${p.eff==='합격'?'16,185,129':'245,158,11'},0.15);border-radius:12px;font-size:11px;font-weight:700;color:${resultColor}">${p.eff}</div>
-            </div>
-            <div style="font-size:11px;color:#64748b;margin-bottom:6px">종합 <b style="color:#fff;font-size:14px">${p.total||0}점</b> (서류 ${r.fit_score||0}${(r._fit_sd!=null && !r._disqualified)?(()=>{const sig=_fitSignal(r._fit_sd);return sig?` <span style="color:${sig.color}" title="AI 서류점수 채점 안정성 ±${r._fit_sd} (${sig.label})">${sig.dot}</span>`:'';})():''} · 면접 ${p.ivScore||0})</div>
-            ${strList ? `<ul style="margin:8px 0 0 0;padding-left:18px">${strList}</ul>` : ''}
-          </div>`;
-        }).join('')}
-      </div>
-    </div>` : ''}
-
-    <!-- 우려사항 / 개선 제안 -->
-    <div class="ai-concerns-suggestions rgrid rgrid-2" style="gap:16px;margin-bottom:24px">
-      ${(ai.concerns||[]).length ? `
-      <div style="background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.20);border-radius:10px;padding:18px 20px">
-        <div style="font-size:13px;font-weight:700;color:#f59e0b;margin-bottom:10px">⚠️ 우려사항</div>
-        <ul style="margin:0;padding-left:20px;color:#cbd5e1;font-size:13px;line-height:1.75">
-          ${(ai.concerns||[]).map(c => `<li>${c}</li>`).join('')}
-        </ul>
-      </div>` : '<div></div>'}
-
-      ${(ai.recommendations||[]).length ? `
-      <div style="background:rgba(125,71,233,0.06);border:1px solid rgba(125,71,233,0.25);border-radius:10px;padding:18px 20px">
-        <div style="font-size:13px;font-weight:700;color:#a78bfa;margin-bottom:10px">💡 다음 회차 개선 제안</div>
-        <ul style="margin:0;padding-left:20px;color:#cbd5e1;font-size:13px;line-height:1.75">
-          ${(ai.recommendations||[]).map(r => `<li>${r}</li>`).join('')}
-        </ul>
-      </div>` : '<div></div>'}
-    </div>
-
-    <!-- 푸터 -->
-    <div class="ai-report-footer" style="text-align:center;padding:18px 0;border-top:1px solid rgba(255,255,255,0.08);font-size:11px;color:#64748b">
-      본 보고서는 <b style="color:#a78bfa">SNCT 채용 에이전트 ${APP_VERSION}</b>의 AI 분석 엔진(${MODEL})이 자동 생성한 것이며, 최종 결정은 채용 담당자의 종합 판단을 따릅니다.
     </div>
   </div>`;
 
@@ -15242,39 +15240,21 @@ function _regenerateAiReport() {
 }
 
 function printAiReport() {
-  // 인쇄용 새 창에 보고서 HTML만 그대로 띄우고 인쇄 다이얼로그 호출
+  // v1.4.73: 종전엔 인쇄 때 모든 글씨를 강제로 검정으로 바꿔 박스만 남았다. 이제 화면 그대로 찍는다.
   const area = document.getElementById('aiReportPrintArea');
   if (!area) { toast('인쇄할 보고서가 없습니다','err'); return; }
   const w = window.open('', '_blank');
   if (!w) { toast('팝업이 차단되었습니다','err'); return; }
-  // ✅ v1.0.61: PDF 출력 페이지 분할 — 카드 단위로 안 짤리게 + 큰 섹션은 새 페이지
-  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>AI 채용 결과 보고서</title>
-    <style>
-      body{margin:0;padding:0;background:#0a0e1a;color:#e2e8f0;font-family:system-ui,'맑은 고딕',sans-serif}
-      @page{size:A4;margin:14mm 12mm}
-      @media print{
-        html,body{background:#fff !important;color:#000 !important}
-        #aiReportPrintArea{background:#fff !important;color:#000 !important;padding:0 !important}
-        *{color:#000 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-        /* 모든 카드 (배경 박스) — 페이지 중간에 짤리지 않게 */
-        #aiReportPrintArea > div{page-break-inside:avoid;break-inside:avoid;}
-        /* 합격자 카드들의 부모 grid도 보호 */
-        #aiReportPrintArea div[style*="grid"]{page-break-inside:avoid;break-inside:avoid;}
-        #aiReportPrintArea div[style*="grid"] > div{page-break-inside:avoid;break-inside:avoid;}
-        /* AI 인사이트 4개 박스 각각 보호 */
-        #aiReportPrintArea div[style*="border-left"]{page-break-inside:avoid;break-inside:avoid;}
-        /* 차트 SVG 보호 */
-        #aiReportPrintArea svg{page-break-inside:avoid;break-inside:avoid;}
-        /* 합격자 섹션 시작 시 새 페이지 권장 */
-        .ai-passers-section{page-break-before:auto;break-before:auto;page-break-inside:avoid;break-inside:avoid;}
-        /* 우려·제안 박스 보호 */
-        .ai-concerns-suggestions{page-break-before:auto;break-before:auto;page-break-inside:avoid;break-inside:avoid;}
-        /* 푸터 분리 안 됨 */
-        .ai-report-footer{page-break-inside:avoid;break-inside:avoid;}
-        /* 헤더 분리 안 됨 */
-        .ai-report-header{page-break-after:avoid;break-after:avoid;}
-      }
-    </style></head><body>${area.outerHTML}<scr`+`ipt>setTimeout(()=>window.print(),400);<\/sc`+`ript></body></html>`);
+  const r = window.__currentAiReportRound || '';
+  const title = `채용결과보고_${_rptTitle(r).replace(/\s+/g,'')}_${new Date().toISOString().slice(0,10).replace(/-/g,'')}`;
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${_escapeHtml(title)}</title>
+    <style>${RPT_CSS}
+      body{margin:0;background:#fff}
+      @page{size:A4;margin:10mm 0}
+      .rp{box-shadow:none;width:100%}
+      *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      .rp-h{page-break-after:avoid;break-after:avoid}
+    </style></head><body>${area.outerHTML}<scr` + `ipt>setTimeout(()=>window.print(),400);<\/sc` + `ript></body></html>`);
   w.document.close();
 }
 
