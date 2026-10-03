@@ -1932,7 +1932,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.79';
+const APP_VERSION = 'v1.4.80';
 const APP_VERSION_DATE = '2026.10.03';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -13591,7 +13591,9 @@ function _ivMailData() {
     const apt = aptMap[name];
     const aptScore = apt && apt.score ? Number(apt.score) : null;
     let total = null;
-    if (aptScore != null && ivScore != null) total = Math.round(aptScore * 0.5 + ivScore * 0.5);
+    // v1.4.80 (작업자 결정 2026.10.03): 인적성을 안 본 회차(추천 1명·경력 등)도 메일을 만들 수 있게.
+    //   종합점수는 화면 공통 식(calcWeightedTotal) — 인적성이 없으면 면접 점수만으로 계산된다.
+    if (ivScore != null) total = calcWeightedTotal(null, aptScore, ivScore);
     const lic = Array.isArray(r.licenses) ? r.licenses.join(', ') : (r.licenses || '');
     return {
       name: name,
@@ -13618,8 +13620,9 @@ function _ivMailData() {
   const missIv = rows.filter(x => x.ivScore == null).map(x => x.name);
   const missApt = rows.filter(x => x.aptScore == null).map(x => x.name);
   const missProfile = rows.filter(x => !x.education && !x.summary).map(x => x.name);
+  // v1.4.80: 인적성이 없는 것은 막지 않는다(미실시로 표시). 면접 평가가 없으면 여전히 막는다.
   return { round: round, rows: rows, missIv: missIv, missApt: missApt, missProfile: missProfile,
-           ready: rows.length > 0 && !missIv.length && !missApt.length };
+           ready: rows.length > 0 && !missIv.length };
 }
 
 function openIvMailModal() {
@@ -13648,7 +13651,9 @@ function renderIvMailPreview() {
       ${chip(true, `면접 대상자 ${d.rows.length}명`)}
       ${chip(!d.missProfile.length, '지원자 프로필', d.missProfile)}
       ${chip(!d.missIv.length, '면접 평가 결과', d.missIv)}
-      ${chip(!d.missApt.length, '인적성 결과', d.missApt)}
+      ${d.missApt.length
+        ? `<div style="display:flex;align-items:center;gap:7px;padding:5px 0;font-size:13px"><span style="color:var(--gold);font-weight:700">●</span><span style="color:var(--gold)">인적성 미실시 ${d.missApt.length}명 — 종합점수는 면접 점수로 계산</span><span style="color:var(--tx2);font-size:12px">— ${_escapeHtml(d.missApt.join(', '))}</span></div>`
+        : chip(true, '인적성 결과')}
       ${d.ready ? '' : '<div style="font-size:12px;color:var(--red);margin-top:5px">빠진 자료를 채워야 본문과 첨부자료를 만들 수 있습니다.</div>'}
     </div>`;
 
@@ -13669,7 +13674,7 @@ function renderIvMailPreview() {
     b.disabled = !d.ready;
     b.style.opacity = d.ready ? '1' : '0.45';
     b.style.cursor = d.ready ? 'pointer' : 'not-allowed';
-    b.title = d.ready ? '' : '면접 평가와 인적성 결과가 모두 등록되어야 만들 수 있습니다';
+    b.title = d.ready ? '' : '면접 평가 결과가 등록되어야 만들 수 있습니다';
   });
 }
 
@@ -13685,7 +13690,7 @@ function _ivMailRows(d) {
     return `<tr>`
       + td(x.rank, strong)
       + td(_escapeHtml(x.name), strong + 'text-align:left;')
-      + td(x.aptScore != null ? x.aptScore : '-')
+      + td(x.aptScore != null ? x.aptScore : '미실시')
       + td(x.ivScore != null ? x.ivScore : '-')
       + td(x.total != null ? '<b>' + x.total + '</b>' : '-', 'background-color:rgb(244, 247, 252);')
       + `</tr>`;
@@ -13700,7 +13705,7 @@ function _buildIvMailHtml(d) {
   const P = [];
 
   P.push(`<p style="${GW_FONT.replace('10pt', '13pt')}margin:0px;line-height:1.5;font-weight:bold;color:${NAVY};">`
-    + `${_escapeHtml(_roundShort(d.round))} 면접 결과 — 최종 의견 요청</p>`);
+    + `${_escapeHtml(_roundShort(d.round))} 면접 결과 및 최종 의견 요청</p>`);
   P.push(`<p style="${GW_FONT.replace('10pt', '9pt').replace('rgb(0, 0, 0)', 'rgb(120, 125, 133)')}margin:2px 0px 0px 0px;line-height:1.5;">`
     + `${_escapeHtml(_roundLabel(d.round))}</p>`);
   P.push(`<p style="margin:10px 0px;line-height:0;"><span style="display:inline-block;width:100%;max-width:620px;border-top:2px solid ${NAVY};"></span></p>`);
@@ -13712,7 +13717,8 @@ function _buildIvMailHtml(d) {
   P.push(`<table style="border-collapse:collapse;${GW_FONT}width:100%;max-width:620px;">`
     + `<tbody><tr>${th('순위', '48px')}${th('이름')}${th('인적성', '72px')}${th('면접', '72px')}${th('최종', '72px')}</tr>`
     + _ivMailRows(d) + `</tbody></table>`);
-  P.push(_gwSmall('※ 최종 점수 = 인적성 × 0.5 + 면접 × 0.5 (각 100점 만점)'));
+  P.push(_gwSmall('※ 최종 점수 = 인적성 × 0.5 + 면접 × 0.5 (각 100점 만점)'
+    + (d.missApt && d.missApt.length ? ' · 인적성 미실시자는 면접 점수로 산정' : '')));
   P.push(_gwBlank());
 
   P.push(_gwBox(
@@ -13733,7 +13739,7 @@ function _buildIvMailHtml(d) {
 
 function _buildIvMailText(d) {
   const L = [];
-  L.push(`${_roundShort(d.round)} 면접 결과 — 최종 의견 요청`);
+  L.push(`${_roundShort(d.round)} 면접 결과 및 최종 의견 요청`);
   L.push(`${_roundLabel(d.round)}`);
   L.push('');
   L.push(`안녕하십니까. ${SENDER_INFO.team} ${String(SENDER_INFO.senderName || '').replace(/\s*(차장|과장|대리|부장|팀장|사원|주임)\s*$/, '').trim()}입니다.`);
@@ -13742,12 +13748,12 @@ function _buildIvMailText(d) {
   L.push('순위  이름        인적성   면접   최종');
   d.rows.forEach(x => {
     L.push(String(x.rank).padEnd(4) + '  ' + String(x.name).padEnd(10)
-      + String(x.aptScore != null ? x.aptScore : '-').padStart(5)
+      + String(x.aptScore != null ? x.aptScore : '미실시').padStart(5)
       + String(x.ivScore != null ? x.ivScore : '-').padStart(7)
       + String(x.total != null ? x.total : '-').padStart(7));
   });
   L.push('');
-  L.push('※ 최종 점수 = 인적성 x 0.5 + 면접 x 0.5 (각 100점 만점)');
+  L.push('※ 최종 점수 = 인적성 x 0.5 + 면접 x 0.5 (각 100점 만점)' + (d.missApt && d.missApt.length ? ' · 인적성 미실시자는 면접 점수로 산정' : ''));
   L.push('');
   L.push('첨부한 자료에 지원자별 프로필/면접 평가/인적성 결과가 정리되어 있습니다.');
   L.push('최종 결정에 참고하시라고 보내드립니다.' + (d.deadline ? ' 의견은 ' + d.deadline + '까지 말씀해 주시면 됩니다.' : ''));
@@ -13854,13 +13860,13 @@ async function printIvBrief() {
           : '<table class="ev"><thead><tr><th>면접관</th><th>매긴 순위</th><th>비고</th></tr></thead>')
       + '<tbody>' + ivRows + '</tbody></table>'
       + '<div class="ttl">3. 인적성 검사</div>'
-      + '<table class="kv">' + row('등급 / 점수', (apt.grade || '-') + ' / ' + (x.aptScore != null ? x.aptScore + '점' : '-'))
+      + '<table class="kv">' + row('등급 / 점수', x.aptScore != null ? ((apt.grade || '-') + ' / ' + x.aptScore + '점') : '미실시')
       + row('평가', apt.eval) + row('제1 적성', apt.field1) + row('제2 적성', apt.field2) + '</table>'
       + '<div class="ttl">4. 최종 점수</div>'
-      + '<table class="fin"><tr><th>인적성 (100)</th><td>' + (x.aptScore != null ? x.aptScore : '-') + '</td>'
+      + '<table class="fin"><tr><th>인적성 (100)</th><td>' + (x.aptScore != null ? x.aptScore : '미실시') + '</td>'
       + '<th>면접 (100)</th><td>' + (x.ivScore != null ? x.ivScore : '-') + '</td>'
       + '<th>최종 (50+50)</th><td class="tot">' + (x.total != null ? x.total + '점' : '-') + '</td></tr></table>'
-      + '<div class="note">최종 점수 = 인적성 × 0.5 + 면접 × 0.5 · 지원서 점수와 투표 점수는 최종 순위에 반영하지 않습니다.</div>'
+      + '<div class="note">최종 점수 = 인적성 × 0.5 + 면접 × 0.5' + (x.aptScore == null ? ' (인적성 미실시, 면접 점수로 산정)' : '') + ' · 지원서 점수와 투표 점수는 최종 순위에 반영하지 않습니다.</div>'
       + '</div>';
   }).join('');
 
@@ -15516,7 +15522,7 @@ function openPromotionDocModal(round) {
   });
 
   if (!passers.length) {
-    toast('최종 합격자가 없습니다 (회차 종결 후 합격자 결정 필요)','err');
+    toast('최종 합격자가 없습니다 — 채용 집계의 최종 합격 결정에서 합격을 먼저 저장해 주세요','err');
     return;
   }
 
@@ -15527,7 +15533,8 @@ function openPromotionDocModal(round) {
 
   // 직종 라벨 (품의서 표의 '구분' 컬럼) — 회차의 job만 (예: "전기정비")
   let categoryLabel = roundInfo ? (roundInfo.job || '') : '';
-  let defaultTitle = `${new Date().getFullYear()}년 ${new Date().getMonth() < 6 ? '상반기' : '하반기'} 신입사원 채용건(${defaultJobLabel})`;
+  // v1.4.80: 경력 회차는 「경력사원」, 상·하반기는 회차 접수일 기준
+  let defaultTitle = `${_roundHalf(round)} ${_icEmpType(round) || '신입'}사원 채용건(${defaultJobLabel})`;
 
   // ✅ v1.2.10: 저장된 품의서 입력값 복원 (구분·제목·합격자별 검진정보)
   const _savedDoc = _loadPromotionDoc(round);
@@ -15755,19 +15762,30 @@ function generatePromotionDoc() {
 //   → 정비 기술직 둘만 '신입 기사', 크레인기사를 포함한 나머지 전 직종은 '신입 사원'.
 //   품의서와 최종합격 메일이 같은 규칙을 쓴다. 규칙이 바뀌면 이 함수만 고친다.
 const _ENGINEER_JOBS = /전기정비|기계정비/;
-function _treatmentRank(job) {
-  return _ENGINEER_JOBS.test(String(job || '')) ? '신입 기사' : '신입 사원';
+// ✅ v1.4.80 (작업자 결정 2026.10.03): 경력 회차는 「경력 기사 / 경력 사원」. empType이 없으면
+//   직종 라벨(메일은 「경력 전기정비」처럼 신입/경력이 앞에 붙어 온다)에서 읽는다.
+function _treatmentRank(job, empType) {
+  const career = empType ? empType === '경력' : /경력/.test(String(job || ''));
+  const pre = career ? '경력' : '신입';
+  return _ENGINEER_JOBS.test(String(job || '')) ? pre + ' 기사' : pre + ' 사원';
+}
+// 회차 코드 {yyyymmdd}_{신입|경력}_{직종} → 「2026년 하반기」 (작성한 날이 아니라 접수한 날 기준)
+function _roundHalf(round) {
+  const m = String(round || '').match(/^(\d{4})(\d{2})\d{2}_/);
+  const y = m ? +m[1] : new Date().getFullYear();
+  const mo = m ? +m[2] : new Date().getMonth() + 1;
+  return y + '년 ' + (mo <= 6 ? '상반기' : '하반기');
 }
 // 품의서 '채용조건' 칸 — 직급만 (※수습은 표 아래 별도 줄)
-function _treatmentLabel(job) {
-  return _treatmentRank(job);
+function _treatmentLabel(job, empType) {
+  return _treatmentRank(job, empType);
 }
 // 메일·상세안내 '처우' — 직급 + 설정의 ※단서를 잇는다
-function _treatmentFull(job) {
+function _treatmentFull(job, empType) {
   const raw = String((SENDER_INFO && SENDER_INFO.defaultTreatment) || '');
   const i = raw.indexOf('※');
   const note = i >= 0 ? ('  ' + raw.slice(i)).replace(/[ 	]+$/, '') : '';
-  return _treatmentRank(job) + note;
+  return _treatmentRank(job, empType) + note;
 }
 
 function _buildPromotionDocHtml(data) {
@@ -15811,7 +15829,7 @@ function _buildPromotionDocHtml(data) {
           <td style="${tdBirth}">${_escapeHtml(p.birth || '-')}</td>
           <td style="${tdAge}">${_escapeHtml(p.age ? '만 '+p.age+'세' : '-')}</td>
           <td style="${tdEdu}">${_escapeHtml(p.education || '-')}</td>
-          <td style="${tdCond}">${_escapeHtml(_treatmentLabel(data.categoryLabel || p.job || ''))}</td>
+          <td style="${tdCond}">${_escapeHtml(_treatmentLabel(data.categoryLabel || p.job || '', _icEmpType(data.round)))}</td>
         </tr>`).join('');
 
   // 2. 검진결과 표
@@ -15830,9 +15848,9 @@ function _buildPromotionDocHtml(data) {
   // 도입부 (시상/품의)
   const introText = `${data.title.replace(/^.+신입사원/, function(m) { return m; })}을(를) 아래와 같이 채용하고자 하오니 검토 후 결재하여 주시기 바랍니다.`;
   // 마스터 샘플: "2026년 상반기 신입사원을 아래와 같이 채용하고자 하오니 검토 후 결재하여 주시기 바랍니다."
-  const yearHalf = new Date().getFullYear() + '년 ' + (new Date().getMonth() < 6 ? '상반기' : '하반기');
+  const yearHalf = _roundHalf(data.round);   // v1.4.80: 회차 접수일 기준
   // v1.4.8: 작업자 확정 서식 — 들여쓰기 후 "검토 후 / 결재하여"로 줄을 나눈다
-  const intro1 = `${yearHalf} 신입사원을 아래와 같이 채용하고자 하오니 검토 후 `;
+  const intro1 = `${yearHalf} ${_icEmpType(data.round) || '신입'}사원을 아래와 같이 채용하고자 하오니 검토 후 `;
   const intro2 = `결재하여 주시기 바랍니다.`;
   const IND9 = '&nbsp; '.repeat(9);   // 들여쓰기 (nbsp + 공백) x9
 
