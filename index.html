@@ -1933,7 +1933,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.87';
+const APP_VERSION = 'v1.4.88';
 const APP_VERSION_DATE = '2026.10.03';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -2070,6 +2070,40 @@ function renderReserveRankBadge(result) {
 //   화면마다 막으면 새 화면에서 또 빠진다 → **데이터가 들어오는 곳(분석 직후·불러오기)에서 한 번에.**
 //   · 모든 글자: < > 를 같은 모양의 전각 ＜ ＞ 로 (보기엔 같고 태그가 되지 않는다)
 //   · 이름: 따옴표·백틱·역슬래시도 뺀다 — onclick="…('${이름}')" 속에도 들어가기 때문
+// ✅ v1.4.88 (2026.10.03, 작업자 결정) — **같은 회차 동명이인은 「김민수(95)」로 구별한다.**
+//   투표·확정·면접·결과·참석 여부가 모두 이름으로 저장돼, 같은 이름이 둘이면 서로의 판정이 섞였다
+//   (v1.4.77은 메일 자동 발송에서 빼고 알려 주기만 했다). 분석을 저장할 때 출생연도 끝 두 자리를 붙여
+//   이후 모든 기록이 따로 쌓이게 한다.
+//   · 이미 저장된 이름(_nameLocked)은 바꾸지 않는다 — 투표·면접 기록과의 연결이 끊긴다. 새로 들어온 쪽에만 붙인다.
+//   · 지원자에게 가는 글(메일·면접참석확인서)은 괄호 없는 원래 이름(_realName)으로 나간다.
+//   · 품의서·검진 명단은 사람별 입력값을 이름으로 저장하므로 구별된 이름 그대로 둔다(생년월일 칸이 있다).
+function _realName(n) { return String(n == null ? '' : n).replace(/\((\d{2}|\d)\)$/, ''); }
+function _dedupeNames(list) {
+  const nk = v => String(v || '').replace(/\s+/g, '');
+  const groups = {};
+  (list || []).forEach(a => { const r = a && a.result; if (!r || !r.name) return; const k = nk(_realName(r.name)); (groups[k] = groups[k] || []).push(a); });
+  const taken = new Set((list || []).map(a => a && a.result && nk(a.result.name)).filter(Boolean));
+  const renamed = [];
+  Object.keys(groups).forEach(k => {
+    const g = groups[k];
+    if (g.length < 2) return;
+    g.forEach(a => {
+      const r = a.result;
+      if (r._nameLocked) return;                       // 이미 저장된 이름은 그대로
+      if (/\((\d{2}|\d)\)$/.test(r.name)) return;       // 이미 구별된 이름
+      const base = _realName(r.name);
+      const m = String(r.birth || '').match(/(19|20)(\d{2})/);
+      let cand = m ? base + '(' + m[2] + ')' : '';
+      let i = 2;
+      while (!cand || taken.has(nk(cand))) cand = base + '(' + (i++) + ')';
+      taken.delete(nk(r.name)); taken.add(nk(cand));
+      renamed.push(r.name + ' → ' + cand);
+      r.name = cand;
+    });
+  });
+  return renamed;
+}
+
 function _cleanStr(v) { return typeof v === 'string' ? v.replace(/</g, '＜').replace(/>/g, '＞') : v; }
 function _cleanName(v) { return typeof v === 'string' ? _cleanStr(v).replace(/['"`\\]/g, '') : v; }
 function _cleanResult(r, depth) {
@@ -4060,6 +4094,9 @@ async function saveToSheet() {
   const done = applicants.filter(a=>a.status==='done');
   const _kept = applicants.filter(a => a.status !== 'done' && (a.result || a._prevResult));
   if (!done.length && !_kept.length) { toast('분석 완료된 지원자가 없습니다','err'); return; }
+  // v1.4.88: 같은 회차 동명이인 구별(새로 들어온 쪽만) — 저장 전에 한다
+  const _ren = _dedupeNames(done.concat(_kept.filter(a => a.result)));
+  if (_ren.length) toast('동명이인을 구별했습니다 — ' + _ren.join(', '), 'warn');
   if (_kept.length) toast(`분석 실패 ${_kept.length}명은 이전 결과로 저장합니다 — ${_kept.map(a => (a.result||a._prevResult).name || a.name).join(', ')}`, 'warn');
   // 회차명: 이미 있으면 유지, 없으면 날짜+직종으로 자동생성
   const empType = document.getElementById('empType').value;
@@ -4088,6 +4125,7 @@ async function saveToSheet() {
     const data = await res.json();
     if (data.success) {
       analysisSaved = true;
+      done.concat(_kept).forEach(a => { if (a && a.result) a.result._nameLocked = true; });   // v1.4.88: 저장된 이름은 고정
       _applicantsRound = currentRound;   // v1.4.79: 방금 저장한 명단은 이 회차 것
       delete _adminPoolCache[currentRound];
       const sb=document.getElementById('saveBtn');
@@ -4312,6 +4350,7 @@ async function loadFromSheet(opts) {
       const lsData = JSON.parse(lsRaw);
       if (lsData && lsData.d && lsData.d.length) {
         applicants = _cleanApps(lsData.d);   // v1.4.76
+        applicants.forEach(a => { if (a && a.result) a.result._nameLocked = true; });   // v1.4.88
         _applicantsRound = round;            // v1.4.79
         applicants.forEach(a=>{ 
           if(a._bonus && Object.keys(a._bonus).length) bonusScores[a.id]=a._bonus;
@@ -4379,6 +4418,7 @@ async function loadFromSheet(opts) {
       return;
     }
     applicants = _cleanApps(data.applicants);   // v1.4.76
+    applicants.forEach(a => { if (a && a.result) a.result._nameLocked = true; });   // v1.4.88
     _applicantsRound = round;                    // v1.4.79
     applicants.forEach(a=>{ 
       if(a._bonus && Object.keys(a._bonus).length) bonusScores[a.id]=a._bonus;
@@ -5747,12 +5787,14 @@ function _refreshEmailPreview() {
   //   - finalResult: 합격 전용 (분기 없음)
   //   - interviewResult: 불합격 vs 예비합격 (resultLabel 분기)
   //   - 그 외: 분기 없음
+  // v1.4.88: 실제 발송과 같게 — 지원자에게 보이는 이름은 괄호 없는 원래 이름
+  const _sApp = Object.assign({}, sample.app, { name: _realName(sample.app.name) });
   if (pending.templateType === 'interviewResult') {
-    html = tpl.bodyBuilder(pending.round, vars, sample.app, sample.resultLabel);
+    html = tpl.bodyBuilder(pending.round, vars, _sApp, sample.resultLabel);
   } else if (pending.templateType === 'healthCheckNotice') {
-    html = tpl.bodyBuilder(pending.round, vars, sample.app, sample.promoted);   // v1.4.8: 승격자 문구 분기
+    html = tpl.bodyBuilder(pending.round, vars, _sApp, sample.promoted);   // v1.4.8: 승격자 문구 분기
   } else {
-    html = tpl.bodyBuilder(pending.round, vars, sample.app);
+    html = tpl.bodyBuilder(pending.round, vars, _sApp);
   }
   // ✅ v1.2.67: 미리보기에서 '상세 안내' 링크를 누르면 "상세정보를 찾을 수 없습니다"가 뜬다.
   //   상세 정보는 **발송하는 순간에** 시트(_이메일상세정보)에 저장되고, 미리보기는 발송이 아니라서
@@ -5804,18 +5846,20 @@ async function confirmEmailSend() {
     // 같은 app 객체 재사용 방지 위해 매번 초기화
     delete r.app.__emailDetailsToken;
     delete r.app.__emailDetails;
+    // v1.4.88: 지원자에게는 원래 이름으로 — 「김민수(95)」의 괄호는 내부 구별용이다
+    const appMail = Object.assign({}, r.app, { name: _realName(r.app.name) });
     if (pending.templateType === 'interviewResult') {
-      subject = tpl.subjectBuilder(pending.round, vars, r.app, r.resultLabel);
-      htmlBody = tpl.bodyBuilder(pending.round, vars, r.app, r.resultLabel);
+      subject = tpl.subjectBuilder(pending.round, vars, appMail, r.resultLabel);
+      htmlBody = tpl.bodyBuilder(pending.round, vars, appMail, r.resultLabel);
     } else if (pending.templateType === 'healthCheckNotice') {
-      subject = tpl.subjectBuilder(pending.round, vars, r.app);
-      htmlBody = tpl.bodyBuilder(pending.round, vars, r.app, r.promoted);       // v1.4.8: 승격자 문구 분기
+      subject = tpl.subjectBuilder(pending.round, vars, appMail);
+      htmlBody = tpl.bodyBuilder(pending.round, vars, appMail, r.promoted);       // v1.4.8: 승격자 문구 분기
     } else {
-      subject = tpl.subjectBuilder(pending.round, vars, r.app);
-      htmlBody = tpl.bodyBuilder(pending.round, vars, r.app);
+      subject = tpl.subjectBuilder(pending.round, vars, appMail);
+      htmlBody = tpl.bodyBuilder(pending.round, vars, appMail);
     }
     // ✅ v1.0.64: bodyBuilder가 app에 부착한 emailDetails 추출
-    const emailDetails = r.app.__emailDetails || null;
+    const emailDetails = appMail.__emailDetails || null;
     return { email: r.app.email, name: r.app.name, subject, htmlBody, emailDetails };
   });
 
@@ -8556,7 +8600,7 @@ function printIvCert(){
   const [y, m, d] = iss.split('-');
   const issStr = `${y}년 ${+m}월 ${+d}일`;
   // 인쇄창 제목 = 「PDF로 저장」 기본 파일명
-  const fname = `면접참석확인서_${name.replace(/[\\/:*?"<>|\s]/g,'')}_${y}${m}${d}`;
+  const fname = `면접참석확인서_${_realName(name).replace(/[\\/:*?"<>|\s]/g,'')}_${y}${m}${d}`;
   const w = window.open('', '_blank', 'width=820,height=1000');
   if(!w){ toast('팝업이 차단되었습니다','err'); return; }
   const E = _escapeHtml;
@@ -8581,7 +8625,7 @@ th{background:#f0f0f0;font-weight:700;width:26%}
 <div class="bar"><button onclick="window.print()">📄 PDF 저장 — 대상에서 「PDF로 저장」</button></div>
 <h1>면접참석확인서</h1>
 <table>
-<tr><th>성 명</th><td>${E(name)}</td></tr>
+<tr><th>성 명</th><td>${E(_realName(name))}</td></tr>
 <tr><th>생 년 월 일</th><td>${E(v('icBirth'))}</td></tr>
 <tr><th>응 시 분 야</th><td>${E(v('icField'))}</td></tr>
 <tr><th>면 접 일 자</th><td>${E(v('icDate'))}</td></tr>
