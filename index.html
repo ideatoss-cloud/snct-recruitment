@@ -1933,7 +1933,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.84';
+const APP_VERSION = 'v1.4.85';
 const APP_VERSION_DATE = '2026.10.03';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -3199,6 +3199,22 @@ function clearApplicants() {
 function doLogout() {
   try { sessionStorage.removeItem('snct_session'); } catch(e){}
   try { localStorage.removeItem('snct_sess'); localStorage.removeItem('snct_sess_at'); } catch(e){}   // v1.4.10
+  // ⚠️ v1.4.85 (2026.10.03 점검) — **지원자 개인정보가 담긴 이 PC의 저장값도 지운다.**
+  //   면접장 공용 PC에서 로그아웃해도 회차별 지원자 캐시(연락처·생년월일·이메일)와 구글 로그인 토큰이 남아
+  //   다음 사람이 개발자도구로 읽을 수 있었다. 화면 설정(최저학력·모델 등)처럼 개인정보가 아닌 값은 둔다.
+  try {
+    const _pii = [LS_DATA, LS_DOCSUM, LS_ROUNDS, 'ranking_', 'snct_ivCert', 'snct_google_credential', 'snct_session', 'snct_travelFee'];
+    Object.keys(localStorage).forEach(k => { if (_pii.some(p => k === p || k.indexOf(p) === 0)) localStorage.removeItem(k); });
+  } catch (e) {}
+  try {
+    ['__currentRoundApps', '__currentRoundIvResults', '__currentRoundIvDetails', '__currentRoundAptMap', '__currentRoundConfirmedNames',
+     '__currentRoundAbsentNames', '__currentRoundResultHistory', '__voteResults']
+      .forEach(k => { window[k] = null; });
+    // 아래 셋은 다른 곳에서 바로 속성을 쓰므로(window._employmentData[name] = …) null이 아니라 빈 객체로 둔다
+    window._employmentData = {}; window.__emailRsvpStatuses = {}; window.__emailSentStatuses = {};
+    empList = []; _empDirty = {}; _applicantsRound = '';
+    Object.keys(_adminPoolCache).forEach(k => delete _adminPoolCache[k]);
+  } catch (e) {}
   currentUser = ''; isAdmin = false;
   // 상태 초기화
   applicants = []; bonusScores = {}; ivVotes = {}; voteSubmitted = false;
