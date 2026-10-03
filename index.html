@@ -1932,7 +1932,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.73';
+const APP_VERSION = 'v1.4.74';
 const APP_VERSION_DATE = '2026.10.03';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -12522,6 +12522,7 @@ async function loadResultDetail() {
     // ✅ v1.0.49: 이메일 발송 모달도 confirmedNames/absentNames 필요 — 같이 캐시
     window.__currentRoundApps = apps;
     window.__currentRoundIvResults = ivResults2;
+    window.__currentRoundResultHistory = ivData2.history || [];   // v1.4.74: 최종 결과 변경 이력(GAS @126)
     // v1.4.8: 면접 평가지 출력용 — 면접관별 상세(항목별 점수 포함)와 인적성 점수
     window.__currentRoundIvDetails = ivDetails;
     window.__currentRoundAptMap = aptMap;
@@ -14946,6 +14947,53 @@ function _buildAiReportStats(apps, ivResults, round) {
   const undecidedN = people.filter(p => !p.eff).length;
   const interviewedN = people.length;
   const isClosed = !!(rounds || []).find(r => r.id === round && r.closed);
+
+  // ✅ v1.4.74 (2026.10.03, 작업자: 「합격자가 나가서 예비합격자를 뽑았을 때 그 경과가 보고서에 나와야」)
+  //   세 군데를 합친다 — ① 최종 결과 변경 이력(GAS {회차}_결과이력, @126부터 쌓임)
+  //   ② 입사자 관리의 입사일·퇴사일 ③ 최종 합격 메일의 입사 회신(입사 확정/포기).
+  //   ⚠️ @126 이전에 바꾼 결정은 이력이 없다. 그때는 「면접관 집계는 예비인데 최종은 합격」으로 승격만 추정한다.
+  const _hist = ((_sameRound && window.__currentRoundResultHistory) || []).slice()
+    .sort((a, b) => String(a.at).localeCompare(String(b.at)));
+  const _emp = window._employmentData || {};
+  const _rsvpFin = ((((window.__emailRsvpStatuses || {})[round]) || {}).finalResult || {}).byRecipient || {};
+  const _rsvpByName = {};
+  Object.keys(_rsvpFin).forEach(k => { const v = _rsvpFin[k] || {}; const nm = v.name || (k.indexOf('이름:') === 0 ? k.slice(3) : '');
+    if (nm) _rsvpByName[_norm(nm)] = v; });
+  const _everPick = n => _hist.some(h => _norm(h.name) === _norm(n) && (h.after === '합격' || isReserve(h.after) || h.before === '합격' || isReserve(h.before)));
+  const track = people.filter(p => p.eff === '합격' || isReserve(p.eff) || _everPick(p.name)).map(p => {
+    const hs = _hist.filter(h => _norm(h.name) === _norm(p.name));
+    const firstSet = hs.find(h => h.after);
+    const ivRow = ivResults.find(r => _norm(r.name) === _norm(p.name)) || {};
+    const promoted = hs.some(h => isReserve(h.before) && h.after === '합격')
+      || (!hs.length && isReserve(ivRow.result) && p.eff === '합격');      // 이력 이전 데이터 추정
+    const dropped = hs.some(h => h.before === '합격' && h.after !== '합격');
+    const e = _emp[p.name] || {};
+    const rv = _rsvpByName[_norm(p.name)] || null;
+    return { name: p.name, first: firstSet ? firstSet.after : (promoted ? '예비합격' : p.eff), now: p.eff,
+             promoted, dropped, join: e.joinDate || '', leave: e.leaveDate || '',
+             reply: rv ? (rv.response === 'accept' ? '입사 확정' : rv.response === 'decline' ? '입사 포기' : '') : '',
+             replyAt: rv ? (rv.at || '') : '', hs };
+  });
+  // 시간순 경과 — 결정 변경 · 입사 회신 · 입사 · 퇴사
+  const events = [];
+  track.forEach(t => {
+    t.hs.forEach(h => events.push({ at: h.at, name: t.name,
+      what: h.before ? `최종 결과 ${h.before} → ${h.after || '미정'}` + (isReserve(h.before) && h.after === '합격' ? ' (예비 승격)' : '') : `최종 결과 ${h.after} 결정` }));
+    if (t.reply) events.push({ at: t.replyAt, name: t.name, what: `입사 회신 「${t.reply}」` });
+    if (t.join) events.push({ at: t.join, name: t.name, what: '입사' });
+    if (t.leave) events.push({ at: t.leave, name: t.name, what: '퇴사' });
+    if (!t.hs.length && t.promoted) events.push({ at: '', name: t.name, what: '예비합격에서 합격으로 승격(일자 기록 없음)' });
+  });
+  events.sort((a, b) => String(a.at || '9999').localeCompare(String(b.at || '9999')));
+  const change = {
+    track, events,
+    promotedN: track.filter(t => t.promoted).length,
+    declinedN: track.filter(t => t.reply === '입사 포기').length,
+    joinedN: track.filter(t => t.join).length,
+    leftN: track.filter(t => t.leave).length,
+    droppedN: track.filter(t => t.dropped).length
+  };
+  change.any = !!(change.promotedN || change.declinedN || change.leftN || change.droppedN);
   // 지원서 탈락
   const disqN = apps.filter(a => a.result?._disqualified).length;
   // 학력 분포
@@ -14971,7 +15019,7 @@ function _buildAiReportStats(apps, ivResults, round) {
     totalN: apps.length,
     disqN,
     confirmedN, interviewedN,
-    passN, reserveN, failN, undecidedN, isClosed, people,
+    passN, reserveN, failN, undecidedN, isClosed, people, change,
     avgScore, maxScore, minScore,
     avgSd, reviewN, cautionN, sdN,
     buckets,
@@ -14996,6 +15044,7 @@ async function _callAiReport(round, stats, apps, ivResults) {
 【서류점수(AI 보조 분석)】 평균 ${stats.avgScore}점, 최고 ${stats.maxScore}점, 최저 ${stats.minScore}점 / 구간: 80점 이상 ${stats.buckets[4]}명, 60~79점 ${stats.buckets[3]}명, 40~59점 ${stats.buckets[2]}명, 20~39점 ${stats.buckets[1]}명, 20점 미만 ${stats.buckets[0]}명
 【학력 분포】 ${Object.entries(stats.eduMap).map(([k,v])=>`${k} ${v}명`).join(', ')}
 【합격·예비 요약】 ${JSON.stringify(passerSummary)}
+【합격자 변동】 ${stats.change.any ? stats.change.events.map(e => `${e.at ? String(e.at).slice(0, 10) + ' ' : ''}${e.name} ${e.what}`).join(' / ') : '변동 없음'}
 ※ 종합점수 = 인적성 50% + 면접 50%. 서류점수는 면접 대상 선발까지의 지표이며 종합점수에 들어가지 않음.
 
 JSON 형식:
@@ -15015,6 +15064,7 @@ JSON 형식:
 - 위에 주어진 수치만 인용한다. 주어지지 않은 비율·수치를 만들지 않는다
 - ${stats.isClosed ? '종결된 회차다.' : '진행 중인 회차다. 최종 결과를 단정하지 말고 「현재까지」로 서술한다.'}
 - 합격자 이름은 선발 근거에만 쓴다
+- 합격자 변동이 있으면 핵심 요약과 선발 근거에 그 경과(포기·퇴사·예비 승격)를 사실대로 적는다. 사유를 추측하지 않는다
 - JSON만 출력한다`;
 
   return await callOpenAI(prompt, true);
@@ -15100,6 +15150,10 @@ function _rptTitle(round) {
   const m = String(round || '').match(/^\d{8}_(.+?)_(.+)$/);
   return m ? `${m[1]} ${m[2]}` : String(round || '');
 }
+function _rptDay(v) {
+  const m = String(v || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${+m[1]}.${+m[2]}.${+m[3]}` : String(v || '');
+}
 function _rptTimeline(tl) {
   if (!tl) return '';
   const days = ['일','월','화','수','목','금','토'];
@@ -15154,6 +15208,15 @@ function _renderAiReport(round, stats, apps, ivResults, ai, fromCache) {
   const eduOrder = ['대학원', '대졸', '전문대', '고졸', '기타', '미기재'];
   const eduChips = eduOrder.filter(k => stats.eduMap[k]).map(k => `<span class="rp-chip">${k} <b>${stats.eduMap[k]}</b></span>`).join('');
   const sig = stats.avgSd != null ? _fitSignal(stats.avgSd) : null;
+  let _sec = 0; const _n = () => ++_sec;   // 절 번호 — 빠지는 절이 있어도 1부터 차례로
+  // v1.4.74: 합격자 변동 경과
+  const chg = stats.change || { any: false, track: [], events: [] };
+  const chgRows = chg.track.map(t => `<tr><td class="lb">${E(t.name)}</td>
+      <td><span class="${resCls(t.first)}">${E(String(t.first || '미정').replace('예비합격 ', '예비 '))}</span></td>
+      <td><span class="${resCls(t.now)}">${E(String(t.now || '미정').replace('예비합격 ', '예비 '))}</span>${t.promoted ? ' <span class="note" style="margin:0">승격</span>' : ''}</td>
+      <td>${t.reply ? `<span class="${t.reply === '입사 포기' ? 'ng' : 'ok'}">${E(t.reply)}</span>` : '<span class="un">-</span>'}</td>
+      <td class="r">${t.join ? E(_rptDay(t.join)) : '<span class="un">-</span>'}</td>
+      <td class="r">${t.leave ? `<span class="ng">${E(_rptDay(t.leave))}</span>` : '<span class="un">-</span>'}</td></tr>`).join('');
 
   const html = `<style>${RPT_CSS}</style>
   <div id="aiReportPrintArea" class="rp">
@@ -15167,20 +15230,23 @@ function _renderAiReport(round, stats, apps, ivResults, ai, fromCache) {
       ${logo ? `<div class="logo"><img src="${logo}" alt=""></div>` : ''}
     </div>
     <div class="rp-in">
-      <div class="rp-h"><b>1</b>핵심 요약</div>
+      <div class="rp-h"><b>${_n()}</b>핵심 요약</div>
       <div class="rp-sum">${_rptList(ai.executive_summary)}</div>
 
-      <div class="rp-h"><b>2</b>전형 단계별 인원</div>
+      <div class="rp-h"><b>${_n()}</b>전형 단계별 인원</div>
       <div class="rp-fun">${fun}</div>
       <div class="rp-sub">
         <span>예비합격 <b>${stats.reserveN}명</b></span><span>불합격 <b>${stats.failN}명</b></span>
         ${stats.undecidedN ? `<span>결과 미정 <b>${stats.undecidedN}명</b></span>` : ''}
         <span>서류 탈락 <b>${stats.disqN}명</b></span><span>경쟁률 <b>${rate}</b></span>
+        ${stats.change.joinedN ? `<span>입사 <b>${stats.change.joinedN}명</b>${stats.change.leftN ? ` (퇴사 ${stats.change.leftN}명)` : ''}</span>` : ''}
+        ${stats.change.declinedN ? `<span>입사 포기 <b>${stats.change.declinedN}명</b></span>` : ''}
+        ${stats.change.promotedN ? `<span>예비 승격 <b>${stats.change.promotedN}명</b></span>` : ''}
       </div>
 
-      ${window.__currentAiReportTimeline ? `<div class="rp-h"><b>3</b>진행 일정</div>${_rptTimeline(window.__currentAiReportTimeline)}` : ''}
+      ${window.__currentAiReportTimeline ? `<div class="rp-h"><b>${_n()}</b>진행 일정</div>${_rptTimeline(window.__currentAiReportTimeline)}` : ''}
 
-      <div class="rp-h"><b>${window.__currentAiReportTimeline ? 4 : 3}</b>면접 결과</div>
+      <div class="rp-h"><b>${_n()}</b>면접 결과</div>
       ${stats.people.length ? `<table>
         <colgroup><col style="width:7%"><col style="width:19%"><col style="width:17%"><col style="width:13%"><col style="width:13%"><col style="width:15%"><col style="width:16%"></colgroup>
         <thead><tr><th class="r">순위</th><th>성명</th><th>결과</th><th class="r">인적성</th><th class="r">면접</th><th class="r">종합</th><th class="r">서류(참고)</th></tr></thead>
@@ -15189,7 +15255,15 @@ function _renderAiReport(round, stats, apps, ivResults, ai, fromCache) {
         : '<div class="note">면접 평가 기록이 아직 없음.</div>'}
       ${picks.length ? `<div style="margin-top:12px" class="rp-2">${pickHtml}</div>` : ''}
 
-      <div class="rp-h"><b>${window.__currentAiReportTimeline ? 5 : 4}</b>지원자 풀</div>
+      ${chg.any ? `<div class="rp-h"><b>${_n()}</b>합격자 변동 경과</div>
+        <table><colgroup><col style="width:18%"><col style="width:17%"><col style="width:17%"><col style="width:16%"><col style="width:16%"><col style="width:16%"></colgroup>
+          <thead><tr><th>성명</th><th>최초 결정</th><th>현재</th><th>입사 회신</th><th class="r">입사일</th><th class="r">퇴사일</th></tr></thead>
+          <tbody>${chgRows}</tbody></table>
+        ${chg.events.length ? `<div style="margin-top:10px;font-weight:700">경과</div>
+          <ul class="rp-ul">${chg.events.map(e => `<li><span style="font-variant-numeric:tabular-nums;color:#4b5563">${e.at ? E(_rptDay(e.at)) : '일자 미상'}</span> &nbsp;${E(e.name)} ${E(e.what)}</li>`).join('')}</ul>` : ''}
+        ${chg.track.some(t => !t.hs.length) ? '<div class="note">최종 결과 변경 이력은 2026.10.03부터 기록됨. 그 전에 바꾼 결정은 일자가 없으며, 승격 여부는 면접관 집계와 최종 결정의 차이로 추정함.</div>' : ''}` : ''}
+
+      <div class="rp-h"><b>${_n()}</b>지원자 풀</div>
       <div class="rp-2">
         <div>
           <table><colgroup><col style="width:30%"><col style="width:16%"><col></colgroup>
@@ -15206,11 +15280,11 @@ function _renderAiReport(round, stats, apps, ivResults, ai, fromCache) {
         </div>
       </div>
 
-      <div class="rp-h"><b>${window.__currentAiReportTimeline ? 6 : 5}</b>선발 근거 및 지표 해석</div>
+      <div class="rp-h"><b>${_n()}</b>선발 근거 및 지표 해석</div>
       ${_rptList(ai.selection_rationale)}
       <div style="margin-top:6px">${_rptList(ai.key_metrics_insight)}</div>
 
-      <div class="rp-h"><b>${window.__currentAiReportTimeline ? 7 : 6}</b>유의사항 및 다음 회차 개선</div>
+      <div class="rp-h"><b>${_n()}</b>유의사항 및 다음 회차 개선</div>
       <div class="rp-2">
         <div class="rp-box"><div class="t">유의사항</div>${_rptList(ai.concerns)}</div>
         <div class="rp-box"><div class="t">다음 회차 개선</div>${_rptList(ai.recommendations)}</div>
