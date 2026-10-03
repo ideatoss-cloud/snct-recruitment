@@ -1932,7 +1932,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.77';
+const APP_VERSION = 'v1.4.78';
 const APP_VERSION_DATE = '2026.10.03';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -10395,8 +10395,13 @@ let rankingApplicants = [];    // 면접 확정자 [{id, name}] — 면접 불�
 let rankingExcludedCount = 0;  // ✅ v1.0.25: 불참 등으로 제외된 인원 수 (안내문 표시용)
 let rankingExcludedNames = []; // ✅ v1.4.59: 숫자만으로는 누가 빠졌는지 모른다
 
+// v1.4.78 (점검): 관리자가 이 화면에서 **실제로 칸을 건드린 면접관**만 저장한다.
+//   종전엔 화면을 연 시점의 순위 전체를 보내 서버가 시트를 통째로 다시 썼다. 그 사이 면접관이
+//   「내 순위 저장」으로 고친 값이 옛 값으로 되돌아갔다(GAS @130과 짝).
+let rankDirty = new Set();
 async function ivRankInit() {
   if (!isAdmin || !currentRound) return;
+  rankDirty = new Set();
   // 1) 확정자 목록 로드
   await loadConfirmedForRanking();
   // 2) localStorage 복원
@@ -10527,6 +10532,7 @@ function renderRankingTable() {
 }
 
 function onRankInput(interviewer, applicantId, val) {
+  rankDirty.add(String(interviewer).trim());   // v1.4.78
   if (!rankingData[interviewer]) rankingData[interviewer] = {};
   const n = Number(val);
   const M = rankingApplicants.length;
@@ -10587,9 +10593,12 @@ async function saveRanking() {
     if (!confirm(`${totalCells - filled}개 셀이 비어있습니다. 그래도 저장하시겠습니까?`)) return;
   }
 
+  // v1.4.78: 이번에 손댄 면접관만 보낸다 — 나머지 면접관이 직접 저장한 순위를 건드리지 않는다
+  const _changed = ivs.filter(iv => rankDirty.has(String(iv).trim()));
+  if (!_changed.length) { toast('바꾼 순위가 없습니다', 'warn'); return; }
   const rows = [];
   rankingApplicants.forEach(a => {
-    ivs.forEach(iv => {
+    _changed.forEach(iv => {
       const r = rankingData[iv] && rankingData[iv][a.id];
       if (r) rows.push({ interviewer: iv, appId: a.id, name: a.name, rank: Number(r) });
     });
@@ -10606,13 +10615,15 @@ async function saveRanking() {
         round: currentRound,
         userEmail: currentUserEmail,
         interviewers: ivs,
+        changedInterviewers: _changed,   // v1.4.78 (GAS @130)
         rows: rows,
         totalApplicants: rankingApplicants.length
       })
     });
     const data = await res.json();
     if (data.success) {
-      toast(`순위 ${rows.length}건 저장 ✅ 집계 자동 반영`, 'ok');
+      toast(`${_changed.join(', ')} 순위 ${rows.length}건 저장 ✅ 집계 자동 반영`, 'ok');
+      rankDirty = new Set();
       if (typeof loadIvResults === 'function') setTimeout(loadIvResults, 500);
     } else {
       toast('저장 실패: ' + (data.message || '오류'), 'err');
