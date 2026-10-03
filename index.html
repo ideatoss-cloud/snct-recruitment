@@ -1933,7 +1933,7 @@ const ADMIN_CODE = ''; // deprecated
 //   · 클라 35곳 GET 호출에 &userEmail= 자동 추가
 //   · 로그인 흐름(checkUserRole/getRounds/getNotifications/getSettings)은 그대로
 // ✅ v1.2.4 — test.html 자동 검증
-const APP_VERSION = 'v1.4.86';
+const APP_VERSION = 'v1.4.87';
 const APP_VERSION_DATE = '2026.10.03';
 let currentRound = ''; // 현재 선택된 회차
 
@@ -2318,6 +2318,23 @@ let minEduSettings = Object.assign({}, DEFAULT_MIN_EDU);
 try{const _saved=localStorage.getItem('snct_min_edu');if(_saved){const _p=JSON.parse(_saved);Object.assign(minEduSettings,_p);}}catch(e){}
 let rounds = []; // 회차 목록
 let confirmedList = []; // 확정된 면접자 목록
+// ✅ v1.4.87 (2026.10.03 점검 B1) — 전역 목록이 **어느 회차 것인지** 기억한다.
+//   confirmedList·absentList는 「지금 열린 회차」 것인데, 회차를 인자로 받는 함수들(_ivSkipMap·_ivSort 등)이
+//   그 회차가 맞는지 확인하지 않고 썼다 → 다른 회차의 불참자·확정 순서가 섞였다(git 이력에서 가장 자주 재발한 계열).
+let _confirmedRound = '', _absentRound = '';
+// 회차별 확정자 이름: 열린 회차면 confirmedList, 채용 집계 탭에서 받은 회차면 그 캐시, 모르면 빈 목록(원래 순서 유지)
+function _confirmedNamesFor(round) {
+  const r = round || currentRound;
+  if (r && r === _confirmedRound) return (confirmedList || []).map(c => c && c.name);
+  if (r && String(window.__currentRoundId || '') === String(r)) return (window.__currentRoundConfirmedNames || []).slice();
+  return [];
+}
+function _absentNamesFor(round) {
+  const r = round || currentRound;
+  if (r && r === _absentRound) return (absentList || []).map(a => a && (a.name != null ? a.name : a.applicant));
+  if (r && String(window.__currentRoundId || '') === String(r)) return (window.__currentRoundAbsentNames || []).slice();
+  return [];
+}
 
 // ── 성별 표시 헬퍼 (v1.2.38) ──
 //   자사 지원서 양식에 '성별' 항목이 없어, AI가 명시 기재 또는 병역사항으로 판단한다.
@@ -4272,6 +4289,7 @@ async function loadFromSheet(opts) {
   if (!silent) {
   confirmedList = [];
   absentList = [];
+  _confirmedRound = round; _absentRound = '';   // v1.4.87
   ivVotes = {};
   voteSubmitted = false;
   analysisSaved = true; // 불러온 데이터는 이미 저장된 상태 → saveBtn 비활성화
@@ -4412,6 +4430,7 @@ async function loadFromSheet(opts) {
     // 병렬로 받아온 확정자 처리
     if (cfData.success && cfData.confirmed?.length) {
       confirmedList = cfData.confirmed;
+      _confirmedRound = round;   // v1.4.87
       showConfirmedBanner(cfData.confirmed.map(c=>c.name));
     }
 
@@ -7655,9 +7674,8 @@ function _ivSkipMap(round) {
     const k = String(n == null ? '' : n).replace(/\s+/g, '');
     if (k && !out[k]) out[k] = why;
   };
-  (typeof absentList !== 'undefined' ? absentList : []).forEach(function (a) {
-    put(a && (a.name != null ? a.name : a.applicant), '면접 불참 처리');
-  });
+  // v1.4.87: 이 회차의 불참 처리만 — 종전엔 인자와 무관하게 「열린 회차」의 absentList를 넣었다
+  _absentNamesFor(r).forEach(function (n) { put(n, '면접 불참 처리'); });
   const m = (window.__ivAttendance || {})[r] || {};
   Object.keys(m).forEach(function (k) {
     if (m[k] && m[k].response === 'absent') put(k, '미참석 회신');
@@ -7689,20 +7707,20 @@ function _ivSkipNames(list, round, nameOf) {
 //   [면접 준비] 드롭다운만 `applicants`를 써서 **혼자 다른 순서**로 떴다.
 //   → 정본은 **집계 순위 순**. 면접위원에게 보낸 메일·인쇄 자료도 이 순서라 **종이와 화면이 맞는다.**
 //   ⚠️ 확정 목록이 아직 없으면(기준을 모르면) **원본 순서를 그대로 둔다.** 멋대로 가나다로 바꾸지 않는다.
-function _ivRank(name) {
+function _ivRank(name, round) {
   const k = String(name == null ? '' : name).replace(/\s+/g, '');
-  const list = (typeof confirmedList !== 'undefined' ? confirmedList : []);
+  const list = _confirmedNamesFor(round);   // v1.4.87: 그 회차 확정 순서
   for (let i = 0; i < list.length; i++) {
-    if (String((list[i] && list[i].name) || '').replace(/\s+/g, '') === k) return i;
+    if (String(list[i] || '').replace(/\s+/g, '') === k) return i;
   }
   return 9999;   // 확정 목록에 없는 사람은 뒤로
 }
-function _ivSort(arr, nameOf) {
-  const list = (typeof confirmedList !== 'undefined' ? confirmedList : []);
+function _ivSort(arr, nameOf, round) {
+  const list = _confirmedNamesFor(round);
   if (!list.length) return (arr || []).slice();   // 기준이 없으면 원본 순서를 지킨다
   const get = nameOf || _ivNameOf;
   return (arr || []).slice().sort(function (a, b) {
-    const d = _ivRank(get(a)) - _ivRank(get(b));
+    const d = _ivRank(get(a), round) - _ivRank(get(b), round);
     if (d !== 0) return d;
     return String(get(a) || '').localeCompare(String(get(b) || ''), 'ko');
   });
@@ -8472,7 +8490,10 @@ function closeIvCertModal(){ document.getElementById('ivCertModal').classList.re
 
 function onIvCertName(){
   const name = document.getElementById('icName').value;
-  const a = (typeof applicants !== 'undefined' ? applicants : []).find(x => (x.result && x.result.name) === name);
+  // v1.4.87: 그 회차 지원서에서 찾는다(종전엔 [지원서 검토]에 열린 회차의 applicants — 다르면 빈칸)
+  const _pool = (typeof _poolFor === 'function' && _poolFor(currentRound))
+    || (String(window.__currentRoundId || '') === String(currentRound) ? (window.__currentRoundApps || []) : []);
+  const a = _pool.find(x => (x.result && x.result.name) === name);
   const saved = ((_icLoad()[currentRound] || {}).birth || {})[name];
   document.getElementById('icBirth').value = saved != null ? saved : _icBirth(a && a.result && a.result.birth);
   saveIvCert(true);   // 자동으로 채운 생년월일은 저장하지 않는다 — 고쳤을 때만 기억
@@ -9053,8 +9074,9 @@ async function checkConfirmed() {
   try{
     const res=await fetch(GAS_URL+'?action=getConfirmed&userEmail='+encodeURIComponent(currentUserEmail||'')+'&round='+encodeURIComponent(currentRound));
     const data=await res.json();
+    // v1.4.87: 새 회차에 확정자가 없으면 **비운다** — 종전엔 비우지 않아 이전 회차 확정자가 그대로 남았다
+    if (data.success) { confirmedList = data.confirmed || []; _confirmedRound = currentRound; }
     if(data.success&&data.confirmed.length){
-      confirmedList=data.confirmed;
       showConfirmedBanner(data.confirmed.map(c=>c.name),'');
     }
   }catch(e){}
@@ -10471,6 +10493,7 @@ async function loadIvResults() {
     // absentList 동기화
     absentList = (data.details||[]).filter(d=>d.interviewer==='시스템'&&d.verdict==='불합격')
       .map(d=>({name:d.applicant, reason:d.opinion.replace('면접 불참: ',''), time:d.time||''}));
+    _absentRound = currentRound;   // v1.4.87
     renderAbsentList();
     toast('면접 결과 조회 완료', 'ok');
   } catch(e) { body.innerHTML = `<div style="color:var(--red);font-size:14px">${e.message}</div>`; }
@@ -14001,14 +14024,17 @@ async function printIvBrief() {
 }
 
 async function printIvEval(blank) {
-  const round = window.__currentRoundId || currentRound;
+  // ⚠️ v1.4.87: [면접] 탭 기능이므로 면접 탭의 회차(currentRound)를 쓴다. 종전엔 [채용 집계] 탭에서 본
+  //   회차(__currentRoundId)가 우선이라, 지난 회차를 본 뒤 오늘 면접 자료를 뽑으면 다른 회차 명단이 나왔다.
+  const round = currentRound || window.__currentRoundId;
   if (!round) { toast('회차를 먼저 선택해주세요', 'err'); return; }
+  const _sameAgg = String(window.__currentRoundId || '') === String(round);
 
-  // 집계 탭 캐시가 없으면 면접 탭 데이터로 대체한다
-  const confirmedNames = (window.__currentRoundConfirmedNames && window.__currentRoundConfirmedNames.length)
+  // 집계 탭 캐시는 같은 회차일 때만 쓴다
+  const confirmedNames = (_sameAgg && window.__currentRoundConfirmedNames && window.__currentRoundConfirmedNames.length)
     ? window.__currentRoundConfirmedNames
-    : (typeof confirmedList !== 'undefined' ? confirmedList.map(c => c.name) : []);
-  const absentNames = (window.__currentRoundAbsentNames && window.__currentRoundAbsentNames.length)
+    : _confirmedNamesFor(round);
+  const absentNames = (_sameAgg && window.__currentRoundAbsentNames && window.__currentRoundAbsentNames.length)
     ? window.__currentRoundAbsentNames
     : (typeof absentList !== 'undefined' ? absentList.map(a => a.name) : []);
   const apps = (window.__currentRoundApps && window.__currentRoundApps.length)
@@ -14644,7 +14670,7 @@ async function openHealthCheckListModal(round) {
   const apps = window.__currentRoundApps || [];
   const ivResults = window.__currentRoundIvResults || [];
   const absentNames = window.__currentRoundAbsentNames || [];
-  const _hcRound = window.__currentRoundId || currentRound;   // v1.4.60: 참석 여부는 회차별
+  const _hcRound = round || window.__currentRoundId || currentRound;   // v1.4.60 · v1.4.87: 인자로 받은 회차가 우선
   if (!apps.length) { toast('회차 데이터가 로드되지 않았습니다','err'); return; }
 
   const passers = [];
